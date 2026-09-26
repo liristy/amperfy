@@ -68,8 +68,8 @@ enum TabNavigatorItem: Int, Hashable, CaseIterable {
 
   var title: String {
     switch self {
-    case .home: return "Home"
-    case .search: return "Search"
+    case .home: return "Home".localized
+    case .search: return "Search".localized
     }
   }
 
@@ -149,7 +149,7 @@ class LibraryNavigatorConfigurator: NSObject {
   func viewDidLoad(navigationItem: UINavigationItem, collectionView: UICollectionView) {
     self.collectionView = collectionView
     editButton = UIBarButtonItem(
-      title: "Edit",
+      title: "Edit".localized,
       style: .plain,
       target: self,
       action: #selector(editingPressed)
@@ -186,7 +186,7 @@ class LibraryNavigatorConfigurator: NSObject {
   @MainActor @objc
   private func editingPressed() {
     let isInEditMode = !collectionView.isEditing
-    editButton.title = isInEditMode ? "Done" : "Edit"
+    editButton.title = isInEditMode ? "Done".localized : "Edit".localized
     editButton.style = isInEditMode ? .prominent : .plain
 
     if isInEditMode {

@@ -81,6 +81,7 @@ class SsPlaylistParserDelegate: SsXmlParser {
       }
 
       playlist?.name = attributePlaylistName
+      playlist?.updateServerArtwork(id: attributeDict["coverArt"])
 
       if let attributeDuration = attributeDict["duration"], let duration = Int(attributeDuration) {
         playlist?.remoteDuration = duration

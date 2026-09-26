@@ -536,6 +536,7 @@
 		638920F02C8C8E9000932EE8 /* SettingsList.swift in Sources */ = {isa = PBXBuildFile; fileRef = 638920EF2C8C8E9000932EE8 /* SettingsList.swift */; };
 		63DCDB7A2C674B5D00522F68 /* SettingsSceneDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 63DCDB792C674B5D00522F68 /* SettingsSceneDelegate.swift */; };
 		641708592C13BF5100BA2619 /* Haptics.swift in Sources */ = {isa = PBXBuildFile; fileRef = 641708582C13BF5100BA2619 /* Haptics.swift */; };
+		3CDD2EA4533BFE67121E94E0 /* Localizable.xcstrings in Resources */ = {isa = PBXBuildFile; fileRef = DDFDA7D0CEFB8C6B7C53EE6A; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -618,17 +619,14 @@
 		50073BE222319868000130D8 /* PlayableDownloadDelegate.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = PlayableDownloadDelegate.swift; sourceTree = "<group>"; };
 		5007CE4021EF5F4300BC5CBA /* PlaylistsVC.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlaylistsVC.swift; sourceTree = "<group>"; };
 		5007CE4221EF639200BC5CBA /* PlaylistTableCell.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlaylistTableCell.swift; sourceTree = "<group>"; };
-		5007CE4321EF639200BC5CBA /* PlaylistTableCell.xib */ = {isa = PBXFileReference; lastKnownFileType = file.xib; path = PlaylistTableCell.xib; sourceTree = "<group>"; };
 		5007CE4621EF6A8E00BC5CBA /* PlaylistDetailVC.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlaylistDetailVC.swift; sourceTree = "<group>"; };
 		5009863B2208CB650057A1A6 /* OptionsButton.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OptionsButton.swift; sourceTree = "<group>"; };
 		5009863D2208CC1E0057A1A6 /* BasicButton.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BasicButton.swift; sourceTree = "<group>"; };
 		500B2B302249607B00D14EF4 /* BackendProxy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BackendProxy.swift; sourceTree = "<group>"; };
 		500B7D4221ECFCDD0083ED6F /* LibraryElementEnum.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LibraryElementEnum.swift; sourceTree = "<group>"; };
-		500B7D4421EDB05F0083ED6F /* LibraryElementDetailTableHeaderView.xib */ = {isa = PBXFileReference; lastKnownFileType = file.xib; path = LibraryElementDetailTableHeaderView.xib; sourceTree = "<group>"; };
 		500B7D4621EDB0890083ED6F /* LibraryElementDetailTableHeaderView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LibraryElementDetailTableHeaderView.swift; sourceTree = "<group>"; };
 		500B7D4821EDD6250083ED6F /* ViewCreator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ViewCreator.swift; sourceTree = "<group>"; };
 		500B97CC2B7BC67F005554BF /* EntityPreviewVC.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EntityPreviewVC.swift; sourceTree = "<group>"; };
-		500B97CF2B7C9546005554BF /* EntityPreviewVC.xib */ = {isa = PBXFileReference; lastKnownFileType = file.xib; path = EntityPreviewVC.xib; sourceTree = "<group>"; };
 		500BB45521CAA73700D367CF /* PersistentStorage.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = PersistentStorage.swift; sourceTree = "<group>"; };
 		500BB49621CAAA2700D367CF /* Amperfy.xcdatamodel */ = {isa = PBXFileReference; lastKnownFileType = wrapper.xcdatamodel; path = Amperfy.xcdatamodel; sourceTree = "<group>"; };
 		500DA64A2F087221005578C7 /* CarPlayHomeTabExtension.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CarPlayHomeTabExtension.swift; sourceTree = "<group>"; };
@@ -754,7 +752,6 @@
 		505CA20D2B88EB9900AA81CD /* BasicFetchedResultsTableViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BasicFetchedResultsTableViewController.swift; sourceTree = "<group>"; };
 		505CA2102B88ECC700AA81CD /* SingleFetchedResultsTableViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SingleFetchedResultsTableViewController.swift; sourceTree = "<group>"; };
 		505CA2132B88ED6100AA81CD /* SingleSnapshotFetchedResultsTableViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SingleSnapshotFetchedResultsTableViewController.swift; sourceTree = "<group>"; };
-		5064F3962B96FBAE00DE61C1 /* NotificationDetailVC.xib */ = {isa = PBXFileReference; lastKnownFileType = file.xib; path = NotificationDetailVC.xib; sourceTree = "<group>"; };
 		5064F3972B96FBAE00DE61C1 /* NotificationDetailVC.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotificationDetailVC.swift; sourceTree = "<group>"; };
 		506640D12B683AAF007434A8 /* Amperfy v33.xcdatamodel */ = {isa = PBXFileReference; lastKnownFileType = wrapper.xcdatamodel; path = "Amperfy v33.xcdatamodel"; sourceTree = "<group>"; };
 		5067016125E3ADA200A3EF89 /* Amperfy v5.xcdatamodel */ = {isa = PBXFileReference; lastKnownFileType = wrapper.xcdatamodel; path = "Amperfy v5.xcdatamodel"; sourceTree = "<group>"; };
@@ -865,7 +862,6 @@
 		50A12F4527392B2400E7B2AA /* EmbeddedArtwork.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EmbeddedArtwork.swift; sourceTree = "<group>"; };
 		50A12F47273BBF7300E7B2AA /* Amperfy v16.xcdatamodel */ = {isa = PBXFileReference; lastKnownFileType = wrapper.xcdatamodel; path = "Amperfy v16.xcdatamodel"; sourceTree = "<group>"; };
 		50A30E4D2B73DDC800722894 /* PlayerControlView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlayerControlView.swift; sourceTree = "<group>"; };
-		50A30E4E2B73DDC800722894 /* PlayerControlView.xib */ = {isa = PBXFileReference; lastKnownFileType = file.xib; path = PlayerControlView.xib; sourceTree = "<group>"; };
 		50A30E532B7408DB00722894 /* ContextQueueNextSectionHeader.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContextQueueNextSectionHeader.swift; sourceTree = "<group>"; };
 		50A30E582B75026100722894 /* ContextQueueNextSectionHeader.xib */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = file.xib; path = ContextQueueNextSectionHeader.xib; sourceTree = "<group>"; };
 		50A30E5B2B7556FB00722894 /* PopupPlayer+TableViewExtension.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "PopupPlayer+TableViewExtension.swift"; sourceTree = "<group>"; };
@@ -973,7 +969,6 @@
 		50C16BEF21E0A3B500F086F0 /* PlayerData.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlayerData.swift; sourceTree = "<group>"; };
 		50C16BF721E10E7500F086F0 /* Playlist.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Playlist.swift; sourceTree = "<group>"; };
 		50C16C0521E241B200F086F0 /* SearchVC.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SearchVC.swift; sourceTree = "<group>"; };
-		50C16C0B21E52BBB00F086F0 /* PlayableTableCell.xib */ = {isa = PBXFileReference; lastKnownFileType = file.xib; path = PlayableTableCell.xib; sourceTree = "<group>"; };
 		50C16C0F21E5463E00F086F0 /* ArtistsVC.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ArtistsVC.swift; sourceTree = "<group>"; };
 		50C16C1721E704CE00F086F0 /* AlbumsVC.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AlbumsVC.swift; sourceTree = "<group>"; };
 		50C16C1921E704EC00F086F0 /* ArtistDetailVC.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ArtistDetailVC.swift; sourceTree = "<group>"; };
@@ -1017,7 +1012,6 @@
 		50CA61232D4CE9E500EEF515 /* podcast_example_1.xml */ = {isa = PBXFileReference; lastKnownFileType = text.xml; path = podcast_example_1.xml; sourceTree = "<group>"; };
 		50CA61252D4D191100EEF515 /* PodcastEpisodeTest.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PodcastEpisodeTest.swift; sourceTree = "<group>"; };
 		50CA61272D4D72F600EEF515 /* Amperfy v44.xcdatamodel */ = {isa = PBXFileReference; lastKnownFileType = wrapper.xcdatamodel; path = "Amperfy v44.xcdatamodel"; sourceTree = "<group>"; };
-		50CCD0562B6C38670073793B /* PlainDetailsVC.xib */ = {isa = PBXFileReference; lastKnownFileType = file.xib; path = PlainDetailsVC.xib; sourceTree = "<group>"; };
 		50CCD0582B6C388B0073793B /* PlainDetailsVC.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlainDetailsVC.swift; sourceTree = "<group>"; };
 		50CDF201264BB1C000F83EF6 /* EventLogger.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EventLogger.swift; sourceTree = "<group>"; };
 		50CDF207264BC6BB00F83EF6 /* LogEntryMO+CoreDataClass.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "LogEntryMO+CoreDataClass.swift"; sourceTree = "<group>"; };
@@ -1080,7 +1074,6 @@
 		50DEEE01265D4AB30073FF20 /* SsDirectoryParserDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SsDirectoryParserDelegate.swift; sourceTree = "<group>"; };
 		50DEEE03265E25A40073FF20 /* MusicFoldersVC.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MusicFoldersVC.swift; sourceTree = "<group>"; };
 		50DEEE05265E27070073FF20 /* DirectoryTableCell.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DirectoryTableCell.swift; sourceTree = "<group>"; };
-		50DEEE06265E27070073FF20 /* DirectoryTableCell.xib */ = {isa = PBXFileReference; lastKnownFileType = file.xib; path = DirectoryTableCell.xib; sourceTree = "<group>"; };
 		50DEEE09265E392C0073FF20 /* IndexesVC.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IndexesVC.swift; sourceTree = "<group>"; };
 		50DEEE0B265E3F9D0073FF20 /* DirectoriesVC.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DirectoriesVC.swift; sourceTree = "<group>"; };
 		50DEEE0D265E89590073FF20 /* Amperfy v8.xcdatamodel */ = {isa = PBXFileReference; lastKnownFileType = wrapper.xcdatamodel; path = "Amperfy v8.xcdatamodel"; sourceTree = "<group>"; };
@@ -1158,6 +1151,25 @@
 		641708582C13BF5100BA2619 /* Haptics.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Haptics.swift; sourceTree = "<group>"; };
 		643A04712CD29AB20012DEA3 /* Amperfy v39.xcdatamodel */ = {isa = PBXFileReference; lastKnownFileType = wrapper.xcdatamodel; path = "Amperfy v39.xcdatamodel"; sourceTree = "<group>"; };
 		64C433822E1391FA0082A165 /* Amperfy v46.xcdatamodel */ = {isa = PBXFileReference; lastKnownFileType = wrapper.xcdatamodel; path = "Amperfy v46.xcdatamodel"; sourceTree = "<group>"; };
+		C05000000000000000000001 /* Amperfy v50.xcdatamodel */ = {isa = PBXFileReference; lastKnownFileType = wrapper.xcdatamodel; path = "Amperfy v50.xcdatamodel"; sourceTree = "<group>"; };
+		DDFDA7D0CEFB8C6B7C53EE6A /* Localizable.xcstrings */ = {isa = PBXFileReference; lastKnownFileType = text.json.xcstrings; path = Amperfy/Localization/Localizable.xcstrings; sourceTree = SOURCE_ROOT; };
+		7D77D4DD4487A1EF37677776 /* zh-Hans */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = "zh-Hans"; path = "Amperfy/Localization/zh-Hans.lproj/PlayerControlView.strings"; sourceTree = SOURCE_ROOT; };
+		A1840645E1CA22688D5A3F59 /* Base */ = {isa = PBXFileReference; lastKnownFileType = file.xib; name = Base; path = "Amperfy/Screens/Player/PlayerControlView.xib"; sourceTree = SOURCE_ROOT; };
+		6C194F78F0C2DBD4DA4A5ADE /* zh-Hans */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = "zh-Hans"; path = "Amperfy/Localization/zh-Hans.lproj/DirectoryTableCell.strings"; sourceTree = SOURCE_ROOT; };
+		D799677C428F791F7D437AD3 /* Base */ = {isa = PBXFileReference; lastKnownFileType = file.xib; name = Base; path = "Amperfy/Screens/View/DirectoryTableCell.xib"; sourceTree = SOURCE_ROOT; };
+		885E6B114BDB1588A16409A0 /* zh-Hans */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = "zh-Hans"; path = "Amperfy/Localization/zh-Hans.lproj/LibraryElementDetailTableHeaderView.strings"; sourceTree = SOURCE_ROOT; };
+		49D4BC95A28E0A15501AEBE7 /* Base */ = {isa = PBXFileReference; lastKnownFileType = file.xib; name = Base; path = "Amperfy/Screens/View/LibraryElementDetailTableHeaderView.xib"; sourceTree = SOURCE_ROOT; };
+		187011BF44C3DEC3261235BC /* zh-Hans */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = "zh-Hans"; path = "Amperfy/Localization/zh-Hans.lproj/PlayableTableCell.strings"; sourceTree = SOURCE_ROOT; };
+		FF9E293613282B8550F018CF /* Base */ = {isa = PBXFileReference; lastKnownFileType = file.xib; name = Base; path = "Amperfy/Screens/View/PlayableTableCell.xib"; sourceTree = SOURCE_ROOT; };
+		5FE32C98AC609D3B966A4527 /* zh-Hans */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = "zh-Hans"; path = "Amperfy/Localization/zh-Hans.lproj/PlaylistTableCell.strings"; sourceTree = SOURCE_ROOT; };
+		53099A0EF85045962881CADB /* Base */ = {isa = PBXFileReference; lastKnownFileType = file.xib; name = Base; path = "Amperfy/Screens/View/PlaylistTableCell.xib"; sourceTree = SOURCE_ROOT; };
+		F946736EC8C70A5AD85059E6 /* zh-Hans */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = "zh-Hans"; path = "Amperfy/Localization/zh-Hans.lproj/EntityPreviewVC.strings"; sourceTree = SOURCE_ROOT; };
+		71BAD71B60459ADA8C20DD41 /* Base */ = {isa = PBXFileReference; lastKnownFileType = file.xib; name = Base; path = "Amperfy/Screens/ViewController/EntityPreviewVC.xib"; sourceTree = SOURCE_ROOT; };
+		1AF045DCADDD89A8217FEEA3 /* zh-Hans */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = "zh-Hans"; path = "Amperfy/Localization/zh-Hans.lproj/NotificationDetailVC.strings"; sourceTree = SOURCE_ROOT; };
+		39590987AAB2EF6673C940EE /* Base */ = {isa = PBXFileReference; lastKnownFileType = file.xib; name = Base; path = "Amperfy/Screens/ViewController/NotificationDetailVC.xib"; sourceTree = SOURCE_ROOT; };
+		CF79E984E049A3A06287EAA7 /* zh-Hans */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = "zh-Hans"; path = "Amperfy/Localization/zh-Hans.lproj/PlainDetailsVC.strings"; sourceTree = SOURCE_ROOT; };
+		56D08B1B7040C62102427A8D /* Base */ = {isa = PBXFileReference; lastKnownFileType = file.xib; name = Base; path = "Amperfy/Screens/ViewController/PlainDetailsVC.xib"; sourceTree = SOURCE_ROOT; };
+		0B69720E14F24DC0C3C98327 /* zh-Hans */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = "zh-Hans"; path = "Amperfy/Localization/zh-Hans.lproj/Main.strings"; sourceTree = SOURCE_ROOT; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -1774,6 +1786,7 @@
 			children = (
 				43FBE27E250D4DFD00D5F9B3 /* LaunchScreen.storyboard */,
 				508385EB21C5965B00C4BB32 /* Main.storyboard */,
+				DDFDA7D0CEFB8C6B7C53EE6A /* Localizable.xcstrings */,
 				508FDE4B21F58AFC005A0724 /* AppStoryboard.swift */,
 				5009863A2208CB170057A1A6 /* Basics */,
 				504627EB2B73C1E600F481F8 /* Player */,
@@ -2306,6 +2319,7 @@
 			hasScannedForEncodings = 0;
 			knownRegions = (
 				en,
+				"zh-Hans",
 				Base,
 			);
 			mainGroup = 508385DB21C5965B00C4BB32;
@@ -2360,6 +2374,7 @@
 				50CCD0572B6C38670073793B /* PlainDetailsVC.xib in Resources */,
 				508EBB282850C8D90053D9F0 /* Assets.xcassets in Resources */,
 				508385ED21C5965B00C4BB32 /* Main.storyboard in Resources */,
+				3CDD2EA4533BFE67121E94E0 /* Localizable.xcstrings in Resources */,
 				500B97D02B7C9555005554BF /* EntityPreviewVC.xib in Resources */,
 				50A30E642B756CF100722894 /* CurrentlyPlayingTableCell.xib in Resources */,
 			);
@@ -2931,11 +2946,20 @@
 		508385EB21C5965B00C4BB32 /* Main.storyboard */ = {
 			isa = PBXVariantGroup;
 			children = (
+				0B69720E14F24DC0C3C98327 /* zh-Hans */,
 				508385EC21C5965B00C4BB32 /* Base */,
 			);
 			name = Main.storyboard;
 			sourceTree = "<group>";
 		};
+		50A30E4E2B73DDC800722894 /* PlayerControlView.xib */ = {isa = PBXVariantGroup; children = (A1840645E1CA22688D5A3F59 /* Base */, 7D77D4DD4487A1EF37677776 /* zh-Hans */); name = PlayerControlView.xib; sourceTree = "<group>"; };
+		50DEEE06265E27070073FF20 /* DirectoryTableCell.xib */ = {isa = PBXVariantGroup; children = (D799677C428F791F7D437AD3 /* Base */, 6C194F78F0C2DBD4DA4A5ADE /* zh-Hans */); name = DirectoryTableCell.xib; sourceTree = "<group>"; };
+		500B7D4421EDB05F0083ED6F /* LibraryElementDetailTableHeaderView.xib */ = {isa = PBXVariantGroup; children = (49D4BC95A28E0A15501AEBE7 /* Base */, 885E6B114BDB1588A16409A0 /* zh-Hans */); name = LibraryElementDetailTableHeaderView.xib; sourceTree = "<group>"; };
+		50C16C0B21E52BBB00F086F0 /* PlayableTableCell.xib */ = {isa = PBXVariantGroup; children = (FF9E293613282B8550F018CF /* Base */, 187011BF44C3DEC3261235BC /* zh-Hans */); name = PlayableTableCell.xib; sourceTree = "<group>"; };
+		5007CE4321EF639200BC5CBA /* PlaylistTableCell.xib */ = {isa = PBXVariantGroup; children = (53099A0EF85045962881CADB /* Base */, 5FE32C98AC609D3B966A4527 /* zh-Hans */); name = PlaylistTableCell.xib; sourceTree = "<group>"; };
+		500B97CF2B7C9546005554BF /* EntityPreviewVC.xib */ = {isa = PBXVariantGroup; children = (71BAD71B60459ADA8C20DD41 /* Base */, F946736EC8C70A5AD85059E6 /* zh-Hans */); name = EntityPreviewVC.xib; sourceTree = "<group>"; };
+		5064F3962B96FBAE00DE61C1 /* NotificationDetailVC.xib */ = {isa = PBXVariantGroup; children = (39590987AAB2EF6673C940EE /* Base */, 1AF045DCADDD89A8217FEEA3 /* zh-Hans */); name = NotificationDetailVC.xib; sourceTree = "<group>"; };
+		50CCD0562B6C38670073793B /* PlainDetailsVC.xib */ = {isa = PBXVariantGroup; children = (56D08B1B7040C62102427A8D /* Base */, CF79E984E049A3A06287EAA7 /* zh-Hans */); name = PlainDetailsVC.xib; sourceTree = "<group>"; };
 /* End PBXVariantGroup section */
 
 /* Begin XCBuildConfiguration section */
@@ -3525,6 +3549,7 @@
 			isa = XCVersionGroup;
 			children = (
 				506C314D2EE6D2100011A2C3 /* Amperfy v49.xcdatamodel */,
+				C05000000000000000000001 /* Amperfy v50.xcdatamodel */,
 				5084F70C2ED9D87500D8D3DA /* Amperfy v48.xcdatamodel */,
 				507C9AD82E29905D001589F8 /* Amperfy v47.xcdatamodel */,
 				64C433822E1391FA0082A165 /* Amperfy v46.xcdatamodel */,
@@ -3574,7 +3599,7 @@
 				506B3A3823B4539D00E31F21 /* Amperfy v2.xcdatamodel */,
 				500BB49621CAAA2700D367CF /* Amperfy.xcdatamodel */,
 			);
-			currentVersion = 506C314D2EE6D2100011A2C3 /* Amperfy v49.xcdatamodel */;
+			currentVersion = C05000000000000000000001 /* Amperfy v50.xcdatamodel */;
 			path = Amperfy.xcdatamodeld;
 			sourceTree = "<group>";
 			versionGroupType = wrapper.xcdatamodel;

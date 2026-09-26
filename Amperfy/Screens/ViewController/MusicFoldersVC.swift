@@ -24,7 +24,7 @@ import CoreData
 import UIKit
 
 class MusicFoldersVC: SingleFetchedResultsTableViewController<MusicFolderMO> {
-  override var sceneTitle: String? { "Directories" }
+  override var sceneTitle: String? { "Directories".localized }
 
   private var fetchedResultsController: MusicFolderFetchedResultsController!
 
@@ -47,7 +47,7 @@ class MusicFoldersVC: SingleFetchedResultsTableViewController<MusicFolderMO> {
     singleFetchedResultsController = fetchedResultsController
 
     configureSearchController(placeholder: "Search in \"Directories\"")
-    setNavBarTitle(title: "Directories")
+    setNavBarTitle(title: "Directories".localized)
     tableView.register(nibName: DirectoryTableCell.typeName)
     tableView.rowHeight = DirectoryTableCell.rowHeight
     tableView.estimatedRowHeight = DirectoryTableCell.rowHeight
@@ -76,8 +76,8 @@ class MusicFoldersVC: SingleFetchedResultsTableViewController<MusicFolderMO> {
   lazy var emptyContentConfig: UIContentUnavailableConfiguration = {
     var config = UIContentUnavailableConfiguration.empty()
     config.image = .folder
-    config.text = "No Directories"
-    config.secondaryText = "Your directories will appear here."
+    config.text = "No Directories".localized
+    config.secondaryText = "Your directories will appear here.".localized
     return config
   }()
 

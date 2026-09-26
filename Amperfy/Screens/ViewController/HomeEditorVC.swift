@@ -46,7 +46,7 @@ final class HomeEditorVC: UITableViewController {
       UIBarButtonItem(barButtonSystemItem: .done, target: self, action: #selector(doneTapped)),
     ]
     tableView.register(UITableViewCell.self, forCellReuseIdentifier: "cell")
-    title = "Home Preferences"
+    title = "Home Preferences".localized
     isEditing = true
   }
 
@@ -67,7 +67,7 @@ final class HomeEditorVC: UITableViewController {
     titleForHeaderInSection section: Int
   )
     -> String? {
-    section == 0 ? "Visible" : "Hidden"
+    section == 0 ? "Visible".localized : "Hidden".localized
   }
 
   override func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int {

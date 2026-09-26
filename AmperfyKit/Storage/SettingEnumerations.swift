@@ -36,11 +36,11 @@ public enum ArtworkDownloadSetting: Int, CaseIterable, Sendable, Codable {
   public var description: String {
     switch self {
     case .updateOncePerSession:
-      return "Download once per session (change detection)"
+      return "Download once per session (change detection)".localized
     case .onlyOnce:
-      return "Download only once"
+      return "Download only once".localized
     case .never:
-      return "Never"
+      return "Never".localized
     }
   }
 }
@@ -58,13 +58,13 @@ public enum ArtworkDisplayPreference: Int, CaseIterable, Sendable, Codable {
   public var description: String {
     switch self {
     case .id3TagOnly:
-      return "Only ID3 tag artworks"
+      return "Only ID3 tag artworks".localized
     case .serverArtworkOnly:
-      return "Only server artworks"
+      return "Only server artworks".localized
     case .preferServerArtwork:
-      return "Prefer server artwork over ID3 tag"
+      return "Prefer server artwork over ID3 tag".localized
     case .preferId3Tag:
-      return "Prefer ID3 tag over server artwork"
+      return "Prefer ID3 tag over server artwork".localized
     }
   }
 }
@@ -81,11 +81,11 @@ public enum ScreenLockPreventionPreference: Int, CaseIterable, Sendable, Codable
   public var description: String {
     switch self {
     case .always:
-      return "Always"
+      return "Always".localized
     case .never:
-      return "Never"
+      return "Never".localized
     case .onlyIfCharging:
-      return "When connected to charger"
+      return "When connected to charger".localized
     }
   }
 }
@@ -107,7 +107,7 @@ public enum StreamingMaxBitratePreference: Int, CaseIterable, Sendable, Codable 
   public var description: String {
     switch self {
     case .noLimit:
-      return "No Limit (default)"
+      return "No Limit (default)".localized
     default:
       return "\(rawValue) kbps"
     }
@@ -141,11 +141,11 @@ public enum StreamingFormatPreference: Int, CaseIterable, Sendable, Codable {
   public var description: String {
     switch self {
     case .mp3:
-      return "mp3 (default)"
+      return "mp3 (default)".localized
     case .raw:
-      return "Raw/Original"
+      return "Raw/Original".localized
     case .serverConfig:
-      return "Server chooses Codec"
+      return "Server chooses Codec".localized
     }
   }
 }
@@ -170,7 +170,7 @@ public struct EqualizerSetting: Hashable, Sendable, Codable {
   }
 
   public var description: String {
-    name
+    id == Self.off.id ? "Off".localized : name
   }
 
   public static let off: EqualizerSetting = .init(name: "Off", gains: Self.defaultGains)
@@ -217,10 +217,10 @@ public enum EqualizerPreset: Int, CaseIterable, Sendable, Codable {
 
   public var description: String {
     switch self {
-    case .off: return "Off"
-    case .increasedBass: return "Increased Bass"
-    case .reducedBass: return "Reduced Bass"
-    case .increasedTreble: return "Increased Treble"
+    case .off: return "Off".localized
+    case .increasedBass: return "Increased Bass".localized
+    case .reducedBass: return "Reduced Bass".localized
+    case .increasedTreble: return "Increased Treble".localized
     }
   }
 
@@ -250,11 +250,11 @@ public enum SyncCompletionStatus: Int, CaseIterable, Sendable, Codable {
   public var description: String {
     switch self {
     case .completed:
-      return "Completed"
+      return "Completed".localized
     case .skipped:
-      return "Skipped"
+      return "Skipped".localized
     case .aborted:
-      return "Aborted"
+      return "Aborted".localized
     }
   }
 }
@@ -274,17 +274,17 @@ public enum ThemePreference: Int, CaseIterable, Sendable, Codable {
   public var description: String {
     switch self {
     case .blue:
-      return "Blue"
+      return "Blue".localized
     case .green:
-      return "Green"
+      return "Green".localized
     case .red:
-      return "Red"
+      return "Red".localized
     case .yellow:
-      return "Yellow"
+      return "Yellow".localized
     case .orange:
-      return "Orange"
+      return "Orange".localized
     case .purple:
-      return "Purple"
+      return "Purple".localized
     }
   }
 
@@ -352,11 +352,11 @@ public enum CacheTranscodingFormatPreference: Int, CaseIterable, Sendable, Codab
   public var description: String {
     switch self {
     case .mp3:
-      return "mp3 (default)"
+      return "mp3 (default)".localized
     case .raw:
-      return "Raw/Original"
+      return "Raw/Original".localized
     case .serverConfig:
-      return "Server chooses Codec"
+      return "Server chooses Codec".localized
     }
   }
 }
@@ -373,10 +373,10 @@ public enum VisualizerType: String, CaseIterable, Sendable, Codable {
 
   public var displayName: String {
     switch self {
-    case .ring: return "Ring"
-    case .waveform: return "Waveform"
-    case .spectrumBars: return "Spectrum Bars"
-    case .generativeArt: return "Generative Art"
+    case .ring: return "Ring".localized
+    case .waveform: return "Waveform".localized
+    case .spectrumBars: return "Spectrum Bars".localized
+    case .generativeArt: return "Generative Art".localized
     }
   }
 

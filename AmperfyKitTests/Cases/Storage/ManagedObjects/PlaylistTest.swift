@@ -20,6 +20,7 @@
 //
 
 @testable import AmperfyKit
+import CoreData
 import XCTest
 
 @MainActor
@@ -56,6 +57,59 @@ class PlaylistTest: XCTestCase {
   }
 
   override func tearDown() {}
+
+  func testPlaylistCoverFallsBackToSongsAndSurvivesReload() throws {
+    XCTAssertNil(testPlaylist.getArtworkCollection(theme: .blue).serverArtwork)
+    XCTAssertNotNil(testPlaylist.getArtworkCollection(theme: .blue).singleImageEntity)
+    testPlaylist.id = "playlist-cover-test"
+    testPlaylist.updateServerArtwork(id: "pl-custom_hash")
+    library.saveContext()
+    let fetched = try XCTUnwrap(library.getPlaylist(for: account, id: testPlaylist.id))
+    XCTAssertEqual(fetched.getArtworkCollection(theme: .blue).serverArtwork?.id, "pl-custom_hash")
+    testPlaylist.updateServerArtwork(id: "")
+    XCTAssertNil(testPlaylist.getArtworkCollection(theme: .blue).serverArtwork)
+    XCTAssertNotNil(testPlaylist.getArtworkCollection(theme: .blue).singleImageEntity)
+  }
+
+  func testVersion49PlaylistMigratesWithoutLosingData() throws {
+    let folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: folder) }
+    let sourceURL = folder.appendingPathComponent("old.sqlite")
+    let destinationURL = folder.appendingPathComponent("new.sqlite")
+    let step = CoreDataMigrationStep(sourceVersion: .v49, destinationVersion: .v50)
+    let sourceCoordinator = NSPersistentStoreCoordinator(managedObjectModel: step.sourceModel)
+    let sourceStore = try sourceCoordinator.addPersistentStore(
+      ofType: NSSQLiteStoreType, configurationName: nil, at: sourceURL
+    )
+    let sourceContext = NSManagedObjectContext(concurrencyType: .mainQueueConcurrencyType)
+    sourceContext.persistentStoreCoordinator = sourceCoordinator
+    let oldPlaylist = NSEntityDescription.insertNewObject(forEntityName: "Playlist", into: sourceContext)
+    oldPlaylist.setValue("existing-playlist", forKey: "id")
+    oldPlaylist.setValue("我的歌单", forKey: "name")
+    oldPlaylist.setValue(12, forKey: "remoteSongCount")
+    try sourceContext.save()
+    try sourceCoordinator.remove(sourceStore)
+
+    let migration = NSMigrationManager(sourceModel: step.sourceModel, destinationModel: step.destinationModel)
+    try migration.migrateStore(
+      from: sourceURL, sourceType: NSSQLiteStoreType, options: nil,
+      with: step.mappingModel, toDestinationURL: destinationURL,
+      destinationType: NSSQLiteStoreType, destinationOptions: nil
+    )
+    let destinationCoordinator = NSPersistentStoreCoordinator(managedObjectModel: step.destinationModel)
+    let destinationStore = try destinationCoordinator.addPersistentStore(
+      ofType: NSSQLiteStoreType, configurationName: nil, at: destinationURL
+    )
+    let destinationContext = NSManagedObjectContext(concurrencyType: .mainQueueConcurrencyType)
+    destinationContext.persistentStoreCoordinator = destinationCoordinator
+    let migrated = try XCTUnwrap(destinationContext.fetch(PlaylistMO.fetchRequest()).first)
+    XCTAssertEqual(migrated.id, "existing-playlist")
+    XCTAssertEqual(migrated.name, "我的歌单")
+    XCTAssertEqual(migrated.remoteSongCount, 12)
+    XCTAssertNil(migrated.artwork)
+    try destinationCoordinator.remove(destinationStore)
+  }
 
   func resetTestPlaylist() {
     testPlaylist.removeAllItems()

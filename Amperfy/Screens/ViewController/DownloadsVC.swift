@@ -24,7 +24,7 @@ import Foundation
 import UIKit
 
 class DownloadsVC: SingleFetchedResultsTableViewController<DownloadMO> {
-  override var sceneTitle: String? { "Downloads" }
+  override var sceneTitle: String? { "Downloads".localized }
 
   private var fetchedResultsController: DownloadsFetchedResultsController!
   private var optionsButton: UIBarButtonItem!
@@ -65,21 +65,21 @@ class DownloadsVC: SingleFetchedResultsTableViewController<DownloadMO> {
 
   private func createActionButtonMenu() -> UIMenu {
     let clearFinishedDownloadsAction = UIAction(
-      title: "Clear finished downloads",
+      title: "Clear finished downloads".localized,
       image: UIImage.clear,
       handler: { _ in
         self.downloadManager.clearFinishedDownloads()
       }
     )
     let retryFailedDownloadsAction = UIAction(
-      title: "Retry failed downloads",
+      title: "Retry failed downloads".localized,
       image: UIImage.redo,
       handler: { _ in
         self.downloadManager.resetFailedDownloads()
       }
     )
     let cancelAllDownloadsAction = UIAction(
-      title: "Cancel all downloads",
+      title: "Cancel all downloads".localized,
       image: UIImage.cancleDownloads,
       handler: { _ in
         self.downloadManager.cancelDownloads()

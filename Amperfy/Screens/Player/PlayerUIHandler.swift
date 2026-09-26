@@ -120,7 +120,7 @@ class PlayerUIHandler: NSObject {
     button.setImage(buttonImg, for: UIControl.State.normal)
     button.configuration?.image = buttonImg
     button.accessibilityLabel = player.isPlaying ?
-      (player.isStopInsteadOfPause ? "Stop" : "Pause") : "Play"
+      (player.isStopInsteadOfPause ? "Stop".localized : "Pause".localized) : "Play".localized
   }
 
   func refreshSkipButtons(skipBackwardButton: UIButton, skipForwardButton: UIButton) {
@@ -186,8 +186,8 @@ class PlayerUIHandler: NSObject {
     nextButton.setImage(nextImg, for: UIControl.State.normal)
     nextButton.configuration?.image = nextImg
     previousButton.accessibilityLabel = player.playerMode == .podcast ?
-      "Back 15 seconds" : "Previous track"
-    nextButton.accessibilityLabel = player.playerMode == .podcast ? "Forward 30 seconds" : "Next track"
+      "Back 15 seconds".localized : "Previous track".localized
+    nextButton.accessibilityLabel = player.playerMode == .podcast ? "Forward 30 seconds".localized : "Next track".localized
   }
 
   func refreshRepeatButton(repeatButton: UIButton) {
@@ -296,7 +296,7 @@ class PlayerUIHandler: NSObject {
     menuCreateCB: @escaping () -> [UIMenuElement]
   ) {
     optionsButton?.showsMenuAsPrimaryAction = true
-    optionsButton?.menu = UIMenu.lazyMenu(title: "Player Options") {
+    optionsButton?.menu = UIMenu.lazyMenu(title: "Player Options".localized) {
       menuCreateCB()
     }
   }
@@ -334,9 +334,9 @@ class PlayerUIHandler: NSObject {
     } else {
       switch player.playerMode {
       case .music:
-        titleLabel.text = "No music playing"
+        titleLabel.text = "No music playing".localized
       case .podcast:
-        titleLabel.text = "No podcast playing"
+        titleLabel.text = "No podcast playing".localized
       }
       albumLabel?.text = ""
       albumButton?.isEnabled = false
@@ -532,8 +532,8 @@ class PlayerUIHandler: NSObject {
         case "MP3", "MPEG":
           contentFormatText = "MP3"
         default:
-          if format.contains("LOSSLESS") {
-            contentFormatText = "LOSSLESS"
+          if format.contains("LOSSLESS".localized) {
+            contentFormatText = "LOSSLESS".localized
           } else if format.hasPrefix("X-"), format.count > "X-".count {
             contentFormatText = String(format.dropFirst("X-".count))
           } else {

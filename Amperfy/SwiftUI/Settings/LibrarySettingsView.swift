@@ -129,7 +129,7 @@ struct LibrarySettingsView: View {
       }
 
       let curCacheSizeLimit = Int64(settings.cacheSizeLimit)
-      cacheSizeLimit = curCacheSizeLimit > 0 ? curCacheSizeLimit.asByteString : "No Limit"
+      cacheSizeLimit = curCacheSizeLimit > 0 ? curCacheSizeLimit.asByteString : "No Limit".localized
       cacheSelection = curCacheSizeLimit > 0 ? [
         curCacheSizeLimit.asByteString.components(separatedBy: " ")[0],
         " " + curCacheSizeLimit.asByteString.components(separatedBy: " ")[1]
@@ -143,25 +143,25 @@ struct LibrarySettingsView: View {
     ZStack {
       SettingsList {
         SettingsSection(content: {
-          SettingsRow(title: "Playlists") {
+          SettingsRow(title: "Playlists".localized) {
             SecondaryText(playlistCount.description)
           }
-          SettingsRow(title: "Artists") {
+          SettingsRow(title: "Artists".localized) {
             SecondaryText(artistCount.description)
           }
-          SettingsRow(title: "Albums") {
+          SettingsRow(title: "Albums".localized) {
             SecondaryText(albumCount.description)
           }
-          SettingsRow(title: "Songs") {
+          SettingsRow(title: "Songs".localized) {
             SecondaryText(songCount.description)
           }
-          SettingsRow(title: "Podcasts") {
+          SettingsRow(title: "Podcasts".localized) {
             SecondaryText(podcastCount.description)
           }
-          SettingsRow(title: "Podcast Episodes") {
+          SettingsRow(title: "Podcast Episodes".localized) {
             SecondaryText(podcastEpisodeCount.description)
           }
-          SettingsRow(title: "Initial Sync") {
+          SettingsRow(title: "Initial Sync".localized) {
             SecondaryText(
               appDelegate.storage.settings.accounts.getSetting(settings.activeAccountInfo).read
                 .initialSyncCompletionStatus.description
@@ -169,13 +169,13 @@ struct LibrarySettingsView: View {
           }
         })
 
-        let progressTitle = "Progress"
+        let progressTitle = "Progress".localized
 
         SettingsSection(content: {
           SettingsRow(title: progressTitle) {
             SecondaryText(autoSyncProgressText)
           }
-        }, header: "Background song sync")
+        }, header: "Background song sync".localized)
 
         SettingsSection(content: {
           let changeHandler: ([String], [String]) -> () = { oldCacheString, newCacheString in
@@ -188,11 +188,11 @@ struct LibrarySettingsView: View {
             }
           }
 
-          SettingsRow(title: "Cached Songs") { SecondaryText(cachedSongCount.description) }
-          SettingsRow(title: "Cached Podcast Episodes") {
+          SettingsRow(title: "Cached Songs".localized) { SecondaryText(cachedSongCount.description) }
+          SettingsRow(title: "Cached Podcast Episodes".localized) {
             SecondaryText(cachedPodcastEpisodesCount.description)
           }
-          SettingsRow(title: "Complete Cache Size") {
+          SettingsRow(title: "Complete Cache Size".localized) {
             SecondaryText(completeCacheSize.description)
           }
 
@@ -200,19 +200,19 @@ struct LibrarySettingsView: View {
             // We can not present the picker in wheel style on macOS. It is not supported.
             // Instead, we use a menu style picker without a navigation link.
             MultiPickerView(
-              data: [("Cache Size Limit", byteValues), ("", [" MB", " GB"])],
+              data: [("Cache Size Limit".localized, byteValues), ("", [" MB", " GB"])],
               selection: $cacheSelection
             )
             .onChange(of: cacheSelection, changeHandler)
           #else
             NavigationLink {
               MultiPickerView(
-                data: [("Size", byteValues), (" Bytes", [" MB", " GB"])],
+                data: [("Size".localized, byteValues), (" Bytes", [" MB", " GB"])],
                 selection: $cacheSelection
               )
-              .navigationTitle("Cache Size Limit")
+              .navigationTitle("Cache Size Limit".localized)
             } label: {
-              SettingsRow(title: "Cache Size Limit") {
+              SettingsRow(title: "Cache Size Limit".localized) {
                 SecondaryText(cacheSizeLimit.description)
               }
             }
@@ -220,16 +220,16 @@ struct LibrarySettingsView: View {
           #endif
 
           if let activeAccountInfo = settings.activeAccountInfo {
-            SettingsButtonRow(title: "Download all songs in library") {
+            SettingsButtonRow(title: "Download all songs in library".localized) {
               isShowDownloadSongsAlert = true
             }
             .alert(isPresented: $isShowDownloadSongsAlert) {
               Alert(
-                title: Text("Download all songs in library"),
+                title: Text("Download all songs in library".localized),
                 message: Text(
-                  "This will add all uncached songs in your library to the download queue. This may use a lot of data and storage. Continue?"
+                  "This will add all uncached songs in your library to the download queue. This may use a lot of data and storage. Continue?".localized
                 ),
-                primaryButton: .default(Text("OK")) {
+                primaryButton: .default(Text("OK".localized)) {
                   let account = appDelegate.storage.main.library
                     .getAccount(info: activeAccountInfo)
                   let allSongsToDownload = appDelegate.storage.main.library
@@ -242,17 +242,17 @@ struct LibrarySettingsView: View {
             }
 
             SettingsButtonRow(
-              title: "Delete downloaded songs and podcast episodes",
+              title: "Delete downloaded songs and podcast episodes".localized,
               actionType: .destructive
             ) {
               isShowDeleteCacheAlert = true
             }.alert(isPresented: $isShowDeleteCacheAlert) {
               Alert(
-                title: Text("Delete Cache"),
+                title: Text("Delete Cache".localized),
                 message: Text(
-                  "Are you sure you want to delete this account’s downloaded songs and podcast episodes?"
+                  "Are you sure you want to delete this account’s downloaded songs and podcast episodes?".localized
                 ),
-                primaryButton: .destructive(Text("Delete")) {
+                primaryButton: .destructive(Text("Delete".localized)) {
                   appDelegate.player.stop()
                   let account = appDelegate.storage.main.library
                     .getAccount(info: activeAccountInfo)
@@ -266,10 +266,10 @@ struct LibrarySettingsView: View {
               )
             }
           }
-        }, header: "Cache")
+        }, header: "Cache".localized)
       }
     }
-    .navigationTitle("Library")
+    .navigationTitle("Library".localized)
     .navigationBarTitleDisplayMode(.inline)
     .onAppear {
       updateValues()

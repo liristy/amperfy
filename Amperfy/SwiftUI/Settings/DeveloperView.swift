@@ -55,13 +55,13 @@ struct DeveloperView: View {
     ZStack {
       SettingsList {
         SettingsSection(content: {
-          SettingsButtonRow(title: "Generate Default Artworks") {
+          SettingsButtonRow(title: "Generate Default Artworks".localized) {
             generateDefaultArtworks()
           }
         })
       }
     }
-    .navigationTitle("Developer")
+    .navigationTitle("Developer".localized)
     .navigationBarTitleDisplayMode(.inline)
   }
 }

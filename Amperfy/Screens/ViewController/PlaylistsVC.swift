@@ -78,7 +78,7 @@ class PlaylistsDiffableDataSource: BasicUITableViewDiffableDataSource {
 // MARK: - PlaylistsVC
 
 class PlaylistsVC: SingleSnapshotFetchedResultsTableViewController<PlaylistMO> {
-  override var sceneTitle: String? { "Playlists" }
+  override var sceneTitle: String? { "Playlists".localized }
 
   private var fetchedResultsController: PlaylistFetchedResultsController!
   private var optionsButton: UIBarButtonItem!
@@ -124,15 +124,15 @@ class PlaylistsVC: SingleSnapshotFetchedResultsTableViewController<PlaylistMO> {
 
     var searchTiles: [String]? = nil
     if account.apiType.asServerApiType == .ampache {
-      searchTiles = ["All", "Cached", "User", "Smart"]
+      searchTiles = ["All".localized, "Cached".localized, "User".localized, "Smart".localized]
     } else if account.apiType.asServerApiType == .subsonic {
-      searchTiles = ["All", "Cached"]
+      searchTiles = ["All".localized, "Cached".localized]
     }
     configureSearchController(
       placeholder: "Search in \"Playlists\"",
       scopeButtonTitles: searchTiles
     )
-    setNavBarTitle(title: "Playlists")
+    setNavBarTitle(title: "Playlists".localized)
     tableView.register(nibName: PlaylistTableCell.typeName)
     tableView.rowHeight = PlaylistTableCell.rowHeight
     tableView.estimatedRowHeight = PlaylistTableCell.rowHeight
@@ -194,8 +194,8 @@ class PlaylistsVC: SingleSnapshotFetchedResultsTableViewController<PlaylistMO> {
   lazy var emptyContentConfig: UIContentUnavailableConfiguration = {
     var config = UIContentUnavailableConfiguration.empty()
     config.image = .playlist
-    config.text = "No Playlists"
-    config.secondaryText = "Your playlists will appear here."
+    config.text = "No Playlists".localized
+    config.secondaryText = "Your playlists will appear here.".localized
     return config
   }()
 
@@ -274,7 +274,7 @@ class PlaylistsVC: SingleSnapshotFetchedResultsTableViewController<PlaylistMO> {
 
   private func createSortButtonMenu() -> UIMenu {
     let sortByName = UIAction(
-      title: "Name",
+      title: "Name".localized,
       image: sortType == .name ? .check : nil,
       handler: { _ in
         self.change(sortType: .name)
@@ -287,7 +287,7 @@ class PlaylistsVC: SingleSnapshotFetchedResultsTableViewController<PlaylistMO> {
       }
     )
     let sortByLastTimePlayed = UIAction(
-      title: "Last time played",
+      title: "Last time played".localized,
       image: sortType == .lastPlayed ? .check : nil,
       handler: { _ in
         self.change(sortType: .lastPlayed)
@@ -300,7 +300,7 @@ class PlaylistsVC: SingleSnapshotFetchedResultsTableViewController<PlaylistMO> {
       }
     )
     let sortByChangeDate = UIAction(
-      title: "Change date",
+      title: "Change date".localized,
       image: sortType == .lastChanged ? .check : nil,
       handler: { _ in
         self.change(sortType: .lastChanged)
@@ -313,7 +313,7 @@ class PlaylistsVC: SingleSnapshotFetchedResultsTableViewController<PlaylistMO> {
       }
     )
     let sortByDuration = UIAction(
-      title: "Duration",
+      title: "Duration".localized,
       image: sortType == .duration ? .check : nil,
       handler: { _ in
         self.change(sortType: .duration)
@@ -326,7 +326,7 @@ class PlaylistsVC: SingleSnapshotFetchedResultsTableViewController<PlaylistMO> {
       }
     )
     return UIMenu(
-      title: "Sort",
+      title: "Sort".localized,
       image: .sort,
       options: [.displayInline],
       children: [sortByName, sortByLastTimePlayed, sortByChangeDate, sortByDuration]
@@ -334,7 +334,7 @@ class PlaylistsVC: SingleSnapshotFetchedResultsTableViewController<PlaylistMO> {
   }
 
   private func createOptionsButtonMenu() -> UIMenu {
-    let fetchAllPlaylists = UIAction(title: "Sync All Playlists", image: .refresh, handler: { _ in
+    let fetchAllPlaylists = UIAction(title: "Sync All Playlists".localized, image: .refresh, handler: { _ in
       Task { @MainActor in do {
         let accountObjectId = self.account.managedObject.objectID
         let playlistsIds = try await self.appDelegate.storage.async
@@ -358,15 +358,15 @@ class PlaylistsVC: SingleSnapshotFetchedResultsTableViewController<PlaylistMO> {
           )
         }
         self.appDelegate.eventLogger.info(
-          topic: "Sync All Playlists",
-          message: "All playlists have been synced."
+          topic: "Sync All Playlists".localized,
+          message: "All playlists have been synced.".localized
         )
       } catch {
-        self.appDelegate.eventLogger.report(topic: "Sync All Playlists", error: error)
+        self.appDelegate.eventLogger.report(topic: "Sync All Playlists".localized, error: error)
       }}
     })
     return UIMenu(
-      title: "Options",
+      title: "Options".localized,
       image: .sort,
       options: [.displayInline],
       children: [fetchAllPlaylists]

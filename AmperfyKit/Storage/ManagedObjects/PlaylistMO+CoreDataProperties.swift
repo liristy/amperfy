@@ -63,12 +63,15 @@ extension PlaylistMO {
   @NSManaged
   public var playersUserQueuePlaylist: PlayerMO?
   @NSManaged
+  public var artwork: ArtworkMO?
+  @NSManaged
   public var artworkItems: [PlaylistItemMO]
   @NSManaged
   public var searchHistory: SearchHistoryItemMO?
 
   static let relationshipKeyPathsForPrefetching = [
     #keyPath(PlaylistMO.artworkItems),
+    #keyPath(PlaylistMO.artwork),
   ]
 }
 

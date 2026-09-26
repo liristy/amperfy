@@ -65,7 +65,7 @@ extension UIViewController {
       let action = UIAction(
         title: appDelegate.storage.settings.accounts.getSetting(accountInfo).read
           .loginCredentials?
-          .username ?? "Unknown",
+          .username ?? "Unknown".localized,
         subtitle: appDelegate.storage.settings.accounts.getSetting(accountInfo).read
           .loginCredentials?
           .displayServerUrl ?? "",
@@ -88,7 +88,7 @@ extension UIViewController {
       let addAccountImage = UIImage.userCirclePlus
     #endif
     let openAddAccount = UIAction(
-      title: "Add Account",
+      title: "Add Account".localized,
       image: addAccountImage,
       handler: { _ in
         let loginVC = AppStoryboard.Main.segueToLogin()
@@ -97,7 +97,7 @@ extension UIViewController {
       }
     )
     let openSettings = UIAction(
-      title: "Settings",
+      title: "Settings".localized,
       image: .settings,
       handler: { _ in
         #if targetEnvironment(macCatalyst)

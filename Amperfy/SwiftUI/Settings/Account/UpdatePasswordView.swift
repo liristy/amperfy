@@ -53,7 +53,7 @@ struct UpdatePasswordView: View {
           .getSetting(activeAccountInfo).read
           .loginCredentials,
           !newPassword.isEmpty else {
-      errorMsg = "Please provide the new password."
+      errorMsg = "Please provide the new password.".localized
       return
     }
     isValidating = true
@@ -67,9 +67,9 @@ struct UpdatePasswordView: View {
         }
         appDelegate.getMeta(activeAccountInfo).backendApi
           .provideCredentials(credentials: loginCredentials)
-        successMsg = "Password updated!"
+        successMsg = "Password updated!".localized
       } catch {
-        errorMsg = "Authentication failed! Password has not been updated."
+        errorMsg = "Authentication failed! Password has not been updated.".localized
       }
       isValidating = false
     }
@@ -81,7 +81,7 @@ struct UpdatePasswordView: View {
         Section {
           VStack {
             VStack(spacing: 20) {
-              Text("Update Password").font(.title2).fontWeight(.bold).padding(.all, 10)
+              Text("Update Password".localized).font(.title2).fontWeight(.bold).padding(.all, 10)
 
               if !successMsg.isEmpty {
                 InfoBannerView(message: successMsg, color: .success)
@@ -90,11 +90,11 @@ struct UpdatePasswordView: View {
                 InfoBannerView(message: errorMsg, color: .error)
               }
               if isValidating {
-                ProgressView("Please wait...")
+                ProgressView("Please wait...".localized)
               }
 
               VStack(spacing: 5) {
-                SecureField("Change account password...", text: $passwordInput)
+                SecureField("Change account password...".localized, text: $passwordInput)
                   .textFieldStyle(.roundedBorder)
               }
             }
@@ -103,7 +103,7 @@ struct UpdatePasswordView: View {
               Button(action: { isVisible = false }) {
                 HStack {
                   Spacer()
-                  Text("Cancel")
+                  Text("Cancel".localized)
                     .fontWeight(.semibold)
                   Spacer()
                 }
@@ -113,7 +113,7 @@ struct UpdatePasswordView: View {
               Button(action: { updatePassword() }) {
                 HStack {
                   Spacer()
-                  Text("OK")
+                  Text("OK".localized)
                   Spacer()
                 }
               }

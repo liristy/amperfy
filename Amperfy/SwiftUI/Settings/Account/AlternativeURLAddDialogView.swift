@@ -69,17 +69,17 @@ struct AlternativeURLAddDialogView: View {
           .getSetting(settings.activeAccountInfo).read
           .loginCredentials
     else {
-      errorMsg = "Inputs are not valid."
+      errorMsg = "Inputs are not valid.".localized
       return
     }
 
     guard !serverURLs.contains(where: { $0 == newAltUrl }) else {
-      errorMsg = "Provided URL is already in URLs list."
+      errorMsg = "Provided URL is already in URLs list.".localized
       return
     }
 
     guard newAltUrl.isHyperTextProtocolProvided else {
-      errorMsg = "Please provide either 'https://' or 'http://' in your server URL."
+      errorMsg = "Please provide either 'https://' or 'http://' in your server URL.".localized
       return
     }
 
@@ -100,10 +100,10 @@ struct AlternativeURLAddDialogView: View {
           .provideCredentials(credentials: credentialsToCheck)
         activeServerURL = credentialsToCheck.activeBackendServerUrl
         serverURLs = credentialsToCheck.availableServerURLs
-        successMsg = "Alternative URL added."
+        successMsg = "Alternative URL added.".localized
       } catch {
         errorMsg =
-          "Alternative URL could not be verified! Authentication failed! Alternative URL has not been added."
+          "Alternative URL could not be verified! Authentication failed! Alternative URL has not been added.".localized
       }
       isValidating = false
     }
@@ -115,10 +115,10 @@ struct AlternativeURLAddDialogView: View {
         Section {
           VStack {
             VStack(spacing: 20) {
-              Text("Add alternative URL").font(.title2).fontWeight(.bold).padding(.all, 10)
+              Text("Add alternative URL".localized).font(.title2).fontWeight(.bold).padding(.all, 10)
 
               Text(
-                "The URL must reach the same server. Otherwise library inconsistencies will occur."
+                "The URL must reach the same server. Otherwise library inconsistencies will occur.".localized
               )
 
               if !successMsg.isEmpty {
@@ -128,7 +128,7 @@ struct AlternativeURLAddDialogView: View {
                 InfoBannerView(message: errorMsg, color: .error)
               }
               if isValidating {
-                ProgressView("Please wait...")
+                ProgressView("Please wait...".localized)
               }
 
               VStack(spacing: 5) {
@@ -142,7 +142,7 @@ struct AlternativeURLAddDialogView: View {
                 )
                 .disabled(true)
                 .textFieldStyle(.roundedBorder)
-                SecureField("Password", text: $passwordInput)
+                SecureField("Password".localized, text: $passwordInput)
                   .textFieldStyle(.roundedBorder)
               }
             }
@@ -151,7 +151,7 @@ struct AlternativeURLAddDialogView: View {
               Button(action: { isVisible = false }) {
                 HStack {
                   Spacer()
-                  Text("Cancel")
+                  Text("Cancel".localized)
                     .fontWeight(.semibold)
                   Spacer()
                 }
@@ -161,7 +161,7 @@ struct AlternativeURLAddDialogView: View {
               Button(action: { handleAdd() }) {
                 HStack {
                   Spacer()
-                  Text("Add")
+                  Text("Add".localized)
                   Spacer()
                 }
               }

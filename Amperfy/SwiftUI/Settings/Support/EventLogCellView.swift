@@ -52,7 +52,7 @@ struct EventLogCellView: View {
       Button(action: {
         UIPasteboard.general.string = entry.message
       }) {
-        Text("Copy to Clipboard")
+        Text("Copy to Clipboard".localized)
         Image(uiImage: .clipboard)
       }
     }

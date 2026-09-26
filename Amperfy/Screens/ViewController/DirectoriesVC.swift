@@ -58,8 +58,8 @@ class DirectoriesVC: MultiSourceTableViewController {
     songsFetchedResultsController.delegate = self
 
     configureSearchController(
-      placeholder: "Directories and Songs",
-      scopeButtonTitles: ["All", "Cached"]
+      placeholder: "Directories and Songs".localized,
+      scopeButtonTitles: ["All".localized, "Cached".localized]
     )
     setNavBarTitle(title: directory.name)
     tableView.register(nibName: DirectoryTableCell.typeName)
@@ -72,7 +72,7 @@ class DirectoriesVC: MultiSourceTableViewController {
 
     let playShuffleInfoConfig = PlayShuffleInfoConfiguration(
       infoCB: {
-        "\(self.songsFetchedResultsController.fetchedObjects?.count ?? 0) Song\((self.songsFetchedResultsController.fetchedObjects?.count) == 1 ? "" : "s")"
+        CommonString.songs(self.songsFetchedResultsController.fetchedObjects?.count ?? 0)
       },
       playContextCb: { () in PlayContext(
         containable: self.directory,
@@ -185,8 +185,8 @@ class DirectoriesVC: MultiSourceTableViewController {
   lazy var emptyContentConfig: UIContentUnavailableConfiguration = {
     var config = UIContentUnavailableConfiguration.empty()
     config.image = .folder
-    config.text = "No Directories or Songs"
-    config.secondaryText = "Your directories and songs will appear here."
+    config.text = "No Directories or Songs".localized
+    config.secondaryText = "Your directories and songs will appear here.".localized
     return config
   }()
 

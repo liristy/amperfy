@@ -98,6 +98,8 @@ class SsPlaylistSongsParserTest: AbstractSsParserTest {
   }
 
   override func checkCorrectParsing() {
+    XCTAssertEqual(playlist.artwork?.id, "pl-15")
+    XCTAssertEqual(playlist.artwork?.account?.info, account.info)
     library.saveContext()
 
     prefetchIdTester.checkPrefetchIdCounts(
@@ -106,7 +108,7 @@ class SsPlaylistSongsParserTest: AbstractSsParserTest {
       artistCount: 5,
       albumCount: 6,
       songCount: 6,
-      artworkFetchCount: 6, // the playlist cover itself is not created
+      artworkFetchCount: 7, // includes the server playlist cover
       songLibraryCount: 6 + createdSongCount
     )
 

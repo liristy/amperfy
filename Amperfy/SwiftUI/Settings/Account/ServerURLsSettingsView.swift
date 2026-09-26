@@ -121,7 +121,7 @@ struct ServerURLsSettingsView: View {
         serverURLs: $serverURLs
       )
     }
-    .navigationTitle("Server URLs")
+    .navigationTitle("Server URLs".localized)
     .toolbar {
       ToolbarItemGroup(placement: .navigationBarTrailing) {
         EditButton()

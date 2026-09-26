@@ -57,7 +57,7 @@ class TabBarVC: UITabBarController {
     homeTab = UITab(
       title: TabNavigatorItem.home.title,
       image: TabNavigatorItem.home.icon,
-      identifier: "Tabs.\(TabNavigatorItem.home.title)"
+      identifier: "Tabs.Home"
     ) { _ in
       UINavigationController(
         rootViewController: TabNavigatorItem.home
@@ -74,7 +74,7 @@ class TabBarVC: UITabBarController {
         let tab = UITab(
           title: item.displayName,
           image: item.image,
-          identifier: "Tabs.\(item.displayName)"
+          identifier: "Tabs.Library.\(item.rawValue)"
         ) { tab in
           item.controller(account: self.account, settings: self.appDelegate.storage.settings)
         }
@@ -90,7 +90,7 @@ class TabBarVC: UITabBarController {
         let tab = UITab(
           title: item.displayName,
           image: item.image,
-          identifier: "Tabs.\(item.displayName)"
+          identifier: "Tabs.Library.\(item.rawValue)"
         ) { tab in
           item.controller(account: self.account, settings: self.appDelegate.storage.settings)
         }
@@ -101,7 +101,7 @@ class TabBarVC: UITabBarController {
     libraryTabs.append(contentsOf: libraryTabsHidden)
 
     libraryGroup = UITabGroup(
-      title: "Library",
+      title: "Library".localized,
       image: .musicLibrary,
       identifier: "Tabs.Library",
       children: libraryTabs
@@ -150,7 +150,7 @@ class TabBarVC: UITabBarController {
     )
 
     if appDelegate.storage.settings.user.isOfflineMode {
-      appDelegate.eventLogger.info(topic: "Reminder", message: "Offline Mode is active.")
+      appDelegate.eventLogger.info(topic: "Reminder".localized, message: "Offline Mode is active.".localized)
     }
   }
 
@@ -226,7 +226,7 @@ class TabBarVC: UITabBarController {
     guard let libraryGroup else { return }
     let config = appDelegate.storage.settings.accounts.getSetting(account.info).read
       .libraryDisplaySettings
-    libraryGroup.displayOrderIdentifiers = config.inUse.compactMap { "Tabs.\($0.displayName)" }
+    libraryGroup.displayOrderIdentifiers = config.inUse.compactMap { "Tabs.Library.\($0.rawValue)" }
     for tab in libraryGroup.displayOrder {
       guard let item = LibraryDisplayType.createByDisplayName(name: tab.title) else { continue }
       if let _ = config.inUse.first(where: { $0 == item }) {

@@ -359,10 +359,10 @@ class BasicTableViewController: KeyCommandTableViewController {
         case .removeFromCache:
           let alert = UIAlertController(
             title: nil,
-            message: "Are you sure to delete the cached file\(actionContext.playables.count > 1 ? "s" : "")?",
+            message: "Are you sure to delete the cached files?".localized,
             preferredStyle: .alert
           )
-          alert.addAction(UIAlertAction(title: "Delete", style: .destructive, handler: { _ in
+          alert.addAction(UIAlertAction(title: "Delete".localized, style: .destructive, handler: { _ in
             if let account = actionContext.containable.account {
               self.appDelegate.getMeta(account.info).playableDownloadManager
                 .removeFinishedDownload(for: actionContext.playables)
@@ -373,7 +373,7 @@ class BasicTableViewController: KeyCommandTableViewController {
               cell.refresh()
             }
           }))
-          alert.addAction(UIAlertAction(title: "Cancel", style: .cancel, handler: { _ in
+          alert.addAction(UIAlertAction(title: "Cancel".localized, style: .cancel, handler: { _ in
             // do nothing
           }))
           self.present(alert, animated: true, completion: nil)
@@ -419,7 +419,7 @@ class BasicTableViewController: KeyCommandTableViewController {
                   )
               }
             } catch {
-              self.appDelegate.eventLogger.report(topic: "Toggle Favorite", error: error)
+              self.appDelegate.eventLogger.report(topic: "Toggle Favorite".localized, error: error)
             }
             if let cell = self.tableView.cellForRow(at: indexPath) as? PlayableTableCell {
               cell.refresh()

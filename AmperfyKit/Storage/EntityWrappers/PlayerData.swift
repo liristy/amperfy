@@ -93,15 +93,15 @@ public enum PlayerMode: Int16 {
 
   public var description: String {
     switch self {
-    case .music: "Music"
-    case .podcast: "Podcast"
+    case .music: "Music".localized
+    case .podcast: "Podcast".localized
     }
   }
 
   public var playableName: String {
     switch self {
-    case .music: "Song"
-    case .podcast: "Podcast Episode"
+    case .music: "Song".localized
+    case .podcast: "Podcast Episode".localized
     }
   }
 }
@@ -342,7 +342,7 @@ extension PlayerData: PlayerQueuesPersistent {
     case .music:
       return contextPlaylist.name
     case .podcast:
-      return "Podcasts"
+      return "Podcasts".localized
     }
   }
 

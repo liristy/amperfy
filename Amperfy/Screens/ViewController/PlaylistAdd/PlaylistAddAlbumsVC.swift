@@ -91,8 +91,8 @@ class PlaylistAddAlbumsVC: SingleSnapshotFetchedResultsTableViewController<Album
 
     common.applyFilter()
     configureSearchController(
-      placeholder: "Search in \"\(common.filterTitle)\"",
-      scopeButtonTitles: ["All", "Cached"]
+      placeholder: "Search in \"%@\"".localizedFormat(common.filterTitle),
+      scopeButtonTitles: ["All".localized, "Cached".localized]
     )
     tableView.register(nibName: GenericTableCell.typeName)
     tableView.rowHeight = GenericTableCell.rowHeight

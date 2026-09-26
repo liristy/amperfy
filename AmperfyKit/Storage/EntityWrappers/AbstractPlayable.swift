@@ -97,16 +97,16 @@ public class AbstractPlayable: AbstractLibraryEntity, Downloadable {
   public var creatorName: String {
     switch derivedType {
     case .song:
-      return asSong?.creatorName ?? "Unknown"
+      return asSong?.creatorName ?? "Unknown".localized
     case .podcastEpisode:
-      return asPodcastEpisode?.creatorName ?? "Unknown"
+      return asPodcastEpisode?.creatorName ?? "Unknown".localized
     case .radio:
       return ""
     }
   }
 
   public var title: String {
-    get { playableManagedObject.title ?? "Unknown Title" }
+    get { playableManagedObject.title ?? "Unknown Title".localized }
     set {
       if playableManagedObject.title != newValue {
         playableManagedObject.title = newValue

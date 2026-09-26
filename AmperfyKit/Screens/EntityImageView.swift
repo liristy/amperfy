@@ -123,7 +123,9 @@ open class EntityImageView: UIView {
     quadImages.forEach { $0.isHidden = true }
     singleImage.isHidden = false
 
-    if let quadEntities = collection.quadImageEntity {
+    if let artwork = collection.serverArtwork {
+      singleImage.displayAndUpdate(artwork: artwork, fallback: collection.defaultArtworkType)
+    } else if let quadEntities = collection.quadImageEntity {
       if quadEntities.count > 1 {
         // check if all images are the same
         if Set(quadEntities.compactMap { $0.artwork?.id }).count == 1 {
@@ -136,7 +138,7 @@ open class EntityImageView: UIView {
           }
           for (index, entity) in quadEntities.enumerated() {
             guard index < quadImages.count else { break }
-            quadImages[index].display(entity: entity)
+            quadImages[index].displayAndUpdate(entity: entity)
           }
         }
       } else if let firstEntity = quadEntities.first {

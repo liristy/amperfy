@@ -65,6 +65,7 @@ class SsPlaylistSongsParserDelegate: SsSongParserDelegate {
     if elementName == "playlist" {
       guard let playlistId = attributeDict["id"] else { return }
       playlistHasBeenDetected = true
+      playlist.updateServerArtwork(id: attributeDict["coverArt"])
       if playlist.id != playlistId {
         playlist.id = playlistId
       }

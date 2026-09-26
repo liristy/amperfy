@@ -79,14 +79,14 @@ extension Directory: PlayableContainable {
     }
 
     if songCount == 1 {
-      infoContent.append("1 Song")
+      infoContent.append(CommonString.songs(1))
     } else if songCount > 1 {
-      infoContent.append("\(songCount) Songs")
+      infoContent.append(CommonString.songs(songCount))
     }
 
     if details.type == .long {
       if isCached {
-        infoContent.append("Cached")
+        infoContent.append("Cached".localized)
       }
       if details.isShowDetailedInfo {
         infoContent.append("ID: \(!id.isEmpty ? id : "-")")

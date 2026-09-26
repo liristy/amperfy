@@ -81,27 +81,27 @@ struct ArtworkSettingsView: View {
     ZStack {
       SettingsList {
         SettingsSection {
-          SettingsRow(title: "Artworks") {
+          SettingsRow(title: "Artworks".localized) {
             SecondaryText(artworkCountText)
           }
-          SettingsRow(title: "Not checked Artworks") {
+          SettingsRow(title: "Not checked Artworks".localized) {
             SecondaryText(artworkNotCheckedCountText)
           }
-          SettingsRow(title: "Cached Artworks") {
+          SettingsRow(title: "Cached Artworks".localized) {
             SecondaryText(cachedArtworksCountText)
           }
 
           if let activeAccountInfo = settings.activeAccountInfo {
-            SettingsButtonRow(title: "Download all artworks in library") {
+            SettingsButtonRow(title: "Download all artworks in library".localized) {
               isShowDownloadArtworksAlert = true
             }
             .alert(isPresented: $isShowDownloadArtworksAlert) {
               Alert(
-                title: Text("Download all artworks in library"),
+                title: Text("Download all artworks in library".localized),
                 message: Text(
-                  "This action will add all uncached artworks to the download queue. With this action a lot network traffic can be generated and device storage capacity will be taken. Continue?"
+                  "This action will add all uncached artworks to the download queue. With this action a lot network traffic can be generated and device storage capacity will be taken. Continue?".localized
                 ),
-                primaryButton: .default(Text("OK")) {
+                primaryButton: .default(Text("OK".localized)) {
                   let account = appDelegate.storage.main.library
                     .getAccount(info: activeAccountInfo)
                   let allArtworksToDownload = appDelegate.storage.main.library
@@ -112,16 +112,16 @@ struct ArtworkSettingsView: View {
                 secondaryButton: .cancel()
               )
             }
-            SettingsButtonRow(title: "Delete all downloaded artworks", actionType: .destructive) {
+            SettingsButtonRow(title: "Delete all downloaded artworks".localized, actionType: .destructive) {
               isShowDeleteArtworksAlert = true
             }
             .alert(isPresented: $isShowDeleteArtworksAlert) {
               Alert(
-                title: Text("Delete all downloaded artworks"),
+                title: Text("Delete all downloaded artworks".localized),
                 message: Text(
-                  "This action will delete downloaded artworks. Artworks embedded in song/podcast episode files will be kept. Continue?"
+                  "This action will delete downloaded artworks. Artworks embedded in song/podcast episode files will be kept. Continue?".localized
                 ),
-                primaryButton: .destructive(Text("Delete")) {
+                primaryButton: .destructive(Text("Delete".localized)) {
                   let account = appDelegate.storage.main.library
                     .getAccount(info: activeAccountInfo)
                   appDelegate.getMeta(activeAccountInfo).artworkDownloadManager.stop()
@@ -142,15 +142,15 @@ struct ArtworkSettingsView: View {
         }
         SettingsSection {
           NavigationLink(destination: ArtworkDownloadSettingsView()) {
-            Text("Artwork Download Settings")
+            Text("Artwork Download Settings".localized)
           }
           NavigationLink(destination: ArtworkDisplaySettings()) {
-            Text("Artwork Display Settings")
+            Text("Artwork Display Settings".localized)
           }
         }
       }
     }
-    .navigationTitle("Artwork")
+    .navigationTitle("Artwork".localized)
     .navigationBarTitleDisplayMode(.inline)
     .onAppear {
       updateValues()

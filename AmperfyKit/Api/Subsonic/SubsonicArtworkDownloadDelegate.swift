@@ -21,6 +21,7 @@
 
 import CoreData
 import Foundation
+import ImageIO
 import os.log
 import UIKit
 
@@ -76,14 +77,25 @@ final class SubsonicArtworkDownloadDelegate: DownloadManagerDelegate {
         data: nil
       )
     }
-    guard let data = fileManager.getFileDataIfNotToBig(
+    if let data = fileManager.getFileDataIfNotToBig(
       url: fileURL,
       maxFileSize: Self.maxFileSizeOfErrorResponse
-    ) else { return nil }
-    return subsonicServerApi.checkForErrorResponse(response: APIDataResponse(
-      data: data,
-      url: downloadURL
-    ))
+    ), let error = subsonicServerApi.checkForErrorResponse(response: APIDataResponse(
+      data: data, url: downloadURL
+    )) {
+      return error
+    }
+    // A proxy login/error page can be larger than a Subsonic XML error response.
+    guard let source = CGImageSourceCreateWithURL(fileURL as CFURL, nil),
+          CGImageSourceGetCount(source) > 0 else {
+      return ResponseError(
+        type: .api,
+        message: "The server did not return a readable cover image.",
+        cleansedURL: downloadURL?.asCleansedURL(cleanser: subsonicServerApi),
+        data: nil
+      )
+    }
+    return nil
   }
 
   func completedDownload(
@@ -107,7 +119,7 @@ final class SubsonicArtworkDownloadDelegate: DownloadManagerDelegate {
         managedObject: asyncCompanion.context
           .object(with: downloadInfo.objectId) as! ArtworkMO
       )
-      artwork.status = .CustomImage
+      artwork.status = relFilePath == nil ? .FetchError : .CustomImage
       artwork.relFilePath = relFilePath
     }
   }

@@ -129,7 +129,7 @@ class PopupPlayerVC: UIViewController, UIScrollViewDelegate {
         height: ContextQueuePrevSectionHeader.frameHeight
       )) {
       contextPrevQueueSectionHeader = sectionView
-      contextPrevQueueSectionHeader?.display(name: "Previous")
+      contextPrevQueueSectionHeader?.display(name: "Previous".localized)
     }
     if let sectionView = ViewCreator<UserQueueSectionHeader>.createFromNib(withinFixedFrame: CGRect(
       x: 0,
@@ -138,7 +138,7 @@ class PopupPlayerVC: UIViewController, UIScrollViewDelegate {
       height: UserQueueSectionHeader.frameHeight
     )) {
       userQueueSectionHeader = sectionView
-      userQueueSectionHeader?.display(name: "Next from Queue", buttonPressAction: clearUserQueue)
+      userQueueSectionHeader?.display(name: "Next from Queue".localized, buttonPressAction: clearUserQueue)
     }
     if let sectionView = ViewCreator<ContextQueueNextSectionHeader>
       .createFromNib(withinFixedFrame: CGRect(
@@ -270,7 +270,7 @@ class PopupPlayerVC: UIViewController, UIScrollViewDelegate {
       try await self.appDelegate.getMeta(account.info).librarySyncer.sync(song: song)
       self.refreshCurrentlyPlayingInfoView()
     } catch {
-      self.appDelegate.eventLogger.report(topic: "Song Info", error: error)
+      self.appDelegate.eventLogger.report(topic: "Song Info".localized, error: error)
     }}
   }
 
@@ -300,7 +300,7 @@ class PopupPlayerVC: UIViewController, UIScrollViewDelegate {
                   .librarySyncer
               )
           } catch {
-            self.appDelegate.eventLogger.report(topic: "Toggle Favorite", error: error)
+            self.appDelegate.eventLogger.report(topic: "Toggle Favorite".localized, error: error)
           }
           self.refresh()
         }

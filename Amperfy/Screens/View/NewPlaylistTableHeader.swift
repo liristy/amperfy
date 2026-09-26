@@ -32,6 +32,12 @@ class NewPlaylistTableHeader: UIView {
 
   var account: Account!
 
+  override func awakeFromNib() {
+    super.awakeFromNib()
+    nameTextField.placeholder = "New playlist name".localized
+    subviews.compactMap { $0 as? UIButton }.first?.setTitle("Create".localized, for: .normal)
+  }
+
   static let frameHeight: CGFloat = 30.0 + margin.top + margin.bottom
   static let margin = UIEdgeInsets(
     top: 10,

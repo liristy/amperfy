@@ -24,7 +24,7 @@ import CoreData
 import UIKit
 
 class PodcastsVC: MultiSourceTableViewController {
-  override var sceneTitle: String? { "Podcasts" }
+  override var sceneTitle: String? { "Podcasts".localized }
 
   private var podcastsFetchedResultsController: PodcastFetchedResultsController!
   private var episodesFetchedResultsController: PodcastEpisodesReleaseDateFetchedResultsController!
@@ -56,9 +56,9 @@ class PodcastsVC: MultiSourceTableViewController {
 
     configureSearchController(
       placeholder: "Search in \"Podcasts\"",
-      scopeButtonTitles: ["All", "Cached"]
+      scopeButtonTitles: ["All".localized, "Cached".localized]
     )
-    setNavBarTitle(title: "Podcasts")
+    setNavBarTitle(title: "Podcasts".localized)
     tableView.register(nibName: GenericTableCell.typeName)
     tableView.register(nibName: PodcastEpisodeTableCell.typeName)
     tableView.sectionHeaderHeight = 0.0
@@ -144,16 +144,16 @@ class PodcastsVC: MultiSourceTableViewController {
   lazy var emptyPodcastConfig: UIContentUnavailableConfiguration = {
     var config = UIContentUnavailableConfiguration.empty()
     config.image = .podcast
-    config.text = "No Podcasts"
-    config.secondaryText = "Your podcasts will appear here."
+    config.text = "No Podcasts".localized
+    config.secondaryText = "Your podcasts will appear here.".localized
     return config
   }()
 
   lazy var emptyEpisodeConfig: UIContentUnavailableConfiguration = {
     var config = UIContentUnavailableConfiguration.empty()
     config.image = .podcastEpisode
-    config.text = "No Podcast Episodes"
-    config.secondaryText = "Your podcast episodes will appear here."
+    config.text = "No Podcast Episodes".localized
+    config.secondaryText = "Your podcast episodes will appear here.".localized
     return config
   }()
 
@@ -313,7 +313,7 @@ class PodcastsVC: MultiSourceTableViewController {
 
   private func createSortButtonMenu() -> UIMenu {
     let podcastsSortByName = UIAction(
-      title: "Podcasts sorted by name",
+      title: "Podcasts sorted by name".localized,
       image: showType == .podcasts ? .check : nil,
       handler: { _ in
         self.showType = .podcasts
@@ -327,7 +327,7 @@ class PodcastsVC: MultiSourceTableViewController {
       }
     )
     let episodesSortByReleaseDate = UIAction(
-      title: "Episodes sorted by release date",
+      title: "Episodes sorted by release date".localized,
       image: showType == .episodesSortedByReleaseDate ? .check : nil,
       handler: { _ in
         self.showType = .episodesSortedByReleaseDate

@@ -107,7 +107,7 @@ public class Song: AbstractPlayable, Identifyable {
   }
 
   override public var creatorName: String {
-    artist?.name ?? "Unknown Artist"
+    artist?.name ?? "Unknown Artist".localized
   }
 
   public var detailInfo: String {

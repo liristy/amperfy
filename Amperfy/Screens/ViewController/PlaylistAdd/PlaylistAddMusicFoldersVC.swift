@@ -25,7 +25,7 @@ import UIKit
 
 class PlaylistAddMusicFoldersVC: SingleFetchedResultsTableViewController<MusicFolderMO>,
   PlaylistVCAddable {
-  override var sceneTitle: String? { "Directories" }
+  override var sceneTitle: String? { "Directories".localized }
 
   public var addToPlaylistManager = AddToPlaylistManager()
 

@@ -18,6 +18,7 @@
 //  You should have received a copy of the GNU General Public License
 //  along with this program.  If not, see <http://www.gnu.org/licenses/>.
 //
+import AmperfyKit
 import SwiftUI
 
 @MainActor
@@ -60,19 +61,19 @@ enum NavigationTarget: String, CaseIterable, @MainActor Identifiable {
 
   var displayName: String {
     switch self {
-    case .general: "General"
-    case .displayAndInteraction: "Display & Interaction"
-    case .account: "Account"
-    case .library: "Library"
-    case .swipe: "Swipe"
-    case .artwork: "Artwork"
-    case .support: "Support"
-    case .license: "License"
-    case .equalizer: "Equalizer"
-    case .player: "Player, Stream & Scrobble"
-    case .xcallback: "X-Callback-URL Documentation"
+    case .general: "General".localized
+    case .displayAndInteraction: "Display & Interaction".localized
+    case .account: "Account".localized
+    case .library: "Library".localized
+    case .swipe: "Swipe".localized
+    case .artwork: "Artwork".localized
+    case .support: "Support".localized
+    case .license: "License".localized
+    case .equalizer: "Equalizer".localized
+    case .player: "Player, Stream & Scrobble".localized
+    case .xcallback: "X-Callback-URL Documentation".localized
     #if DEBUG
-      case .developer: "Developer"
+      case .developer: "Developer".localized
     #endif
     }
   }

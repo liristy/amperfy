@@ -118,7 +118,7 @@ class LoginVC: UIViewController {
   fileprivate lazy var usernameTF: UITextField = {
     let textField = UITextField()
     textField.configuteForLogin(image: .userPerson)
-    textField.placeholder = "Username"
+    textField.placeholder = "Username".localized
     textField.textContentType = .username
     textField.keyboardType = .default
     textField.autocorrectionType = .no
@@ -140,7 +140,7 @@ class LoginVC: UIViewController {
   fileprivate lazy var passwordTF: UITextField = {
     let textField = UITextField()
     textField.configuteForLogin(image: .password)
-    textField.placeholder = "Password"
+    textField.placeholder = "Password".localized
     textField.textContentType = .password
     textField.keyboardType = .default
     textField.isSecureTextEntry = true
@@ -173,8 +173,8 @@ class LoginVC: UIViewController {
     config.image = .login
     config.imagePadding = 20.0
     let button = UIButton(configuration: config)
-    button.setTitle("Login", for: .normal)
-    button.accessibilityLabel = "Login"
+    button.setTitle("Login".localized, for: .normal)
+    button.accessibilityLabel = "Login".localized
     button.addTarget(self, action: #selector(Self.loginPressed), for: .touchUpInside)
     button.preferredBehavioralStyle = .pad
     return button
@@ -183,8 +183,8 @@ class LoginVC: UIViewController {
   fileprivate lazy var httpHeadersButton: UIButton = {
     var config = UIButton.Configuration.glass()
     let button = UIButton(configuration: config)
-    button.setTitle("Custom HTTP Headers", for: .normal)
-    button.accessibilityLabel = "Custom HTTP Headers"
+    button.setTitle("Custom HTTP Headers".localized, for: .normal)
+    button.accessibilityLabel = "Custom HTTP Headers".localized
     button.addTarget(self, action: #selector(Self.httpHeadersPressed), for: .touchUpInside)
     button.preferredBehavioralStyle = .pad
     return button
@@ -206,7 +206,7 @@ class LoginVC: UIViewController {
     config.image = .xmark
     config.imagePadding = 20.0
     let button = UIButton(configuration: config)
-    button.accessibilityLabel = "Close"
+    button.accessibilityLabel = "Close".localized
     button.addTarget(self, action: #selector(Self.closePressed), for: .touchUpInside)
     button.preferredBehavioralStyle = .pad
     button.isHidden = true
@@ -409,19 +409,19 @@ class LoginVC: UIViewController {
   func login() {
     guard let serverUrl = serverUrlTF.text?.trimmingCharacters(in: .whitespacesAndNewlines),
           !serverUrl.isEmpty else {
-      showErrorMsg(message: "No server URL given!")
+      showErrorMsg(message: "No server URL given!".localized)
       return
     }
     guard serverUrl.isHyperTextProtocolProvided else {
-      showErrorMsg(message: "Please provide either 'https://' or 'http://' in your server URL.")
+      showErrorMsg(message: "Please provide either 'https://' or 'http://' in your server URL.".localized)
       return
     }
     guard let username = usernameTF.text, !username.isEmpty else {
-      showErrorMsg(message: "No username given!")
+      showErrorMsg(message: "No username given!".localized)
       return
     }
     guard let password = passwordTF.text, !password.isEmpty else {
-      showErrorMsg(message: "No password given!")
+      showErrorMsg(message: "No password given!".localized)
       return
     }
 
@@ -431,7 +431,7 @@ class LoginVC: UIViewController {
 
     guard !appDelegate.storage.settings.accounts.allAccounts.contains(where: { $0 == accountInfo })
     else {
-      showErrorMsg(message: "Account already added!")
+      showErrorMsg(message: "Account already added!".localized)
       return
     }
 
@@ -473,7 +473,7 @@ class LoginVC: UIViewController {
         if error is AuthenticationError {
           self.showErrorMsg(message: error.localizedDescription)
         } else {
-          self.showErrorMsg(message: "Not able to login!")
+          self.showErrorMsg(message: "Not able to login!".localized)
         }
         self.appDelegate.resetMeta(accountInfo)
       }
@@ -481,8 +481,8 @@ class LoginVC: UIViewController {
   }
 
   func showErrorMsg(message: String) {
-    let alert = UIAlertController(title: "Login failed", message: message, preferredStyle: .alert)
-    alert.addAction(UIAlertAction(title: "OK", style: .default))
+    let alert = UIAlertController(title: "Login failed".localized, message: message, preferredStyle: .alert)
+    alert.addAction(UIAlertAction(title: "OK".localized, style: .default))
     present(alert, animated: true, completion: nil)
   }
 
@@ -491,7 +491,7 @@ class LoginVC: UIViewController {
     updateApiSelectorText()
 
     apiSelectorButton.showsMenuAsPrimaryAction = true
-    apiSelectorButton.menu = UIMenu(title: "Select API", children: [
+    apiSelectorButton.menu = UIMenu(title: "Select API".localized, children: [
       UIAction(title: BackenApiType.notDetected.selectorDescription, handler: { _ in
         self.selectedApiType = .notDetected
         self.updateApiSelectorText()

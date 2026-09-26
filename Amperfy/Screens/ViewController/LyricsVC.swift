@@ -28,7 +28,7 @@ import UIKit
 
 class LyricsVC: UIViewController {
   override var title: String? {
-    get { "Lyrics" }
+    get { "Lyrics".localized }
     set {}
   }
 
@@ -78,7 +78,7 @@ class LyricsVC: UIViewController {
         .sync(song: song)
       self.refreshLyrics()
     } catch {
-      self.appDelegate.eventLogger.report(topic: "Song Info", error: error)
+      self.appDelegate.eventLogger.report(topic: "Song Info".localized, error: error)
     }}
   }
 
@@ -93,7 +93,7 @@ class LyricsVC: UIViewController {
     var notAvailableLyrics = StructuredLyrics()
     notAvailableLyrics.synced = false
     var line = LyricsLine()
-    line.value = "No Lyrics"
+    line.value = "No Lyrics".localized
     notAvailableLyrics.line.append(line)
     showLyrics(structuredLyrics: notAvailableLyrics)
     lyricsView?.highlightAllLyrics()

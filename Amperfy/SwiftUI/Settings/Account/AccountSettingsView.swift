@@ -142,7 +142,7 @@ struct AccountSettingsView: View {
               )
             }
             SettingsRow(
-              title: "Username",
+              title: "Username".localized,
               orientation: .vertical,
               splitPercentage: splitPercentage
             ) {
@@ -154,7 +154,7 @@ struct AccountSettingsView: View {
           }
 
           SettingsSection {
-            SettingsRow(title: "Theme Color") {
+            SettingsRow(title: "Theme Color".localized) {
               Menu(settings.themePreference.description) {
                 Button(ThemePreference.blue.description) {
                   setThemePreference(preference: .blue)
@@ -180,27 +180,27 @@ struct AccountSettingsView: View {
 
           SettingsSection(content: {
             SettingsCheckBoxRow(
-              title: "Newest Songs",
+              title: "Newest Songs".localized,
               isOn: $settings.isAutoCacheLatestSongs
             )
             SettingsCheckBoxRow(
-              title: "Newest Podcast Episodes",
+              title: "Newest Podcast Episodes".localized,
               isOn: $settings.isAutoCacheLatestPodcastEpisodes
             )
-          }, header: "Auto Cache")
+          }, header: "Auto Cache".localized)
 
           SettingsSection(
             content: {
               SettingsCheckBoxRow(
-                title: "Scrobble streamed Songs",
+                title: "Scrobble streamed Songs".localized,
                 isOn: $settings.isScrobbleStreamedItems
               )
             },
-            footer: "Enable to scrobble all streamed songs, even if the server already marks them as played."
+            footer: "Enable to scrobble all streamed songs, even if the server already marks them as played.".localized
           )
 
           SettingsSection {
-            SettingsRow(title: "Backend API", splitPercentage: splitPercentage) {
+            SettingsRow(title: "Backend API".localized, splitPercentage: splitPercentage) {
               Text(
                 appDelegate.storage.settings.accounts.getSetting(settings.activeAccountInfo).read
                   .loginCredentials?
@@ -214,12 +214,12 @@ struct AccountSettingsView: View {
               )
             }
 
-            SettingsRow(title: "Server API Version", splitPercentage: splitPercentage) {
+            SettingsRow(title: "Server API Version".localized, splitPercentage: splitPercentage) {
               Text(appDelegate.getMeta(activeAccountInfo).backendApi.serverApiVersion)
                 .foregroundColor(.secondary)
                 .help(appDelegate.getMeta(activeAccountInfo).backendApi.serverApiVersion)
             }
-            SettingsRow(title: "Client API Version", splitPercentage: splitPercentage) {
+            SettingsRow(title: "Client API Version".localized, splitPercentage: splitPercentage) {
               Text(appDelegate.getMeta(activeAccountInfo).backendApi.clientApiVersion)
                 .foregroundColor(.secondary)
                 .help(appDelegate.getMeta(activeAccountInfo).backendApi.clientApiVersion)
@@ -228,30 +228,30 @@ struct AccountSettingsView: View {
 
           SettingsSection {
             NavigationLink(destination: ServerURLsSettingsView()) {
-              Text("Manage Server URLs")
+              Text("Manage Server URLs".localized)
             }
             NavigationLink(destination: CustomHTTPHeadersView(
               headers: httpHeaders(accountInfo: activeAccountInfo)
             ) { updated in
               saveHTTPHeaders(updated, accountInfo: activeAccountInfo)
             }) {
-              Text("Custom HTTP Headers")
+              Text("Custom HTTP Headers".localized)
             }
           }
 
           SettingsSection {
-            SettingsButtonRow(title: "Update Password") {
+            SettingsButtonRow(title: "Update Password".localized) {
               withPopupAnimation { isPwUpdateDialogVisible = true }
             }
-            SettingsButtonRow(title: "Resync Library") {
+            SettingsButtonRow(title: "Resync Library".localized) {
               isShowResyncLibraryAlert = true
             }.alert(isPresented: $isShowResyncLibraryAlert) {
               Alert(
-                title: Text("Resync Library"),
+                title: Text("Resync Library".localized),
                 message: Text(
-                  "This will reset your local library and start syncing again from the server. Your downloaded files will remain on this device.\n\nDo you want to resync your library?"
+                  "This will reset your local library and start syncing again from the server. Your downloaded files will remain on this device.\n\nDo you want to resync your library?".localized
                 ),
-                primaryButton: .destructive(Text("Resync")) {
+                primaryButton: .destructive(Text("Resync".localized)) {
                   resyncLibrary(accountInfo: activeAccountInfo)
                 },
                 secondaryButton: .cancel()
@@ -260,16 +260,16 @@ struct AccountSettingsView: View {
           }
 
           SettingsSection {
-            SettingsButtonRow(title: "Logout", actionType: .destructive) {
+            SettingsButtonRow(title: "Logout".localized, actionType: .destructive) {
               isShowLogoutAlert = true
             }
             .alert(isPresented: $isShowLogoutAlert) {
               Alert(
-                title: Text("Logout"),
+                title: Text("Logout".localized),
                 message: Text(
-                  "Logging out will sign you out of the current account. Your login credentials will be removed, and all downloaded files for this account will be deleted.\n\nDo you want to log out?"
+                  "Logging out will sign you out of the current account. Your login credentials will be removed, and all downloaded files for this account will be deleted.\n\nDo you want to log out?".localized
                 ),
-                primaryButton: .destructive(Text("Logout")) {
+                primaryButton: .destructive(Text("Logout".localized)) {
                   logout(accountInfo: activeAccountInfo)
                 },
                 secondaryButton: .cancel()
@@ -279,12 +279,12 @@ struct AccountSettingsView: View {
         } else {
           // User is not logged in yet
           SettingsSection {
-            SecondaryText("You aren't logged in yet.")
+            SecondaryText("You aren't logged in yet.".localized)
           }
         }
       }
     }
-    .navigationTitle("Account")
+    .navigationTitle("Account".localized)
     .navigationBarTitleDisplayMode(.inline)
     .sheet(isPresented: $isPwUpdateDialogVisible) {
       UpdatePasswordView(isVisible: $isPwUpdateDialogVisible)

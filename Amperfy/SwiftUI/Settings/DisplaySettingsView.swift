@@ -37,18 +37,18 @@ struct DisplaySettingsView: View {
     ZStack {
       SettingsList {
         SettingsSection {
-          SettingsRow(title: "Appearance") {
+          SettingsRow(title: "Appearance".localized) {
             Menu(
-              settings.appearanceMode == .unspecified ? "System" :
-                (settings.appearanceMode == .light ? "Light" : "Dark")
+              settings.appearanceMode == .unspecified ? "System".localized :
+                (settings.appearanceMode == .light ? "Light".localized : "Dark".localized)
             ) {
-              Button("System") {
+              Button("System".localized) {
                 setAppearanceMode(style: .unspecified)
               }
-              Button("Light") {
+              Button("Light".localized) {
                 setAppearanceMode(style: .light)
               }
-              Button("Dark") {
+              Button("Dark".localized) {
                 setAppearanceMode(style: .dark)
               }
             }
@@ -58,10 +58,10 @@ struct DisplaySettingsView: View {
         #if !targetEnvironment(macCatalyst)
           SettingsSection(
             content: {
-              SettingsCheckBoxRow(title: "Haptic Feedback", isOn: $settings.isHapticsEnabled)
+              SettingsCheckBoxRow(title: "Haptic Feedback".localized, isOn: $settings.isHapticsEnabled)
             },
             footer:
-            "Certain interactions provide haptic feedback. Long pressing to display the details menu will always trigger haptic feedback."
+            "Certain interactions provide haptic feedback. Long pressing to display the details menu will always trigger haptic feedback.".localized
           )
         #endif
 
@@ -69,24 +69,24 @@ struct DisplaySettingsView: View {
           SettingsSection(
             content: {
               SettingsCheckBoxRow(
-                title: "Mini Player Always on Top",
+                title: "Mini Player Always on Top".localized,
                 isOn: $settings.isMiniPlayerAlwaysOnTop
               )
             },
             footer:
-            "Keep the mini player window floating above all other windows."
+            "Keep the mini player window floating above all other windows.".localized
           )
         #endif
 
         SettingsSection(
           content: {
             SettingsCheckBoxRow(
-              title: "Music Player Skip Buttons",
+              title: "Music Player Skip Buttons".localized,
               isOn: $settings.isShowMusicPlayerSkipButtons
             )
           },
           footer:
-          "Add skip forward and skip backward buttons to the music player, along with the previous/next buttons."
+          "Add skip forward and skip backward buttons to the music player, along with the previous/next buttons.".localized
         )
 
         if let activeAccountInfo = settings.activeAccountInfo,
@@ -96,19 +96,19 @@ struct DisplaySettingsView: View {
           SettingsSection(
             content: {
               SettingsCheckBoxRow(
-                title: "Lyrics Smooth Scrolling",
+                title: "Lyrics Smooth Scrolling".localized,
                 isOn: $settings.isLyricsSmoothScrolling
               )
             },
             footer:
-            "Lyrics are smoothly scrolled to next line. Deactivating will result in jumping from line to line."
+            "Lyrics are smoothly scrolled to next line. Deactivating will result in jumping from line to line.".localized
           )
         }
 
         SettingsSection(
           content: {
             SettingsCheckBoxRow(
-              title: "Detailed Information",
+              title: "Detailed Information".localized,
               isOn: $settings.isShowDetailedInfo
             )
           },
@@ -118,40 +118,40 @@ struct DisplaySettingsView: View {
 
         SettingsSection(
           content: {
-            SettingsCheckBoxRow(title: "Song Duration", isOn: $settings.isShowSongDuration)
+            SettingsCheckBoxRow(title: "Song Duration".localized, isOn: $settings.isShowSongDuration)
           },
           footer:
-          "Display song duration in table rows."
+          "Display song duration in table rows.".localized
         )
 
         SettingsSection(
           content: {
-            SettingsCheckBoxRow(title: "Album Duration", isOn: $settings.isShowAlbumDuration)
+            SettingsCheckBoxRow(title: "Album Duration".localized, isOn: $settings.isShowAlbumDuration)
           },
           footer:
-          "Display album duration in table rows."
+          "Display album duration in table rows.".localized
         )
 
         SettingsSection(
           content: {
-            SettingsCheckBoxRow(title: "Artist Duration", isOn: $settings.isShowArtistDuration)
+            SettingsCheckBoxRow(title: "Artist Duration".localized, isOn: $settings.isShowArtistDuration)
           },
           footer:
-          "Display artist duration in table rows."
+          "Display artist duration in table rows.".localized
         )
 
         SettingsSection(
           content: {
-            SettingsCheckBoxRow(title: "Show Star Rating", isOn: $settings.isShowRating)
+            SettingsCheckBoxRow(title: "Show Star Rating".localized, isOn: $settings.isShowRating)
           },
           footer:
-          "Display star rating in song cells and the currently playing view."
+          "Display star rating in song cells and the currently playing view.".localized
         )
 
         SettingsSection(
           content: {
             SettingsCheckBoxRow(
-              title: "Disable Player Shuffle Button",
+              title: "Disable Player Shuffle Button".localized,
               isOn: Binding<Bool>(
                 get: { !settings.isPlayerShuffleButtonEnabled },
                 set: {
@@ -162,11 +162,11 @@ struct DisplaySettingsView: View {
             )
           },
           footer:
-          "The player shuffle button is displayed but non-interactive."
+          "The player shuffle button is displayed but non-interactive.".localized
         )
       }
     }
-    .navigationTitle("Display")
+    .navigationTitle("Display".localized)
     .navigationBarTitleDisplayMode(.inline)
   }
 }

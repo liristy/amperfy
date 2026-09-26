@@ -54,7 +54,7 @@ public class Artist: AbstractLibraryEntity {
   public var playables: [AbstractPlayable] { songs }
 
   public var name: String {
-    get { managedObject.name ?? "Unknown Artist" }
+    get { managedObject.name ?? "Unknown Artist".localized }
     set {
       if managedObject.name != newValue {
         managedObject.name = newValue
@@ -128,14 +128,14 @@ extension Artist: PlayableContainable {
       let relatedAlbumCount = library.getAlbums(for: account, whichContainsSongsWithArtist: self)
         .count
       if relatedAlbumCount == 1 {
-        infoContent.append("1 Album")
+        infoContent.append(CommonString.albums(1))
       } else if relatedAlbumCount > 1 {
-        infoContent.append("\(relatedAlbumCount) Albums")
+        infoContent.append(CommonString.albums(relatedAlbumCount))
       }
     } else if albumCount == 1 {
-      infoContent.append("1 Album")
+      infoContent.append(CommonString.albums(1))
     } else if albumCount > 1 {
-      infoContent.append("\(albumCount) Albums")
+      infoContent.append(CommonString.albums(albumCount))
     }
 
     if details.artistFilterSetting == .albumArtists,
@@ -144,14 +144,14 @@ extension Artist: PlayableContainable {
       let relatedSongsCount = library.getSongs(for: account, whichContainsSongsWithArtist: self)
         .count
       if relatedSongsCount == 1 {
-        infoContent.append("1 Song")
+        infoContent.append(CommonString.songs(1))
       } else if relatedSongsCount > 1 {
-        infoContent.append("\(relatedSongsCount) Songs")
+        infoContent.append(CommonString.songs(relatedSongsCount))
       }
     } else if songCount == 1 {
-      infoContent.append("1 Song")
+      infoContent.append(CommonString.songs(1))
     } else if songCount > 1 {
-      infoContent.append("\(songCount) Songs")
+      infoContent.append(CommonString.songs(songCount))
     }
     if details.type == .short, details.isShowArtistDuration, duration > 0 {
       infoContent.append("\(duration.asDurationShortString)")

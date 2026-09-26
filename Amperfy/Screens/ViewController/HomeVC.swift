@@ -69,7 +69,7 @@ final class HomeVC: UICollectionViewController {
     super.viewDidLoad()
     // ensures that the collection view stops placing items under the sidebar
     collectionView.contentInsetAdjustmentBehavior = .scrollableAxes
-    title = "Home"
+    title = "Home".localized
 
     accountNotificationHandler = AccountNotificationHandler(
       storage: appDelegate.storage,
@@ -86,7 +86,7 @@ final class HomeVC: UICollectionViewController {
 
     navigationController?.navigationBar.prefersLargeTitles = true
     navigationItem.rightBarButtonItem = UIBarButtonItem(
-      title: "Edit",
+      title: "Edit".localized,
       style: .plain,
       target: self,
       action: #selector(editSectionsTapped)
@@ -435,7 +435,7 @@ final class SectionHeaderView: UICollectionReusableView {
     btn.translatesAutoresizingMaskIntoConstraints = false
     btn.setImage(UIImage.refresh, for: .normal)
     btn.isHidden = true
-    btn.accessibilityLabel = "Refresh Randoms"
+    btn.accessibilityLabel = "Refresh Randoms".localized
     return btn
   }()
 

@@ -59,7 +59,7 @@ class PodcastDetailVC: SingleFetchedResultsTableViewController<PodcastEpisodeMO>
 
     configureSearchController(
       placeholder: "Search in \"Podcast\"",
-      scopeButtonTitles: ["All", "Cached"]
+      scopeButtonTitles: ["All".localized, "Cached".localized]
     )
     tableView.register(nibName: PodcastEpisodeTableCell.typeName)
     tableView.rowHeight = PodcastEpisodeTableCell.rowHeight
@@ -71,7 +71,7 @@ class PodcastDetailVC: SingleFetchedResultsTableViewController<PodcastEpisodeMO>
     tableView.backgroundColor = .backgroundColor
 
     let playShuffleInfoConfig = PlayShuffleInfoConfiguration(
-      infoCB: { "\(self.podcast.episodeCount) Episode\(self.podcast.episodeCount == 1 ? "" : "s")"
+      infoCB: { CommonString.episodes(self.podcast.episodeCount)
       },
       playContextCb: { () in
         let context = self.fetchedResultsController
@@ -85,7 +85,7 @@ class PodcastDetailVC: SingleFetchedResultsTableViewController<PodcastEpisodeMO>
       },
       player: appDelegate.player,
       isInfoAlwaysHidden: false,
-      customPlayName: "Newest Episode",
+      customPlayName: "Newest Episode".localized,
       isShuffleHidden: true
     )
     let detailHeaderConfig = DetailHeaderConfiguration(

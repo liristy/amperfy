@@ -92,7 +92,7 @@ class PodcastEpisodeTableCell: BasicTableCell {
     var progressText = ""
     if let remainingTime = episode.remainingTimeInSec,
        let playProgressPercent = episode.playProgressPercent {
-      progressText = "\(remainingTime.asDurationString) left"
+      progressText = "%@ left".localizedFormat(remainingTime.asDurationString)
       playProgressBar.isHidden = false
       playProgressLabelPlayButtonDistance.constant = (2 * 8.0) + playProgressBar.frame.width
       playProgressBar.progress = playProgressPercent

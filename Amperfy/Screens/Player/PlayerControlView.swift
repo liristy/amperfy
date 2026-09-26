@@ -106,15 +106,15 @@ class PlayerControlView: UIView {
     configureVolumeSlider()
     timeSlider.minimumTrackTintColor = .white.withAlphaComponent(0.8)
     timeSlider.maximumTrackTintColor = .white.withAlphaComponent(0.18)
-    timeSlider.accessibilityLabel = "Playback position"
+    timeSlider.accessibilityLabel = "Playback position".localized
     for label in [elapsedTimeLabel, remainingTimeLabel, audioInfoLabel] {
       label?.font = .monospacedDigitSystemFont(ofSize: 12, weight: .medium)
       label?.textColor = .white.withAlphaComponent(0.65)
     }
     airplayButton.accessibilityLabel = "AirPlay"
-    displayPlaylistButton.accessibilityLabel = "Playing next"
-    optionsButton.accessibilityLabel = "Player options"
-    volumeButton.accessibilityLabel = "Volume options"
+    displayPlaylistButton.accessibilityLabel = "Playing next".localized
+    optionsButton.accessibilityLabel = "Player options".localized
+    volumeButton.accessibilityLabel = "Volume options".localized
     lyricsButton.addTarget(self, action: #selector(lyricsPressed), for: .touchUpInside)
 
     playButton.imageView?.tintColor = .label
@@ -156,7 +156,7 @@ class PlayerControlView: UIView {
     volumeSlider.maximumTrackTintColor = .white.withAlphaComponent(0.18)
     volumeSlider.preferredBehavioralStyle = .pad
     volumeSlider.sliderStyle = .thumbless
-    volumeSlider.accessibilityLabel = "Volume"
+    volumeSlider.accessibilityLabel = "Volume".localized
     volumeSlider.addTarget(self, action: #selector(volumeChanged), for: .valueChanged)
     addSubview(volumeSlider)
 
@@ -206,7 +206,7 @@ class PlayerControlView: UIView {
     lyricsButton.configuration = configuration
     lyricsButton.isSelected = selected
     lyricsButton.isEnabled = playerHandler?.isLyricsButtonAllowedToDisplay ?? false
-    lyricsButton.accessibilityLabel = selected ? "Hide Lyrics" : "Show Lyrics"
+    lyricsButton.accessibilityLabel = selected ? "Hide Lyrics".localized : "Show Lyrics".localized
   }
 
   @IBAction
@@ -364,7 +364,7 @@ class PlayerControlView: UIView {
       )
     }
     return UIMenu(
-      title: "Playback Rate",
+      title: "Playback Rate".localized,
       subtitle: playerPlaybackRate.description,
       image: .playbackRate,
       children: availablePlaybackRates
@@ -386,7 +386,7 @@ class PlayerControlView: UIView {
         )
       }
     return UIMenu(
-      title: "Visualizer Style",
+      title: "Visualizer Style".localized,
       subtitle: currentType.displayName,
       image: .sparkles,
       children: availableTypes
@@ -397,13 +397,13 @@ class PlayerControlView: UIView {
     var menuActions = [UIMenuElement]()
     if player.currentlyPlaying != nil || player.prevQueueCount > 0 || player
       .userQueueCount > 0 || player.nextQueueCount > 0 {
-      let clearPlayer = UIAction(title: "Clear Player", image: .clear, handler: { _ in
+      let clearPlayer = UIAction(title: "Clear Player".localized, image: .clear, handler: { _ in
         self.player.clearQueues()
       })
       menuActions.append(clearPlayer)
     }
     if player.userQueueCount > 0 {
-      let clearUserQueue = UIAction(title: "Clear User Queue", image: .playlistX, handler: { _ in
+      let clearUserQueue = UIAction(title: "Clear User Queue".localized, image: .playlistX, handler: { _ in
         self.rootView?.clearUserQueue()
       })
       menuActions.append(clearUserQueue)
@@ -415,7 +415,7 @@ class PlayerControlView: UIView {
     if rootView?.largeCurrentlyPlayingView?.isLyricsButtonAllowedToDisplay ?? false {
       if !appDelegate.storage.settings.user.isPlayerLyricsDisplayed ||
         appDelegate.storage.settings.user.playerDisplayStyle != .large {
-        let showLyricsAction = UIAction(title: "Show Lyrics", image: .lyrics, handler: { _ in
+        let showLyricsAction = UIAction(title: "Show Lyrics".localized, image: .lyrics, handler: { _ in
           if !self.appDelegate.storage.settings.user.isPlayerLyricsDisplayed {
             self.appDelegate.storage.settings.user.isPlayerLyricsDisplayed.toggle()
             self.appDelegate.storage.settings.user.isPlayerVisualizerDisplayed = false
@@ -427,7 +427,7 @@ class PlayerControlView: UIView {
         })
         menuActions.append(showLyricsAction)
       } else {
-        let hideLyricsAction = UIAction(title: "Hide Lyrics", image: .lyrics, handler: { _ in
+        let hideLyricsAction = UIAction(title: "Hide Lyrics".localized, image: .lyrics, handler: { _ in
           self.appDelegate.storage.settings.user.isPlayerLyricsDisplayed.toggle()
           self.rootView?.largeCurrentlyPlayingView?.display(element: .artwork)
         })
@@ -438,7 +438,7 @@ class PlayerControlView: UIView {
     if !appDelegate.storage.settings.user.isPlayerVisualizerDisplayed ||
       appDelegate.storage.settings.user.playerDisplayStyle != .large {
       let showVisualizerAction = UIAction(
-        title: "Show Audio Visualizer",
+        title: "Show Audio Visualizer".localized,
         image: .audioVisualizer,
         handler: { _ in
           if !self.appDelegate.storage.settings.user.isPlayerVisualizerDisplayed {
@@ -454,7 +454,7 @@ class PlayerControlView: UIView {
       menuActions.append(showVisualizerAction)
     } else {
       let hideVisualizerAction = UIAction(
-        title: "Hide Audio Visualizer",
+        title: "Hide Audio Visualizer".localized,
         image: .audioVisualizer,
         handler: { _ in
           self.appDelegate.storage.settings.user.isPlayerVisualizerDisplayed = false
@@ -472,7 +472,7 @@ class PlayerControlView: UIView {
       if player.currentlyPlaying != nil || player.prevQueueCount > 0 || player.nextQueueCount > 0,
          appDelegate.storage.settings.user.isOnlineMode {
         let addContextToPlaylist = UIAction(
-          title: "Add Context Queue to Playlist",
+          title: "Add Context Queue to Playlist".localized,
           image: .playlistPlus,
           handler: { _ in
             var itemsToAdd = self.player.getAllPrevQueueItems().filterSongs()
@@ -499,7 +499,7 @@ class PlayerControlView: UIView {
     switch appDelegate.storage.settings.user.playerDisplayStyle {
     case .compact:
       let scrollToCurrentlyPlaying = UIAction(
-        title: "Scroll to currently playing",
+        title: "Scroll to currently playing".localized,
         image: .squareArrow,
         handler: { _ in
           self.rootView?.scrollToCurrentlyPlayingRow()
@@ -509,7 +509,7 @@ class PlayerControlView: UIView {
     case .large: break
     }
 
-    let playerInfo = UIAction(title: "Player Info", image: .info, handler: { _ in
+    let playerInfo = UIAction(title: "Player Info".localized, image: .info, handler: { _ in
       guard let rootView = self.rootView else { return }
       let detailVC = PlainDetailsVC()
       detailVC.display(player: self.player, on: rootView)

@@ -53,7 +53,7 @@ class PlaylistAddPlaylistsDiffableDataSource: BasicUITableViewDiffableDataSource
 
 class PlaylistAddPlaylistsVC: SingleSnapshotFetchedResultsTableViewController<PlaylistMO>,
   PlaylistVCAddable {
-  override var sceneTitle: String? { "Playlists" }
+  override var sceneTitle: String? { "Playlists".localized }
 
   public var addToPlaylistManager = AddToPlaylistManager()
 
@@ -102,9 +102,9 @@ class PlaylistAddPlaylistsVC: SingleSnapshotFetchedResultsTableViewController<Pl
 
     var searchTiles: [String]? = nil
     if account.apiType.asServerApiType == .ampache {
-      searchTiles = ["All", "Cached", "User", "Smart"]
+      searchTiles = ["All".localized, "Cached".localized, "User".localized, "Smart".localized]
     } else if account.apiType.asServerApiType == .subsonic {
-      searchTiles = ["All", "Cached"]
+      searchTiles = ["All".localized, "Cached".localized]
     }
     configureSearchController(
       placeholder: "Search in \"Playlists\"",

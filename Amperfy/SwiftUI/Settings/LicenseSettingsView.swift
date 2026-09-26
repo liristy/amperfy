@@ -19,6 +19,7 @@
 //  along with this program.  If not, see <http://www.gnu.org/licenses/>.
 //
 
+import AmperfyKit
 import SwiftUI
 
 // MARK: - LicenseSettingsView
@@ -546,7 +547,7 @@ struct LicenseSettingsView: View {
           .padding([.leading, .trailing, .top, .bottom], 16)
       }
     }
-    .navigationTitle("Licenses")
+    .navigationTitle("Licenses".localized)
     .navigationBarTitleDisplayMode(.inline)
   }
 }

@@ -41,7 +41,7 @@ public class Podcast: AbstractLibraryEntity {
   }
 
   public var title: String {
-    get { managedObject.title ?? "Unknown Podcast" }
+    get { managedObject.title ?? "Unknown Podcast".localized }
     set {
       if managedObject.title != newValue {
         managedObject.title = newValue
@@ -91,14 +91,14 @@ extension Podcast: PlayableContainable {
     var infoContent = [String]()
     if details.type != .noCountInfo {
       if episodeCount == 1 {
-        infoContent.append("1 Episode")
+        infoContent.append(CommonString.episodes(1))
       } else if episodeCount > 1 {
-        infoContent.append("\(episodeCount) Episodes")
+        infoContent.append(CommonString.episodes(episodeCount))
       }
     }
     if details.type == .long || details.type == .noCountInfo {
       if isCached {
-        infoContent.append("Cached")
+        infoContent.append("Cached".localized)
       }
       if details.isShowDetailedInfo {
         infoContent.append("ID: \(!id.isEmpty ? id : "-")")

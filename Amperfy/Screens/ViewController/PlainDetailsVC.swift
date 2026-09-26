@@ -95,22 +95,22 @@ class PlainDetailsVC: UIViewController {
   func refresh() {
     if let podcast = podcast {
       detailsTextView.text = podcast.depiction
-      headerLabel.text = "Description"
+      headerLabel.text = "Description".localized
     } else if let podcastEpisode = podcastEpisode {
       detailsTextView.text = podcastEpisode.depiction
-      headerLabel.text = "Description"
+      headerLabel.text = "Description".localized
     } else if let lyricsRelFilePath = lyricsRelFilePath, let lyricsAccount {
       detailsTextView.text = ""
-      headerLabel.text = "Lyrics"
+      headerLabel.text = "Lyrics".localized
       Task { @MainActor in do {
         let lyricsList = try await appDelegate.getMeta(lyricsAccount.info).librarySyncer
           .parseLyrics(relFilePath: lyricsRelFilePath)
         self.displayLyrics(lyricsList: lyricsList)
       } catch {
-        self.detailsTextView.text = "Lyrics are not available anymore."
+        self.detailsTextView.text = "Lyrics are not available anymore.".localized
       }}
     } else if let player = player {
-      headerLabel.text = "Player Info"
+      headerLabel.text = "Player Info".localized
       var details = ""
       details += "Play Time\n"
       details += "Remaining: \(player.remainingPlayDuration.asDurationString)\n"

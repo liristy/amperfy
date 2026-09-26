@@ -77,10 +77,10 @@ public enum PodcastEpisodeUserStatus {
 
   public var description: String {
     switch self {
-    case .syncingOnServer: return "Server syncing"
-    case .availableOnServer: return "Available"
-    case .cached: return "Cached"
-    case .deleted: return "Deleted on server"
+    case .syncingOnServer: return "Server syncing".localized
+    case .availableOnServer: return "Available".localized
+    case .cached: return "Cached".localized
+    case .deleted: return "Deleted on server".localized
     }
   }
 }
@@ -96,7 +96,7 @@ public class PodcastEpisode: AbstractPlayable {
   }
 
   override public var creatorName: String {
-    podcast?.title ?? "Unknown Podcast"
+    podcast?.title ?? "Unknown Podcast".localized
   }
 
   public var titleRawParsed: String = "" // used by parser a temporary buffer
@@ -202,9 +202,9 @@ public class PodcastEpisode: AbstractPlayable {
     if details.type == .long {
       infoContent.append("\(publishDate.asShortDayMonthString)")
       if !isAvailableToUser(), !isCached {
-        infoContent.append("Not Available")
+        infoContent.append("Not Available".localized)
       } else if let remainingTime = remainingTimeInSec {
-        infoContent.append("\(remainingTime.asDurationString) left")
+        infoContent.append("%@ left".localizedFormat(remainingTime.asDurationString))
       } else if duration > 0 {
         infoContent.append("\(duration.asDurationString)")
       }

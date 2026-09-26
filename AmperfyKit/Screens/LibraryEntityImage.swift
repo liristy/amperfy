@@ -55,6 +55,7 @@ public class LibraryEntityImage: RoundedImage {
 
   private let appDelegate: AmperKit
 
+  private var serverArtwork: Artwork?
   private var entity: AbstractLibraryEntity?
   private var backupArtworkType: ArtworkType?
   private var accountNotificationHandler: AccountNotificationHandler?
@@ -108,26 +109,37 @@ public class LibraryEntityImage: RoundedImage {
   }
 
   public func display(entity: AbstractLibraryEntity) {
+    serverArtwork = nil
     self.entity = entity
     backupArtworkType = entity.getDefaultArtworkType()
     refresh()
   }
 
   public func displayAndUpdate(entity: AbstractLibraryEntity) {
-    guard self.entity != entity else { return }
-
     display(entity: entity)
     if let artwork = entity.artwork, let accountInfo = entity.account?.info {
       appDelegate.getMeta(accountInfo).artworkDownloadManager.download(object: artwork)
     }
   }
 
+  public func displayAndUpdate(artwork: Artwork, fallback: ArtworkType) {
+    entity = nil
+    serverArtwork = artwork
+    backupArtworkType = fallback
+    refresh()
+    if let accountInfo = artwork.account?.info {
+      appDelegate.getMeta(accountInfo).artworkDownloadManager.download(object: artwork)
+    }
+  }
+
   internal func display(image: UIImage) {
+    serverArtwork = nil
     self.image = image
     entity = nil
   }
 
   public func display(artworkType: ArtworkType) {
+    serverArtwork = nil
     backupArtworkType = artworkType
     entity = nil
     refresh()
@@ -135,7 +147,7 @@ public class LibraryEntityImage: RoundedImage {
 
   private var placeholderImage: UIImage {
     var theme = appDelegate.storage.settings.accounts.activeSetting.read.themePreference
-    if let accountInfo = entity?.account?.info {
+    if let accountInfo = serverArtwork?.account?.info ?? entity?.account?.info {
       theme = appDelegate.storage.settings.accounts.getSetting(accountInfo).read.themePreference
     }
     return UIImage.getGeneratedArtwork(
@@ -145,9 +157,10 @@ public class LibraryEntityImage: RoundedImage {
   }
 
   private var entityImagePathToDisplay: String? {
+    if let serverArtwork { return serverArtwork.imagePath }
     var artworkDisplayPreference = appDelegate.storage.settings.accounts.activeSetting.read
       .artworkDisplayPreference
-    if let accountInfo = entity?.account?.info {
+    if let accountInfo = serverArtwork?.account?.info ?? entity?.account?.info {
       artworkDisplayPreference = appDelegate.storage.settings.accounts.getSetting(accountInfo).read
         .artworkDisplayPreference
     }
@@ -190,8 +203,12 @@ public class LibraryEntityImage: RoundedImage {
 
   @objc
   private func downloadFinishedSuccessful(notification: Notification) {
-    guard let downloadNotification = DownloadNotification.fromNotification(notification), let entity
-    else { return }
+    guard let downloadNotification = DownloadNotification.fromNotification(notification) else { return }
+    if let serverArtwork, serverArtwork.uniqueID == downloadNotification.id {
+      refresh()
+      return
+    }
+    guard let entity else { return }
     if let playable = entity as? AbstractPlayable,
        playable.uniqueID == downloadNotification.id, let accountInfo = playable.account?.info {
       Task { @MainActor in

@@ -19,6 +19,7 @@
 //  along with this program.  If not, see <http://www.gnu.org/licenses/>.
 //
 
+import AmperfyKit
 import SwiftUI
 
 // MARK: - MultiPickerView
@@ -65,6 +66,6 @@ struct MultiPickerView_Previews: PreviewProvider {
   static var selection = ["", ""]
 
   static var previews: some View {
-    MultiPickerView(data: [("One", ["0", "1"]), ("Two", ["0", "1"])], selection: Self.$selection)
+    MultiPickerView(data: [("One".localized, ["0", "1"]), ("Two".localized, ["0", "1"])], selection: Self.$selection)
   }
 }

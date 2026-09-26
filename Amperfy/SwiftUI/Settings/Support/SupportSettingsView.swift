@@ -38,7 +38,7 @@ struct SupportSettingsView: View {
       SettingsList {
         SettingsSection {
           SettingsButtonRow(
-            title: "Report an issue on GitHub",
+            title: "Report an issue on GitHub".localized,
             splitPercentage: splitPercentage
           ) {
             if let url = URL(string: "https://github.com/BLeeEZ/amperfy/issues") {
@@ -46,16 +46,16 @@ struct SupportSettingsView: View {
             }
           }
           SettingsButtonRow(
-            title: "Send issue or feedback to developer",
+            title: "Send issue or feedback to developer".localized,
             splitPercentage: splitPercentage
           ) {
             if MFMailComposeViewController.canSendMail() {
               isShowingMailView.toggle()
             } else {
               appDelegate.eventLogger.info(
-                topic: "Email Info",
+                topic: "Email Info".localized,
                 statusCode: .emailError,
-                message: "Email is not configured in settings app or Amperfy is not able to send an email.",
+                message: "Email is not configured in settings app or Amperfy is not able to send an email.".localized,
                 displayPopup: true
               )
             }
@@ -64,14 +64,14 @@ struct SupportSettingsView: View {
 
         SettingsSection {
           NavigationLink(destination: EventLogSettingsView()) {
-            Text("Event Log")
+            Text("Event Log".localized)
           }
         }
       }
       .sheet(isPresented: $isShowingMailView) {
         MailView(
           result: $result,
-          subject: "Amperfy support",
+          subject: "Amperfy support".localized,
           messageBody: """
           \nPlease describe your issue.
           \nFeedback is always welcome too.
@@ -88,7 +88,7 @@ struct SupportSettingsView: View {
         )
       }
     }
-    .navigationTitle("Support")
+    .navigationTitle("Support".localized)
     .navigationBarTitleDisplayMode(.inline)
     .onAppear {
       appDelegate.userStatistics.visited(.settingsSupport)

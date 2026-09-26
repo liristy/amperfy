@@ -53,33 +53,33 @@ public enum LibraryDisplayType: Int, CaseIterable, Sendable {
   public var displayName: String {
     switch self {
     case .artists:
-      return "Artists"
+      return "Artists".localized
     case .albums:
-      return "Albums"
+      return "Albums".localized
     case .songs:
-      return "Songs"
+      return "Songs".localized
     case .genres:
-      return "Genres"
+      return "Genres".localized
     case .directories:
-      return "Directories"
+      return "Directories".localized
     case .playlists:
-      return "Playlists"
+      return "Playlists".localized
     case .podcasts:
-      return "Podcasts"
+      return "Podcasts".localized
     case .downloads:
-      return "Downloads"
+      return "Downloads".localized
     case .favoriteSongs:
-      return "Favorite Songs"
+      return "Favorite Songs".localized
     case .favoriteAlbums:
-      return "Favorite Albums"
+      return "Favorite Albums".localized
     case .favoriteArtists:
-      return "Favorite Artists"
+      return "Favorite Artists".localized
     case .newestAlbums:
-      return "Newest Albums"
+      return "Newest Albums".localized
     case .recentAlbums:
-      return "Recently Played Albums"
+      return "Recently Played Albums".localized
     case .radios:
-      return "Radios"
+      return "Radios".localized
     }
   }
 

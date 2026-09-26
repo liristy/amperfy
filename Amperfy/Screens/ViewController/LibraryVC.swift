@@ -38,7 +38,7 @@ class LibraryVC: KeyCommandCollectionViewController {
     fatalError("init(coder:) has not been implemented")
   }
 
-  override var sceneTitle: String? { "Library"
+  override var sceneTitle: String? { "Library".localized
   }
 
   private var offsetData = [LibraryNavigatorItem]()

@@ -140,9 +140,9 @@ class AlbumsCollectionDiffableDataSource: BasicUICollectionViewDiffableDataSourc
     case .rating:
       guard let album = getFirstAlbum(in: section) else { return "" }
       if album.rating > 0 {
-        return "\(album.rating) Star\(album.rating != 1 ? "s" : "")"
+        return "%ld Stars".localizedFormat(album.rating)
       } else {
-        return "Not rated"
+        return "Not rated".localized
       }
     case .newest, .recent:
       return ""
@@ -236,8 +236,8 @@ class AlbumsCollectionVC: SingleSnapshotFetchedResultsCollectionViewController<A
 
     common.applyFilter()
     configureSearchController(
-      placeholder: "Search in \"\(common.filterTitle)\"",
-      scopeButtonTitles: ["All", "Cached"]
+      placeholder: "Search in \"%@\"".localizedFormat(common.filterTitle),
+      scopeButtonTitles: ["All".localized, "Cached".localized]
     )
     collectionView.register(
       UINib(nibName: CommonCollectionSectionHeader.typeName, bundle: .main),

@@ -79,8 +79,8 @@ class IndexesVC: SingleFetchedResultsTableViewController<DirectoryMO> {
   lazy var emptyContentConfig: UIContentUnavailableConfiguration = {
     var config = UIContentUnavailableConfiguration.empty()
     config.image = .folder
-    config.text = "No Directories"
-    config.secondaryText = "Your directories will appear here."
+    config.text = "No Directories".localized
+    config.secondaryText = "Your directories will appear here.".localized
     return config
   }()
 

@@ -19,6 +19,7 @@
 //  along with this program.  If not, see <http://www.gnu.org/licenses/>.
 //
 
+import AmperfyKit
 import Foundation
 
 @MainActor
@@ -34,8 +35,8 @@ class WelcomePopupPresenter: NSObject {
   private func displaySyncInfo() {
     let popupVC = AppStoryboard.Main.segueToLibrarySyncPopup()
     popupVC.setContent(
-      topic: "Synchronization",
-      detailMessage: "Your music collection is constantly updating. Already synced library items are offline available. If library items (artists/albums/songs) are not shown in your collection please use the various search functionalities to synchronize with the server.",
+      topic: "Synchronization".localized,
+      detailMessage: "Your music collection is constantly updating. Already synced library items are offline available. If library items (artists/albums/songs) are not shown in your collection please use the various search functionalities to synchronize with the server.".localized,
       customIcon: .refresh,
       customAnimation: .rotate,
       onClosePressed: { _ in
@@ -53,8 +54,8 @@ class WelcomePopupPresenter: NSObject {
       guard hasAuthorizationNotBeenAskedYet else { return }
       let popupVC = AppStoryboard.Main.segueToLibrarySyncPopup()
       popupVC.setContent(
-        topic: "Notifications",
-        detailMessage: "Amperfy can inform you about the latest podcast episodes. If you want to, please authorize Amperfy to send you notifications.",
+        topic: "Notifications".localized,
+        detailMessage: "Amperfy can inform you about the latest podcast episodes. If you want to, please authorize Amperfy to send you notifications.".localized,
         customIcon: .bell,
         customAnimation: .swing,
         onClosePressed: { _ in

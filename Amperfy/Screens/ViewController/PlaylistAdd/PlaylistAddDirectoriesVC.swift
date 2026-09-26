@@ -62,8 +62,8 @@ class PlaylistAddDirectoriesVC: MultiSourceTableViewController, PlaylistVCAddabl
     songsFetchedResultsController.delegate = self
 
     configureSearchController(
-      placeholder: "Directories and Songs",
-      scopeButtonTitles: ["All", "Cached"]
+      placeholder: "Directories and Songs".localized,
+      scopeButtonTitles: ["All".localized, "Cached".localized]
     )
     setNavBarTitle(title: directory.name)
     tableView.register(nibName: DirectoryTableCell.typeName)

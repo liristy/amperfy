@@ -66,7 +66,7 @@ struct ArtworkDisplaySettings: View {
         }
       }
     }
-    .navigationTitle("Artwork Display")
+    .navigationTitle("Artwork Display".localized)
     .onAppear {
       updateValues()
     }

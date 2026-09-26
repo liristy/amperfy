@@ -44,6 +44,8 @@ extension ArtworkMO {
   public var download: DownloadMO?
   @NSManaged
   public var owners: NSSet?
+  @NSManaged
+  public var playlists: NSSet?
 }
 
 // MARK: Generated accessors for owners

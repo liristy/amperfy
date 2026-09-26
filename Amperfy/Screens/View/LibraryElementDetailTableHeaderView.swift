@@ -154,10 +154,10 @@ class LibraryElementDetailTableHeaderView: UIView {
   /// isShuffleOnContextNeccessary: In AlbumsVC the albums are shuffled, keep the order when shuffle button is pressed
   func prepare(configuration: PlayShuffleInfoConfiguration) {
     config = configuration
-    playAllButton.setTitle(config?.customPlayName ?? "Play", for: .normal)
+    playAllButton.setTitle(config?.customPlayName ?? "Play".localized, for: .normal)
     playAllButton.layer.cornerRadius = 10.0
     playShuffledButton.setTitle(
-      configuration.isShuffleOnContextNeccessary ? "Shuffle" : "Random",
+      configuration.isShuffleOnContextNeccessary ? "Shuffle".localized : "Random".localized,
       for: .normal
     )
     playShuffledButton.layer.cornerRadius = 10.0

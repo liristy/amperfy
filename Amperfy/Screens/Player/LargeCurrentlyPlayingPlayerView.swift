@@ -193,8 +193,8 @@ class LargeCurrentlyPlayingPlayerView: UIView, UIGestureRecognizerDelegate {
     artworkShadowView.layer.shadowRadius = 22
     artworkShadowView.layer.shadowOffset = CGSize(width: 0, height: 14)
     upperContainerView.insertSubview(artworkShadowView, belowSubview: artworkImage)
-    favoriteButton.accessibilityLabel = "Favorite"
-    optionsButton.accessibilityLabel = "Song options"
+    favoriteButton.accessibilityLabel = "Favorite".localized
+    optionsButton.accessibilityLabel = "Song options".localized
 
     lyricsView = LyricsView()
     lyricsView!.frame = upperContainerView.bounds
@@ -431,7 +431,7 @@ class LargeCurrentlyPlayingPlayerView: UIView, UIGestureRecognizerDelegate {
     var notAvailableLyrics = StructuredLyrics()
     notAvailableLyrics.synced = false
     var line = LyricsLine()
-    line.value = "No Lyrics"
+    line.value = "No Lyrics".localized
     notAvailableLyrics.line.append(line)
     showLyrics(structuredLyrics: notAvailableLyrics)
     lyricsView?.highlightAllLyrics()
@@ -528,7 +528,7 @@ extension LargeCurrentlyPlayingPlayerView: RatingViewDelegate {
           rating: rating
         )
       } catch {
-        appDelegate.eventLogger.report(topic: "Song Rating", error: error)
+        appDelegate.eventLogger.report(topic: "Song Rating".localized, error: error)
       }
     }
   }

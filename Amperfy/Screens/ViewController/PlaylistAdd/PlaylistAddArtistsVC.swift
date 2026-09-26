@@ -27,8 +27,8 @@ class PlaylistAddArtistsVC: SingleSnapshotFetchedResultsTableViewController<Arti
   PlaylistVCAddable {
   override var sceneTitle: String? {
     switch displayFilter {
-    case .albumArtists, .all: "Artists"
-    case .favorites: "Favorite Artists"
+    case .albumArtists, .all: "Artists".localized
+    case .favorites: "Favorite Artists".localized
     }
   }
 
@@ -77,8 +77,8 @@ class PlaylistAddArtistsVC: SingleSnapshotFetchedResultsTableViewController<Arti
     change(sortType: appDelegate.storage.settings.user.artistsSortSetting)
     change(filterType: appDelegate.storage.settings.user.artistsFilterSetting)
     configureSearchController(
-      placeholder: "Search in \"\(sceneTitle ?? "Artists")\"",
-      scopeButtonTitles: ["All", "Cached"]
+      placeholder: "Search in \"%@\"".localizedFormat(sceneTitle ?? "Artists"),
+      scopeButtonTitles: ["All".localized, "Cached".localized]
     )
     tableView.register(nibName: GenericTableCell.typeName)
     tableView.rowHeight = GenericTableCell.rowHeight
@@ -163,9 +163,9 @@ class PlaylistAddArtistsVC: SingleSnapshotFetchedResultsTableViewController<Arti
     case .rating:
       if let sectionNameInitial = super.tableView(tableView, titleForHeaderInSection: section),
          sectionNameInitial != SectionIndexType.noRatingIndexSymbol {
-        return "\(sectionNameInitial) Star\(sectionNameInitial != "1" ? "s" : "")"
+        return "%ld Stars".localizedFormat(Int(sectionNameInitial) ?? 0)
       } else {
-        return "Not rated"
+        return "Not rated".localized
       }
     case .newest:
       return super.tableView(tableView, titleForHeaderInSection: section)

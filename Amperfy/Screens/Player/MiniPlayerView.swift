@@ -168,7 +168,7 @@ class MiniPlayerView: UIView {
 
   fileprivate lazy var liveLabel: UILabel = {
     let label = UILabel(frame: .zero)
-    label.text = "LIVE"
+    label.text = "LIVE".localized
     label.font = .systemFont(ofSize: 12.0)
     label.textAlignment = .center
     return label
@@ -655,7 +655,7 @@ class MiniPlayerView: UIView {
     let tapGesture = UITapGestureRecognizer(target: self, action: #selector(miniPlayerGotTouched))
     miniPlayerGotTouchedView.addGestureRecognizer(tapGesture)
     miniPlayerGotTouchedView.isAccessibilityElement = true
-    miniPlayerGotTouchedView.accessibilityLabel = "Open Now Playing"
+    miniPlayerGotTouchedView.accessibilityLabel = "Open Now Playing".localized
     miniPlayerGotTouchedView.accessibilityTraits = .button
 
     miniPlayerGotTouchedView.translatesAutoresizingMaskIntoConstraints = false

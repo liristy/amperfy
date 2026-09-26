@@ -25,7 +25,7 @@ import UIKit
 
 class RadiosVC: SingleFetchedResultsTableViewController<RadioMO> {
   override var sceneTitle: String? {
-    "Radios"
+    "Radios".localized
   }
 
   private var fetchedResultsController: RadiosFetchedResultsController!
@@ -56,7 +56,7 @@ class RadiosVC: SingleFetchedResultsTableViewController<RadioMO> {
     tableView.reloadData()
 
     configureSearchController(
-      placeholder: "Search in \"\(sceneTitle ?? "")\""
+      placeholder: "Search in \"%@\"".localizedFormat(sceneTitle ?? "")
     )
     tableView.register(nibName: PlayableTableCell.typeName)
     tableView.rowHeight = PlayableTableCell.rowHeight
@@ -69,7 +69,7 @@ class RadiosVC: SingleFetchedResultsTableViewController<RadioMO> {
 
     let playShuffleConfig = PlayShuffleInfoConfiguration(
       infoCB: {
-        "\(self.fetchedResultsController.fetchedObjects?.count ?? 0) Radio\((self.fetchedResultsController.fetchedObjects?.count ?? 0) == 1 ? "" : "s")"
+        CommonString.radios(self.fetchedResultsController.fetchedObjects?.count ?? 0)
       },
       playContextCb: handleHeaderPlay,
       player: appDelegate.player,
@@ -119,8 +119,8 @@ class RadiosVC: SingleFetchedResultsTableViewController<RadioMO> {
   lazy var emptyContentConfig: UIContentUnavailableConfiguration = {
     var config = UIContentUnavailableConfiguration.empty()
     config.image = .radio
-    config.text = "No Radios"
-    config.secondaryText = "Your radios will appear here."
+    config.text = "No Radios".localized
+    config.secondaryText = "Your radios will appear here.".localized
     return config
   }()
 

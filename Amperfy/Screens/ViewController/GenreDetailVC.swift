@@ -78,14 +78,14 @@ class GenreDetailVC: MultiSourceTableViewController {
     tableView.backgroundColor = .backgroundColor
 
     configureSearchController(
-      placeholder: "Artists, Albums and Songs",
-      scopeButtonTitles: ["All", "Cached"]
+      placeholder: "Artists, Albums and Songs".localized,
+      scopeButtonTitles: ["All".localized, "Cached".localized]
     )
     setNavBarTitle(title: genre.name)
 
     let playShuffleInfoConfig = PlayShuffleInfoConfiguration(
       infoCB: {
-        "\(self.genre.artistCount) Artist\(self.genre.artistCount == 1 ? "" : "s") \(CommonString.oneMiddleDot) \(self.genre.albumCount) Album\(self.genre.albumCount == 1 ? "" : "s") \(CommonString.oneMiddleDot) \(self.genre.songCount) Song\(self.genre.songCount == 1 ? "" : "s")"
+        "\(CommonString.artists(self.genre.artistCount)) \(CommonString.oneMiddleDot) \(CommonString.albums(self.genre.albumCount)) \(CommonString.oneMiddleDot) \(CommonString.songs(self.genre.songCount))"
       },
       playContextCb: { () in PlayContext(
         containable: self.genre,
@@ -269,11 +269,11 @@ class GenreDetailVC: MultiSourceTableViewController {
     -> String? {
     switch section + 0 {
     case LibraryElement.Artist.rawValue:
-      return "Artists"
+      return "Artists".localized
     case LibraryElement.Album.rawValue:
-      return "Albums"
+      return "Albums".localized
     case LibraryElement.Song.rawValue:
-      return "Songs"
+      return "Songs".localized
     default:
       return ""
     }

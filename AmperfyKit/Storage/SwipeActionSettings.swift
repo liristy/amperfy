@@ -41,58 +41,58 @@ public enum SwipeActionType: Int, CaseIterable, Sendable, Codable {
   public var displayName: String {
     switch self {
     case .insertUserQueue:
-      return "Insert User Queue"
+      return "Insert User Queue".localized
     case .appendUserQueue:
-      return "Append User Queue"
+      return "Append User Queue".localized
     case .insertContextQueue:
-      return "Insert Context Queue"
+      return "Insert Context Queue".localized
     case .appendContextQueue:
-      return "Append Context Queue"
+      return "Append Context Queue".localized
     case .download:
-      return "Download"
+      return "Download".localized
     case .removeFromCache:
-      return "Remove from Cache"
+      return "Remove from Cache".localized
     case .addToPlaylist:
-      return "Add to Playlist"
+      return "Add to Playlist".localized
     case .play:
-      return "Play"
+      return "Play".localized
     case .playShuffled:
-      return "Play shuffled"
+      return "Play shuffled".localized
     case .insertPodcastQueue:
-      return "Insert Podcast Queue"
+      return "Insert Podcast Queue".localized
     case .appendPodcastQueue:
-      return "Append Podcast Queue"
+      return "Append Podcast Queue".localized
     case .favorite:
-      return "Favorite"
+      return "Favorite".localized
     }
   }
 
   public var settingsName: String {
     switch self {
     case .insertUserQueue:
-      return "Insert in User Queue"
+      return "Insert in User Queue".localized
     case .appendUserQueue:
-      return "Append to User Queue"
+      return "Append to User Queue".localized
     case .insertContextQueue:
-      return "Insert in Context Queue"
+      return "Insert in Context Queue".localized
     case .appendContextQueue:
-      return "Append to Context Queue"
+      return "Append to Context Queue".localized
     case .download:
-      return "Download"
+      return "Download".localized
     case .removeFromCache:
-      return "Remove from Cache"
+      return "Remove from Cache".localized
     case .addToPlaylist:
-      return "Add to Playlist"
+      return "Add to Playlist".localized
     case .play:
-      return "Play"
+      return "Play".localized
     case .playShuffled:
-      return "Play shuffled"
+      return "Play shuffled".localized
     case .insertPodcastQueue:
-      return "Insert in Podcast Queue"
+      return "Insert in Podcast Queue".localized
     case .appendPodcastQueue:
-      return "Append to Podcast Queue"
+      return "Append to Podcast Queue".localized
     case .favorite:
-      return "Mark as Favorite"
+      return "Mark as Favorite".localized
     }
   }
 

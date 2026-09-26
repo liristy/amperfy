@@ -56,7 +56,7 @@ class UpdateVC: UIViewController {
       } catch {
         // cancle and do nothing
       }
-      self.progressInfo.text = "Done"
+      self.progressInfo.text = "Done".localized
       self.activitySpinner.stopAnimating()
       self.activitySpinner.isHidden = true
       self.progressLabel.isHidden = true

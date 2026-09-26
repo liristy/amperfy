@@ -53,7 +53,7 @@ struct EqualizerSettingsView: View {
       SettingsList {
         SettingsSection(content: {
           SettingsCheckBoxRow(
-            title: "Enable Equalizer",
+            title: "Enable Equalizer".localized,
             isOn: Binding(
               get: { settings.isEqualizerEnabled },
               set: { isEnabled in
@@ -63,7 +63,7 @@ struct EqualizerSettingsView: View {
           )
 
           if settings.isEqualizerEnabled {
-            SettingsRow(title: "Active Equalizer") {
+            SettingsRow(title: "Active Equalizer".localized) {
               Menu(settings.activeEqualizerSetting.description) {
                 Button(EqualizerSetting.off.description) {
                   settings.activeEqualizerSetting = EqualizerSetting.off
@@ -79,8 +79,8 @@ struct EqualizerSettingsView: View {
         })
 
         SettingsSection(content: {
-          SettingsRow(title: "Equalizer") {
-            Menu((eqSettingToEdit != nil) ? eqSettingNameSaved : "Select") {
+          SettingsRow(title: "Equalizer".localized) {
+            Menu((eqSettingToEdit != nil) ? eqSettingNameSaved : "Select".localized) {
               ForEach(settings.equalizerSettings, id: \.self) { eqSetting in
                 Button(eqSetting.description) {
                   eqSettingToEdit = eqSetting
@@ -89,8 +89,8 @@ struct EqualizerSettingsView: View {
                   eqSettingGains = eqSetting.gains.compactMap { CGFloat($0) }
                 }
               }
-              Button("Create new Equalizer") {
-                let newEQ = EqualizerSetting(name: "My new Equalizer")
+              Button("Create new Equalizer".localized) {
+                let newEQ = EqualizerSetting(name: "My new Equalizer".localized)
                 var curEqSetting = settings.equalizerSettings
                 curEqSetting.append(newEQ)
                 settings.equalizerSettings = curEqSetting
@@ -103,8 +103,8 @@ struct EqualizerSettingsView: View {
           }
 
           if eqSettingToEdit != nil {
-            SettingsRow(title: "Name") {
-              TextField("Equalizer Name", text: $eqSettingName)
+            SettingsRow(title: "Name".localized) {
+              TextField("Equalizer Name".localized, text: $eqSettingName)
                 .multilineTextAlignment(.trailing)
             }
 
@@ -115,7 +115,7 @@ struct EqualizerSettingsView: View {
               gradientColors: [Color(settings.themePreference.asColor), .clear]
             )
 
-            SettingsButtonRow(title: "Save") {
+            SettingsButtonRow(title: "Save".localized) {
               guard var eqSettingToEdit else { return }
               var curEqSetting = settings.equalizerSettings
               guard let index = curEqSetting.firstIndex(of: eqSettingToEdit) else { return }
@@ -130,15 +130,15 @@ struct EqualizerSettingsView: View {
                 settings.activeEqualizerSetting = eqSettingToEdit
               }
             }
-            SettingsButtonRow(title: "Delete", actionType: .destructive) {
+            SettingsButtonRow(title: "Delete".localized, actionType: .destructive) {
               isShowDeleteAlert = true
             }.alert(isPresented: $isShowDeleteAlert) {
               Alert(
-                title: Text("Delete Equalizer"),
+                title: Text("Delete Equalizer".localized),
                 message: Text(
-                  "Are you sure to delete this equalizer?"
+                  "Are you sure to delete this equalizer?".localized
                 ),
-                primaryButton: .destructive(Text("Delete")) {
+                primaryButton: .destructive(Text("Delete".localized)) {
                   guard let eqSettingToEdit else { return }
                   var curEqSetting = settings.equalizerSettings
                   guard let index = curEqSetting.firstIndex(of: eqSettingToEdit) else { return }
@@ -156,10 +156,10 @@ struct EqualizerSettingsView: View {
             }
           }
 
-        }, header: "Equalizer Editor")
+        }, header: "Equalizer Editor".localized)
       }
     }
-    .navigationTitle("Equalizer")
+    .navigationTitle("Equalizer".localized)
     .navigationBarTitleDisplayMode(.inline)
   }
 }

@@ -56,24 +56,34 @@ struct SettingsView: View {
     let list =
       SettingsList {
         SettingsSection {
-          SettingsRow(title: "Version") {
+          SettingsRow(title: "Version".localized) {
             SecondaryText(AppDelegate.version)
           }
-          SettingsRow(title: "Build Number") {
+          SettingsRow(title: "Build Number".localized) {
             SecondaryText(AppDelegate.buildNumber)
           }
         }
 
         SettingsSection(
           content: {
-            SettingsCheckBoxRow(title: "Offline Mode", isOn: $settings.isOfflineMode)
+            SettingsButtonRow(title: "Language".localized) {
+              guard let url = URL(string: UIApplication.openSettingsURLString) else { return }
+              UIApplication.shared.open(url)
+            }
+          },
+          footer: "Follow iPhone language; choose Chinese or English in system settings.".localized
+        )
+
+        SettingsSection(
+          content: {
+            SettingsCheckBoxRow(title: "Offline Mode".localized, isOn: $settings.isOfflineMode)
           },
           footer:
-          "Songs, podcasts, and artworks won’t download offline. Searches are limited to the device, and playlists won’t sync with the server."
+          "Songs, podcasts, and artworks won’t download offline. Searches are limited to the device, and playlists won’t sync with the server.".localized
         )
 
         SettingsSection {
-          SettingsRow(title: "Prevent Screen Lock") {
+          SettingsRow(title: "Prevent Screen Lock".localized) {
             Menu(settings.screenLockPreventionPreference.description) {
               Button(
                 ScreenLockPreventionPreference.never.description,
@@ -118,12 +128,12 @@ struct SettingsView: View {
       ZStack {
         list
       }
-      .navigationTitle("General")
+      .navigationTitle("General".localized)
       .navigationBarTitleDisplayMode(.inline)
     #else
       NavigationView {
         list
-          .navigationTitle("Settings")
+          .navigationTitle("Settings".localized)
       }
       .navigationViewStyle(.stack)
     #endif

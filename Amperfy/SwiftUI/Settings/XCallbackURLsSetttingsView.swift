@@ -91,7 +91,7 @@ struct XCallbackURLsSetttingsView: View {
         }
       }
     }
-    .navigationTitle("X-Callback-URL Documentation")
+    .navigationTitle("X-Callback-URL Documentation".localized)
     .navigationBarTitleDisplayMode(.inline)
   }
 }

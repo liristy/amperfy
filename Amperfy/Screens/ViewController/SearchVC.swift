@@ -48,16 +48,16 @@ class SearchDiffableDataSource: BasicUITableViewDiffableDataSource {
       if searchVC.searchHistory.isEmpty {
         return ""
       } else {
-        return "Recently Searched"
+        return "Recently Searched".localized
       }
     case .Playlist:
-      return "Playlists"
+      return "Playlists".localized
     case .Artist:
-      return "Artists"
+      return "Artists".localized
     case .Album:
-      return "Albums"
+      return "Albums".localized
     case .Song:
-      return "Songs"
+      return "Songs".localized
     case .none:
       return ""
     }
@@ -67,7 +67,7 @@ class SearchDiffableDataSource: BasicUITableViewDiffableDataSource {
 // MARK: - SearchVC
 
 class SearchVC: BasicTableViewController {
-  override var sceneTitle: String { "Search" }
+  override var sceneTitle: String { "Search".localized }
 
   nonisolated private static let categoryItemLimit = 10
 
@@ -229,7 +229,7 @@ class SearchVC: BasicTableViewController {
     appDelegate.userStatistics.visited(.search)
     configureSearchController(
       placeholder: "Search in \"Library\"",
-      scopeButtonTitles: ["All", "Cached"]
+      scopeButtonTitles: ["All".localized, "Cached".localized]
     )
   }
 
@@ -252,7 +252,7 @@ class SearchVC: BasicTableViewController {
     // Install the options button
     optionsButton = UIBarButtonItem.createOptionsBarButton()
     optionsButton.menu = UIMenu(children: [
-      UIAction(title: "Clear Search History", image: .clear, handler: { _ in
+      UIAction(title: "Clear Search History".localized, image: .clear, handler: { _ in
         self.appDelegate.storage.main.library.deleteSearchHistory()
         self.appDelegate.storage.main.library.saveContext()
         self.searchHistory = []
@@ -690,8 +690,8 @@ class SearchVC: BasicTableViewController {
   lazy var noSearchHistoryConfig: UIContentUnavailableConfiguration = {
     var config = UIContentUnavailableConfiguration.empty()
     config.image = .clock
-    config.text = "No Search History"
-    config.secondaryText = "Your search history will appear here."
+    config.text = "No Search History".localized
+    config.secondaryText = "Your search history will appear here.".localized
     return config
   }()
 }

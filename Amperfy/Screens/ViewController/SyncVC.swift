@@ -69,7 +69,7 @@ class SyncVC: UIViewController {
       } catch {
         guard !self.syncFinished else { return }
         self.appDelegate.eventLogger.report(
-          topic: "Initial Sync",
+          topic: "Initial Sync".localized,
           error: error,
           displayPopup: false
         )
@@ -85,7 +85,7 @@ class SyncVC: UIViewController {
     guard !syncFinished else { return }
 
     syncFinished = true
-    progressInfo.text = "Done"
+    progressInfo.text = "Done".localized
     activitySpinner.stopAnimating()
     activitySpinner.isHidden = true
     progressLabel.isHidden = true
@@ -119,18 +119,18 @@ class SyncVC: UIViewController {
   @IBAction
   func skipPressed(_ sender: Any) {
     let alert = UIAlertController(
-      title: "Skip Sync",
-      message: "Skipping initial sync results in an incomplete library. Missing library elements can later be synced via various search/update functionalities.",
+      title: "Skip Sync".localized,
+      message: "Skipping initial sync results in an incomplete library. Missing library elements can later be synced via various search/update functionalities.".localized,
       preferredStyle: .alert
     )
-    let skip = UIAlertAction(title: "Skip", style: .destructive, handler: { action in
+    let skip = UIAlertAction(title: "Skip".localized, style: .destructive, handler: { action in
       self.appDelegate.storage.settings.accounts
         .updateSetting(self.account.info) { accountSettings in
           accountSettings.initialSyncCompletionStatus = .skipped
         }
       self.finishSync()
     })
-    let cancel = UIAlertAction(title: "Cancel", style: .cancel, handler: nil)
+    let cancel = UIAlertAction(title: "Cancel".localized, style: .cancel, handler: nil)
     alert.addAction(skip)
     alert.addAction(cancel)
     present(alert, animated: true, completion: nil)
@@ -177,19 +177,19 @@ extension SyncVC: SyncCallbacks {
 
       switch parsedObjectType {
       case .artist:
-        self.updateSyncInfo(infoText: "Syncing artists ...", percentParsed: 0.0)
+        self.updateSyncInfo(infoText: "Syncing artists ...".localized, percentParsed: 0.0)
       case .album:
-        self.updateSyncInfo(infoText: "Syncing albums ...", percentParsed: 0.0)
+        self.updateSyncInfo(infoText: "Syncing albums ...".localized, percentParsed: 0.0)
       case .song:
-        self.updateSyncInfo(infoText: "Syncing songs ...", percentParsed: 0.0)
+        self.updateSyncInfo(infoText: "Syncing songs ...".localized, percentParsed: 0.0)
       case .playlist:
-        self.updateSyncInfo(infoText: "Syncing playlists ...", percentParsed: 0.0)
+        self.updateSyncInfo(infoText: "Syncing playlists ...".localized, percentParsed: 0.0)
       case .genre:
-        self.updateSyncInfo(infoText: "Syncing genres ...", percentParsed: 0.0)
+        self.updateSyncInfo(infoText: "Syncing genres ...".localized, percentParsed: 0.0)
       case .podcast:
-        self.updateSyncInfo(infoText: "Syncing podcasts ...", percentParsed: 0.0)
+        self.updateSyncInfo(infoText: "Syncing podcasts ...".localized, percentParsed: 0.0)
       case .cache:
-        self.updateSyncInfo(infoText: "Applying cache ...", percentParsed: 0.0)
+        self.updateSyncInfo(infoText: "Applying cache ...".localized, percentParsed: 0.0)
       }
     }
   }

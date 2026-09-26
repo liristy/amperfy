@@ -87,7 +87,7 @@ class AlbumDetailVC: SingleSnapshotFetchedResultsTableViewController<SongMO> {
 
     configureSearchController(
       placeholder: "Search in \"Album\"",
-      scopeButtonTitles: ["All", "Cached"]
+      scopeButtonTitles: ["All".localized, "Cached".localized]
     )
     tableView.register(nibName: PlayableTableCell.typeName)
     tableView.rowHeight = PlayableTableCell.rowHeight
@@ -100,7 +100,7 @@ class AlbumDetailVC: SingleSnapshotFetchedResultsTableViewController<SongMO> {
     tableView.backgroundColor = .backgroundColor
 
     let playShuffleInfoConfig = PlayShuffleInfoConfiguration(
-      infoCB: { "\(self.album.songCount) Song\(self.album.songCount == 1 ? "" : "s")" },
+      infoCB: { CommonString.songs(self.album.songCount) },
       playContextCb: { () in PlayContext(
         containable: self.album,
         playables: self.fetchedResultsController

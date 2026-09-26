@@ -128,8 +128,15 @@ final class DownloadRequestManager: Sendable {
   nonisolated private func addLowPrio(object: Downloadable, library: LibraryStorage) -> Download? {
     let account = library.getAccount(managedObjectId: accountObjectId)
     if let existingDownload = library.getDownload(account: account, id: object.uniqueID) {
-      // reset and return existing downloads only for playables
-      // existing artworks are ignored -> nil
+      // Retry completed/failed artwork requests when their cache is missing.
+      // Leave queued and running requests alone so reused cells cannot duplicate them.
+      if object.threadSafeInfo?.type == .artwork,
+         !existingDownload.isDownloading,
+         existingDownload.errorDate != nil || (existingDownload.finishDate != nil && !object.isCached) {
+        existingDownload.reset()
+        library.saveContext()
+        return existingDownload
+      }
       if let threadSafeInfo = object.threadSafeInfo,
          threadSafeInfo.type == .playable,
          existingDownload.errorDate != nil || !object.isCached {

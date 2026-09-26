@@ -51,6 +51,32 @@ public class Playlist: Identifyable {
     managedObject.items.compactMap { PlaylistItem(library: library, managedObject: $0) }
   }
 
+  public var artwork: Artwork? {
+    get { managedObject.artwork.map { Artwork(managedObject: $0) } }
+    set {
+      if managedObject.artwork != newValue?.managedObject {
+        managedObject.artwork = newValue?.managedObject
+      }
+    }
+  }
+
+  // Keep the complete coverArt ID: Navidrome includes a content hash for cache invalidation.
+  func updateServerArtwork(id: String?) {
+    guard let id, !id.isEmpty, let account else {
+      artwork = nil
+      return
+    }
+    let remoteInfo = ArtworkRemoteInfo(id: id, type: "")
+    if let existing = library.getArtwork(for: account, remoteInfo: remoteInfo) {
+      artwork = existing
+    } else {
+      let created = library.createArtwork(account: account)
+      created.remoteInfo = remoteInfo
+      created.status = .NotChecked
+      artwork = created
+    }
+  }
+
   public var artworkItems: [PlaylistItem] {
     managedObject.artworkItems.compactMap { PlaylistItem(library: library, managedObject: $0) }
   }
@@ -492,19 +518,19 @@ extension Playlist: PlayableContainable {
   public func infoDetails(for api: ServerApiType?, details: DetailInfoType) -> [String] {
     var infoContent = [String]()
     if songCount == 1 {
-      infoContent.append("1 Song")
+      infoContent.append(CommonString.songs(1))
     } else {
-      infoContent.append("\(songCount) Songs")
+      infoContent.append(CommonString.songs(songCount))
     }
     if isSmartPlaylist {
-      infoContent.append("Smart Playlist")
+      infoContent.append("Smart Playlist".localized)
     }
     if details.type == .short, duration > 0 {
       infoContent.append("\(duration.asDurationShortString)")
     }
     if details.type == .long {
       if isCached {
-        infoContent.append("Cached")
+        infoContent.append("Cached".localized)
       }
       if duration > 0 {
         infoContent.append("\(duration.asDurationShortString)")
@@ -532,6 +558,13 @@ extension Playlist: PlayableContainable {
   }
 
   public func getArtworkCollection(theme: ThemePreference) -> ArtworkCollection {
+    if let artwork {
+      return ArtworkCollection(
+        defaultArtworkType: getDefaultArtworkType(),
+        singleImageEntity: nil,
+        serverArtwork: artwork
+      )
+    }
     let artworkItems = artworkItems
 
     if artworkItems.isEmpty {

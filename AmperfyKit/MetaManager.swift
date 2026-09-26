@@ -21,6 +21,7 @@
 
 import AudioStreaming
 import Foundation
+import ImageIO
 import MediaPlayer
 import os.log
 
@@ -195,12 +196,11 @@ public class MetaManager {
       isFailWithPopupError: false
     )
 
+    let accountInfo = account.info
     let validationCB: PreDownloadIsValidCB =
       { (downloadInfos: [DownloadElementInfo]) -> [DownloadElementInfo] in
         let artworkDownloadInfos = downloadInfos.filter { $0.type == .artwork }
 
-        guard let accountInfo = await self.settings.accounts.active
-        else { return [DownloadElementInfo]() }
         let artworkDownloadSetting = await self.settings.accounts.getSetting(accountInfo).read
           .artworkDownloadSetting
         guard artworkDownloadSetting != .never else { return [DownloadElementInfo]() }
@@ -220,13 +220,24 @@ public class MetaManager {
               switch artwork.status {
               case .FetchError, .NotChecked:
                 validDls.append(dlInfo)
-              case .CustomImage, .IsDefaultImage:
+              case .CustomImage:
+                // Recover missing cache files instead of keeping a permanent placeholder.
+                if let path = artwork.imagePath,
+                   let source = CGImageSourceCreateWithURL(URL(fileURLWithPath: path) as CFURL, nil),
+                   CGImageSourceGetCount(source) > 0 {
+                  continue
+                }
+                artwork.relFilePath = nil
+                artwork.status = .FetchError
+                validDls.append(dlInfo)
+              case .IsDefaultImage:
                 continue
               }
             case .never, .updateOncePerSession:
               continue // already handled above
             }
           }
+          asyncCompanion.saveContext()
           return validDls
         }
         return dlInfos ?? [DownloadElementInfo]()

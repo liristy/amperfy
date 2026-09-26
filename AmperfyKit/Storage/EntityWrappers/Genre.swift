@@ -38,7 +38,7 @@ public class Genre: AbstractLibraryEntity {
   }
 
   public var name: String {
-    get { managedObject.name ?? "Unknown Genre" }
+    get { managedObject.name ?? "Unknown Genre".localized }
     set {
       if managedObject.name != newValue {
         managedObject.name = newValue
@@ -91,20 +91,20 @@ extension Genre: PlayableContainable {
     var infoContent = [String]()
     if api == .ampache {
       if artistCount == 1 {
-        infoContent.append("1 Artist")
+        infoContent.append(CommonString.artists(1))
       } else if artistCount > 1 {
-        infoContent.append("\(artistCount) Artists")
+        infoContent.append(CommonString.artists(artistCount))
       }
     }
     if albumCount == 1 {
-      infoContent.append("1 Album")
+      infoContent.append(CommonString.albums(1))
     } else if albumCount > 1 {
-      infoContent.append("\(albumCount) Albums")
+      infoContent.append(CommonString.albums(albumCount))
     }
     if songCount == 1 {
-      infoContent.append("1 Song")
+      infoContent.append(CommonString.songs(1))
     } else if songCount > 1 {
-      infoContent.append("\(songCount) Songs")
+      infoContent.append(CommonString.songs(songCount))
     }
     if details.type == .long {
       if details.isShowDetailedInfo {
