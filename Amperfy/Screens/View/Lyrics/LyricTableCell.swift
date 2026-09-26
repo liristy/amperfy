@@ -23,133 +23,83 @@ import AmperfyKit
 import CoreData
 import UIKit
 
-// MARK: - LyricTableCellModel
-
 @MainActor
 class LyricTableCellModel {
-  var lyric: LyricsLine? {
-    didSet {
-      cell?.refresh()
-    }
-  }
-
+  let lyric: LyricsLine?
+  weak var cell: LyricTableCell?
   var isActiveLine = false {
-    didSet {
-      cell?.refresh()
-    }
+    didSet { if oldValue != isActiveLine { cell?.refresh(animated: true) } }
   }
 
-  private var attributedString: NSAttributedString?
-  private var highlightedAttributedString: NSAttributedString?
-
-  internal weak var cell: LyricTableCell?
-
-  var displayString: NSAttributedString? {
-    if isActiveLine {
-      return highlightedAttributedString
-    } else {
-      return attributedString
-    }
+  var displayString: NSAttributedString {
+    let paragraph = NSMutableParagraphStyle()
+    paragraph.lineSpacing = 5
+    paragraph.lineBreakMode = .byWordWrapping
+    let font = UIFontMetrics(forTextStyle: .title1).scaledFont(
+      for: .systemFont(ofSize: 32, weight: .bold), maximumPointSize: 48)
+    return NSAttributedString(string: lyric?.value.isEmpty == false ? lyric!.value : "•••", attributes: [
+      .font: font, .foregroundColor: UIColor.white, .paragraphStyle: paragraph,
+    ])
   }
 
-  init(lyric: LyricsLine) {
-    self.lyric = lyric
-    self.isActiveLine = false
-    self.attributedString = NSAttributedString(
-      string: lyric.value,
-      attributes:
-      [
-        .font: UIFont.systemFont(ofSize: 28, weight: .bold),
-        .foregroundColor: UIColor.label.withAlphaComponent(0.4),
-      ]
-    )
-    self.highlightedAttributedString = NSAttributedString(
-      string: lyric.value,
-      attributes:
-      [
-        .font: UIFont.systemFont(ofSize: 28, weight: .bold),
-        .foregroundColor: UIColor.label,
-      ]
-    )
-  }
+  init(lyric: LyricsLine) { self.lyric = lyric }
 
-  public func calcHeight(containerWidth: CGFloat) -> CGFloat {
-    let boundingSize = CGSize(
-      width: LyricTableCell.adjustContainerWidthForMargins(containerWidth: containerWidth),
-      height: 9_999
-    )
-    if isActiveLine {
-      return highlightedAttributedString?.boundingRect(
-        with: boundingSize,
-        options: .usesLineFragmentOrigin,
-        context: nil
-      ).height ?? 0
-    } else {
-      return attributedString?.boundingRect(
-        with: boundingSize,
-        options: .usesLineFragmentOrigin,
-        context: nil
-      ).height ?? 0
-    }
+  func calcHeight(containerWidth: CGFloat) -> CGFloat {
+    ceil(displayString.boundingRect(
+      with: CGSize(width: max(1, containerWidth - 16), height: 10_000),
+      options: [.usesLineFragmentOrigin, .usesFontLeading], context: nil).height)
   }
 }
 
-// MARK: - LyricTableCell
-
 class LyricTableCell: UITableViewCell {
-  private weak var viewModel: LyricTableCellModel? = nil
+  private weak var viewModel: LyricTableCellModel?
+  private let lyricLabel = UILabel()
 
-  private var lyricLabel: UILabel!
-  override var layoutMargins: UIEdgeInsets { get { BasicTableCell.margin } set {} }
-
-  static func adjustContainerWidthForMargins(containerWidth: CGFloat) -> CGFloat {
-    containerWidth - (2 * BasicTableCell.margin.right)
-  }
-
-  public override init(style: UITableViewCell.CellStyle, reuseIdentifier: String?) {
+  override init(style: UITableViewCell.CellStyle, reuseIdentifier: String?) {
     super.init(style: style, reuseIdentifier: reuseIdentifier)
     commonInit()
   }
 
-  required init?(coder aDecoder: NSCoder) {
-    super.init(coder: aDecoder)
+  required init?(coder: NSCoder) {
+    super.init(coder: coder)
     commonInit()
   }
 
   private func commonInit() {
-    lyricLabel = UILabel(frame: CGRect(
-      x: layoutMargins.left,
-      y: 0,
-      width: bounds.width - (2 * layoutMargins.right),
-      height: bounds.height
-    ))
-    lyricLabel.textAlignment = .natural
-    lyricLabel.lineBreakMode = .byWordWrapping
-    lyricLabel.numberOfLines = 0
-    selectionStyle = .none
-    contentView.addSubview(lyricLabel)
     backgroundColor = .clear
+    selectionStyle = .none
+    lyricLabel.numberOfLines = 0
+    lyricLabel.textAlignment = .natural
+    contentView.addSubview(lyricLabel)
+    isAccessibilityElement = true
   }
 
   override func layoutSubviews() {
     super.layoutSubviews()
-    lyricLabel.frame = CGRect(
-      x: layoutMargins.left,
-      y: 0,
-      width: bounds.width - (2 * layoutMargins.right),
-      height: bounds.height
-    )
+    lyricLabel.frame = CGRect(x: 8, y: 15, width: max(0, bounds.width - 16), height: max(0, bounds.height - 30))
+  }
+
+  override func prepareForReuse() {
+    super.prepareForReuse()
+    viewModel?.cell = nil
+    viewModel = nil
   }
 
   func display(model: LyricTableCellModel) {
+    viewModel?.cell = nil
     viewModel = model
     model.cell = self
     refresh()
   }
 
-  func refresh() {
+  func refresh(animated: Bool = false) {
     guard let model = viewModel else { return }
     lyricLabel.attributedText = model.displayString
-    lyricLabel.sizeThatFits(CGSize(width: bounds.width, height: bounds.height))
+    accessibilityLabel = model.lyric?.value
+    accessibilityTraits = model.isActiveLine ? [.staticText, .selected] : .staticText
+    let changes = { self.lyricLabel.alpha = model.isActiveLine ? 1 : 0.32 }
+    if animated, !UIAccessibility.isReduceMotionEnabled {
+      UIView.animate(withDuration: 0.3, delay: 0, options: [.beginFromCurrentState, .allowUserInteraction], animations: changes)
+    } else { changes() }
   }
 }

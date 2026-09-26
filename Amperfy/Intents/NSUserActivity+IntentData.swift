@@ -36,7 +36,6 @@ extension NSUserActivity {
     case repeatOption
     case offlineMode
     case onlyCached
-    case rating
     case favorite
   }
 }

@@ -20,6 +20,7 @@
 //
 
 import AmperfyKit
+import CoreMedia
 import OSLog
 import UIKit
 
@@ -138,6 +139,39 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
           guard let activeAccount = self.appDelegate.storage.settings.accounts.active,
                 self.appDelegate.storage.settings.accounts.getSetting(activeAccount).read
                   .initialSyncCompletionStatus == .completed else { return }
+          if ProcessInfo.processInfo.arguments.contains("--smoke-player") {
+            do {
+              let library = self.appDelegate.storage.main.library
+              let account = library.getAccount(info: activeAccount)
+              guard let album = library.getAlbum(for: account, id: "album-1", isDetailFaultResolution: false) else { return }
+              let syncer = self.appDelegate.getMeta(activeAccount).librarySyncer
+              try await syncer.sync(album: album)
+              guard let song = library.getSong(for: account, id: "song-1") else { return }
+              try await syncer.sync(song: song)
+              guard song.lyricsRelFilePath != nil else { return }
+              self.appDelegate.storage.settings.user.playerDisplayStyle = .large
+              self.appDelegate.storage.settings.user.isPlayerLyricsDisplayed = true
+              self.appDelegate.player.isAutoCachePlayedItems = false
+              self.appDelegate.player.play(context: PlayContext(name: "Lyrics smoke", playables: [song]))
+              try await Task.sleep(for: .seconds(3))
+              guard self.appDelegate.player.elapsedTime > 0 else { return }
+              self.appDelegate.player.seek(toSecond: 42)
+              try await Task.sleep(for: .seconds(1))
+              self.appDelegate.player.pause()
+              guard self.appDelegate.player.elapsedTime >= 41 else { return }
+              vc.dismiss(animated: false)
+              let popup = PopupPlayerVC()
+              popup.modalPresentationStyle = .pageSheet
+              popup.sheetPresentationController?.detents = [.large()]
+              popup.sheetPresentationController?.prefersGrabberVisible = true
+              vc.present(popup, animated: false)
+              try await Task.sleep(for: .seconds(3))
+              popup.largeCurrentlyPlayingView?.refreshLyricsTime(time: CMTime(seconds: 42, preferredTimescale: 1000))
+              let marker = URL.documentsDirectory.appendingPathComponent("player-smoke-ready")
+              try "ready".write(to: marker, atomically: true, encoding: .utf8)
+            } catch { print("Player smoke failed: \(error)") }
+            return
+          }
           let marker = URL.documentsDirectory.appendingPathComponent("login-smoke-ready")
           try? "ready".write(to: marker, atomically: true, encoding: .utf8)
         }

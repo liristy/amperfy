@@ -48,31 +48,31 @@ public struct AppSettings: Sendable, Codable {
 public struct UserSettings: Sendable, Codable {
   private var _streamingMaxBitrateWifiPreference: StreamingMaxBitratePreference = .defaultValue
   public var streamingMaxBitrateWifiPreference: StreamingMaxBitratePreference {
-    get { _streamingMaxBitrateWifiPreference }
+    get { .noLimit }
     set { _streamingMaxBitrateWifiPreference = newValue }
   }
 
   private var _streamingMaxBitrateCellularPreference: StreamingMaxBitratePreference = .defaultValue
   public var streamingMaxBitrateCellularPreference: StreamingMaxBitratePreference {
-    get { _streamingMaxBitrateCellularPreference }
+    get { .noLimit }
     set { _streamingMaxBitrateCellularPreference = newValue }
   }
 
   private var _streamingFormatWifiPreference: StreamingFormatPreference = .defaultValue
   public var streamingFormatWifiPreference: StreamingFormatPreference {
-    get { _streamingFormatWifiPreference }
+    get { .raw }
     set { _streamingFormatWifiPreference = newValue }
   }
 
   private var _streamingFormatCellularPreference: StreamingFormatPreference = .defaultValue
   public var streamingFormatCellularPreference: StreamingFormatPreference {
-    get { _streamingFormatCellularPreference }
+    get { .raw }
     set { _streamingFormatCellularPreference = newValue }
   }
 
   private var _cacheTranscodingFormatPreference: CacheTranscodingFormatPreference = .defaultValue
   public var cacheTranscodingFormatPreference: CacheTranscodingFormatPreference {
-    get { _cacheTranscodingFormatPreference }
+    get { .raw }
     set { _cacheTranscodingFormatPreference = newValue }
   }
 
@@ -102,7 +102,7 @@ public struct UserSettings: Sendable, Codable {
 
   private var _isShowRating: Bool = false
   public var isShowRating: Bool {
-    get { _isShowRating }
+    get { false }
     set { _isShowRating = newValue }
   }
 
@@ -244,13 +244,13 @@ public struct UserSettings: Sendable, Codable {
 
   private var _artistsSortSetting: ArtistElementSortType = .defaultValue
   public var artistsSortSetting: ArtistElementSortType {
-    get { _artistsSortSetting }
+    get { _artistsSortSetting == .rating ? .name : _artistsSortSetting }
     set { _artistsSortSetting = newValue }
   }
 
   private var _albumsSortSetting: AlbumElementSortType = .defaultValue
   public var albumsSortSetting: AlbumElementSortType {
-    get { _albumsSortSetting }
+    get { _albumsSortSetting == .rating ? .name : _albumsSortSetting }
     set { _albumsSortSetting = newValue }
   }
 
@@ -262,7 +262,7 @@ public struct UserSettings: Sendable, Codable {
 
   private var _songsSortSetting: SongElementSortType = .defaultValue
   public var songsSortSetting: SongElementSortType {
-    get { _songsSortSetting }
+    get { _songsSortSetting == .rating ? .name : _songsSortSetting }
     set {
       if newValue == SongElementSortType.starredDate {
         _songsSortSetting = .defaultValue
@@ -274,7 +274,7 @@ public struct UserSettings: Sendable, Codable {
 
   private var _favoriteSongSortSetting: SongElementSortType = .defaultValueForFavorite
   public var favoriteSongSortSetting: SongElementSortType {
-    get { _favoriteSongSortSetting }
+    get { _favoriteSongSortSetting == .rating ? .name : _favoriteSongSortSetting }
     set { _favoriteSongSortSetting = newValue }
   }
 

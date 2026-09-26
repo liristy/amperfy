@@ -409,19 +409,6 @@ class ArtistsVC: SingleSnapshotFetchedResultsTableViewController<ArtistMO> {
         )
       }
     )
-    let sortByRating = UIAction(
-      title: "Rating".localized,
-      image: sortType == .rating ? .check : nil,
-      handler: { _ in
-        self.change(sortType: .rating)
-        self.updateSearchResults(for: self.searchController)
-        self.appDelegate.notificationHandler.post(
-          name: .fetchControllerSortChanged,
-          object: nil,
-          userInfo: nil
-        )
-      }
-    )
     let sortByDuration = UIAction(
       title: "Duration".localized,
       image: sortType == .duration ? .check : nil,
@@ -439,7 +426,7 @@ class ArtistsVC: SingleSnapshotFetchedResultsTableViewController<ArtistMO> {
       title: "Sort".localized,
       image: .sort,
       options: [],
-      children: [sortByName, sortByRating, sortByDuration]
+      children: [sortByName, sortByDuration]
     )
   }
 

@@ -88,30 +88,6 @@ struct AmperfyAppShortcuts: AppShortcutsProvider {
       shortTitle: "Favorite Song",
       systemImageName: "heart"
     )
-    AppShortcut(
-      intent: SetRatingForCurrentlyPlayingSongIntent(),
-      phrases: [
-        "Change rating in \(.applicationName)",
-        "Remove rating in \(.applicationName)",
-        "Delete rating in \(.applicationName)",
-        "Rate \(\.$rating) in \(.applicationName)",
-        "Rate \(\.$rating) stars in \(.applicationName)",
-        "Rate song \(\.$rating) in \(.applicationName)",
-        "Rate song \(\.$rating) stars in \(.applicationName)",
-        "Rate song with \(\.$rating) stars in \(.applicationName)",
-        "Rate song with \(\.$rating) stars in \(.applicationName)",
-        "Set rating to \(\.$rating) in \(.applicationName)",
-        "Set rating to \(\.$rating) stars in \(.applicationName)",
-        "Set song rating to \(\.$rating) in \(.applicationName)",
-        "Set song rating to \(\.$rating) stars in \(.applicationName)",
-        "Change rating to \(\.$rating) in \(.applicationName)",
-        "Change rating to \(\.$rating) stars in \(.applicationName)",
-        "Change song rating to \(\.$rating) in \(.applicationName)",
-        "Change song rating to \(\.$rating) stars in \(.applicationName)",
-      ],
-      shortTitle: "Rate Song",
-      systemImageName: "star"
-    )
     //
     // Change Repeat / Shuffle
     //

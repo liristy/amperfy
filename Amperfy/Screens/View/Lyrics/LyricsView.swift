@@ -25,15 +25,14 @@ import Foundation
 import UIKit
 
 class LyricsView: UITableView, UITableViewDataSource, UITableViewDelegate {
-  private var lyrics: StructuredLyrics? = nil
+  private var lyrics: StructuredLyrics?
   private var lyricModels: [LyricTableCellModel] = []
   private var lastIndex: Int?
-  private var lineSpacing: CGFloat = 16
-  private var hasLastLyricsLineAlreadyDisplayedOnce = false
+  private var lastScrolledIndex: Int?
   private var scrollAnimation = true
   private var suppressAutoScrollUntil: Date?
-  private let autoScrollSuppressionInterval: TimeInterval = 5.0
-
+  private let edgeMask = CAGradientLayer()
+  private var previousSize: CGSize = .zero
   public var onLyricSelected: ((LyricsLine) -> ())?
 
   override init(frame: CGRect, style: UITableView.Style) {
@@ -48,51 +47,63 @@ class LyricsView: UITableView, UITableViewDataSource, UITableViewDelegate {
 
   private func commonInit() {
     register(LyricTableCell.self, forCellReuseIdentifier: LyricTableCell.typeName)
-
     separatorStyle = .none
-    clipsToBounds = true
-
+    backgroundColor = .clear
+    showsVerticalScrollIndicator = false
+    contentInsetAdjustmentBehavior = .never
     dataSource = self
     delegate = self
-    allowsSelection = true
-
-    backgroundColor = .clear
+    edgeMask.colors = [UIColor.clear.cgColor, UIColor.white.cgColor,
+                       UIColor.white.cgColor, UIColor.clear.cgColor]
+    edgeMask.locations = [0, 0.08, 0.90, 1]
+    layer.mask = edgeMask
   }
 
   override func layoutSubviews() {
     super.layoutSubviews()
-    reloadInsets()
-
-    layer.mask = visibilityMask()
-    layer.masksToBounds = true
-  }
-
-  private func visibilityMask() -> CAGradientLayer {
-    let mask = CAGradientLayer()
-    mask.frame = bounds
-    mask.colors = [
-      UIColor.white.withAlphaComponent(0).cgColor,
-      UIColor.white.cgColor,
-      UIColor.white.cgColor,
-      UIColor.white.withAlphaComponent(0).cgColor,
-    ]
-    mask.locations = [0, 0.2, 0.8, 1]
-    return mask
+    CATransaction.begin()
+    CATransaction.setDisableActions(true)
+    edgeMask.frame = bounds
+    CATransaction.commit()
+    guard bounds.size != previousSize else { return }
+    previousSize = bounds.size
+    contentInset = UIEdgeInsets(top: bounds.height * 0.26, left: 0,
+                               bottom: bounds.height * 0.65, right: 0)
+    // Recalculate wrapping after rotation without fighting normal scrolling.
+    reloadData()
+    lastScrolledIndex = nil
+    if lastIndex == nil { setContentOffset(CGPoint(x: 0, y: -contentInset.top), animated: false) }
   }
 
   public func display(lyrics: StructuredLyrics, scrollAnimation: Bool) {
-    self.lyrics = lyrics
     self.scrollAnimation = scrollAnimation
-    reloadViewModels()
+    // Playback notifications can repeat for the same song. Keep the reading position.
+    if let current = self.lyrics, current.synced == lyrics.synced,
+       current.offset == lyrics.offset, current.line.count == lyrics.line.count,
+       zip(current.line, lyrics.line).allSatisfy({ $0.0.start == $0.1.start && $0.0.value == $0.1.value }) {
+      return
+    }
+    self.lyrics = lyrics
+    lyricModels = lyrics.line.map {
+      let model = LyricTableCellModel(lyric: $0)
+      model.isActiveLine = !lyrics.synced
+      return model
+    }
+    lastIndex = nil
+    lastScrolledIndex = nil
+    suppressAutoScrollUntil = nil
+    reloadData()
+    setContentOffset(CGPoint(x: 0, y: -contentInset.top), animated: false)
   }
 
-  public func highlightAllLyrics() {
-    lyricModels.forEach { $0.isActiveLine = true }
-  }
+  public func highlightAllLyrics() { lyricModels.forEach { $0.isActiveLine = true } }
 
   public func clear() {
     lyrics = nil
-    reloadViewModels()
+    lyricModels.removeAll()
+    lastIndex = nil
+    lastScrolledIndex = nil
+    reloadData()
   }
 
   public func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int {
@@ -100,157 +111,58 @@ class LyricsView: UITableView, UITableViewDataSource, UITableViewDelegate {
   }
 
   public func tableView(_ tableView: UITableView, heightForRowAt indexPath: IndexPath) -> CGFloat {
-    guard let model = lyricModels.object(at: indexPath.row) else { return 0.0 }
-    return lineSpacing + model.calcHeight(containerWidth: bounds.width)
+    lyricModels[indexPath.row].calcHeight(containerWidth: bounds.width) + 30
   }
 
-  public func tableView(
-    _ tableView: UITableView,
-    estimatedHeightForRowAt indexPath: IndexPath
-  )
-    -> CGFloat {
-    guard let model = lyricModels.object(at: indexPath.row) else { return 0.0 }
-    return lineSpacing + model.calcHeight(containerWidth: bounds.width)
-  }
-
-  public func tableView(
-    _ tableView: UITableView,
-    cellForRowAt indexPath: IndexPath
-  )
-    -> UITableViewCell {
-    let cell = dequeueReusableCell(
-      withIdentifier: LyricTableCell.typeName,
-      for: indexPath
-    ) as! LyricTableCell
-    if let model = lyricModels.object(at: indexPath.row) {
-      cell.display(model: model)
-    }
+  public func tableView(_ tableView: UITableView, cellForRowAt indexPath: IndexPath) -> UITableViewCell {
+    let cell = dequeueReusableCell(withIdentifier: LyricTableCell.typeName, for: indexPath) as! LyricTableCell
+    cell.display(model: lyricModels[indexPath.row])
     return cell
   }
 
-  public func tableView(
-    _ tableView: UITableView,
-    shouldHighlightRowAt indexPath: IndexPath
-  )
-    -> Bool {
-    guard lyrics?.synced == true,
-          let model = lyricModels.object(at: indexPath.row),
-          model.lyric?.start != nil
-    else { return false }
-    return true
+  public func tableView(_ tableView: UITableView, shouldHighlightRowAt indexPath: IndexPath) -> Bool {
+    lyrics?.synced == true && lyricModels[indexPath.row].lyric?.start != nil
   }
 
   public func tableView(_ tableView: UITableView, didSelectRowAt indexPath: IndexPath) {
-    guard lyrics?.synced == true,
-          let model = lyricModels.object(at: indexPath.row),
-          let lyric = model.lyric,
-          lyric.start != nil
-    else { return }
-    suppressAutoScrollUntil = Date().addingTimeInterval(autoScrollSuppressionInterval)
+    guard let lyrics, lyrics.synced, var lyric = lyricModels[indexPath.row].lyric,
+          let start = lyric.start else { return }
+    // OpenSubsonic's positive offset means the line appears earlier.
+    lyric.start = max(0, start - lyrics.offset)
+    suppressAutoScrollUntil = nil
+    lastScrolledIndex = nil
     onLyricSelected?(lyric)
+    scroll(toTime: lyric.startTime)
   }
 
   public func scrollViewWillBeginDragging(_ scrollView: UIScrollView) {
-    suppressAutoScrollUntil = Date().addingTimeInterval(autoScrollSuppressionInterval)
+    lastScrolledIndex = nil
+    suppressAutoScrollUntil = Date().addingTimeInterval(5)
   }
 
-  public func scrollViewDidEndDragging(
-    _ scrollView: UIScrollView,
-    willDecelerate decelerate: Bool
-  ) {
-    if !decelerate {
-      suppressAutoScrollUntil = Date().addingTimeInterval(autoScrollSuppressionInterval)
-    }
+  public func scrollViewDidEndDragging(_ scrollView: UIScrollView, willDecelerate decelerate: Bool) {
+    if !decelerate { suppressAutoScrollUntil = Date().addingTimeInterval(5) }
   }
 
   public func scrollViewDidEndDecelerating(_ scrollView: UIScrollView) {
-    suppressAutoScrollUntil = Date().addingTimeInterval(autoScrollSuppressionInterval)
-  }
-
-  private func reloadViewModels() {
-    lyricModels.removeAll()
-    lastIndex = nil
-    hasLastLyricsLineAlreadyDisplayedOnce = false
-    reloadInsets()
-
-    guard let lyrics = lyrics else {
-      reloadData()
-      return
-    }
-
-    for lyric in lyrics.line {
-      let model = LyricTableCellModel(lyric: lyric)
-      lyricModels.append(model)
-    }
-    reloadData()
-  }
-
-  func reloadInsets() {
-    contentInset = UIEdgeInsets(
-      top: frame.height / 2,
-      left: 0,
-      bottom: frame.height / 2,
-      right: 0
-    )
+    suppressAutoScrollUntil = Date().addingTimeInterval(5)
   }
 
   func scroll(toTime time: CMTime) {
-    guard let lyrics = lyrics,
-          !lyricModels.isEmpty,
-          lyrics.synced // if the lyrics are not synced -> only display
-    else { return }
-
-    let isAutoScrollAllowed: Bool = {
-      guard let suppressUntil = suppressAutoScrollUntil else { return true }
-      return Date() >= suppressUntil
-    }()
-
-    guard let indexOfNextLine = lyrics.line.firstIndex(where: { $0.startTime >= time }) else {
-      if !hasLastLyricsLineAlreadyDisplayedOnce {
-        if isAutoScrollAllowed {
-          scrollToRow(
-            at: IndexPath(row: lyricModels.count - 1, section: 0),
-            at: .middle,
-            animated: scrollAnimation
-          )
-          hasLastLyricsLineAlreadyDisplayedOnce = true
-        }
-      }
-      if let lastIndex = lastIndex,
-         let lastIndexModel = lyricModels.object(at: lastIndex) {
-        lastIndexModel.isActiveLine = false
-        reconfigureRows(at: [IndexPath(row: lastIndex, section: 0)])
-      }
-      lastIndex = nil
-      return
+    guard let lyrics, lyrics.synced, !lyricModels.isEmpty else { return }
+    let index = lyrics.activeLineIndex(at: time)
+    if index != lastIndex {
+      if let lastIndex { lyricModels[lastIndex].isActiveLine = false }
+      if let index { lyricModels[index].isActiveLine = true }
+      lastIndex = index
     }
-
-    var prevIndex: Int?
-    hasLastLyricsLineAlreadyDisplayedOnce = false
-    let indexOfCurrentLine = max(indexOfNextLine - 1, 0)
-    if let lastIndex = lastIndex,
-       let lastIndexModel = lyricModels.object(at: lastIndex) {
-      lastIndexModel.isActiveLine = false
-      prevIndex = lastIndex
-    }
-    lastIndex = indexOfCurrentLine
-    let curIndexModel = lyricModels.object(at: indexOfCurrentLine)
-    curIndexModel?.isActiveLine = true
-
-    if prevIndex != indexOfCurrentLine {
-      if curIndexModel != nil {
-        reconfigureRows(at: [IndexPath(row: indexOfCurrentLine, section: 0)])
-      }
-      if let prevIndex = prevIndex, lyricModels.object(at: prevIndex) != nil {
-        reconfigureRows(at: [IndexPath(row: prevIndex, section: 0)])
-      }
-    }
-    if isAutoScrollAllowed {
-      scrollToRow(
-        at: IndexPath(row: indexOfCurrentLine, section: 0),
-        at: .middle,
-        animated: scrollAnimation
-      )
-    }
+    guard let index, index != lastScrolledIndex, !isDragging, !isDecelerating,
+          suppressAutoScrollUntil.map({ Date() >= $0 }) ?? true else { return }
+    layoutIfNeeded()
+    let row = rectForRow(at: IndexPath(row: index, section: 0))
+    let target = max(-contentInset.top, row.minY - bounds.height * 0.26)
+    let animated = scrollAnimation && !UIAccessibility.isReduceMotionEnabled && lastScrolledIndex != nil
+    setContentOffset(CGPoint(x: 0, y: target), animated: animated)
+    lastScrolledIndex = index
   }
 }

@@ -778,12 +778,7 @@ final class AmpacheXmlServerApi: URLCleanser, Sendable {
     urlComp.addQueryItem(name: "action", value: "download")
     urlComp.addQueryItem(name: "type", value: isSong ? "song" : "podcast_episode")
     urlComp.addQueryItem(name: "id", value: id)
-    switch settings.user.cacheTranscodingFormatPreference {
-    case .mp3:
-      urlComp.addQueryItem(name: "format", value: "mp3")
-    default:
-      urlComp.addQueryItem(name: "format", value: "raw")
-    }
+    urlComp.addQueryItem(name: "format", value: "raw")
     return try createUrl(from: urlComp)
   }
 
@@ -801,20 +796,7 @@ final class AmpacheXmlServerApi: URLCleanser, Sendable {
     urlComp.addQueryItem(name: "type", value: isSong ? "song" : "podcast_episode")
     urlComp.addQueryItem(name: "id", value: id)
 
-    switch formatPreference {
-    case .mp3:
-      urlComp.addQueryItem(name: "format", value: "mp3")
-    case .raw:
-      urlComp.addQueryItem(name: "format", value: "raw")
-    case .serverConfig:
-      break // do nothing
-    }
-    switch maxBitrate {
-    case .noLimit:
-      break
-    default:
-      urlComp.addQueryItem(name: "bitrate", value: maxBitrate.rawValue)
-    }
+    urlComp.addQueryItem(name: "format", value: "raw")
     urlComp.addQueryItem(name: "length", value: 1)
     let url = try createUrl(from: urlComp)
     return url

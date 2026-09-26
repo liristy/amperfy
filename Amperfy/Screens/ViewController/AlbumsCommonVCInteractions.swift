@@ -298,20 +298,6 @@ class AlbumsCommonVCInteractions {
         )
       }
     )
-    let sortByRating = UIAction(
-      title: "Rating".localized,
-      image: sortType == .rating ? .check : nil,
-      handler: { _ in
-        self.change(sortType: .rating)
-        self.appDelegate.storage.settings.user.albumsSortSetting = .rating
-        self.updateSearchResultsCB?()
-        self.appDelegate.notificationHandler.post(
-          name: .fetchControllerSortChanged,
-          object: nil,
-          userInfo: nil
-        )
-      }
-    )
     let sortByArtist = UIAction(
       title: "Artist".localized,
       image: sortType == .artist ? .check : nil,
@@ -358,7 +344,7 @@ class AlbumsCommonVCInteractions {
       title: "Sort".localized,
       image: .sort,
       options: [],
-      children: [sortByName, sortByRating, sortByArtist, sortByDuration, sortByYear]
+      children: [sortByName, sortByArtist, sortByDuration, sortByYear]
     )
   }
 

@@ -116,7 +116,7 @@ class SwiftUIContentView: UIView {
 
 // MARK: - LargeCurrentlyPlayingPlayerView
 
-class LargeCurrentlyPlayingPlayerView: UIView, UIGestureRecognizerDelegate {
+class LargeCurrentlyPlayingPlayerView: UIView {
   static let rowHeight: CGFloat = 94.0
   static private let margin = UIEdgeInsets(
     top: 0,
@@ -129,8 +129,12 @@ class LargeCurrentlyPlayingPlayerView: UIView, UIGestureRecognizerDelegate {
   private var lyricsView: LyricsView?
   private var visualizerHostingView: SwiftUIContentView?
   private var displayElement: LargeDisplayElement = .artwork
-  private var ratingView: RatingView?
   private let artworkShadowView = UIView()
+  private let lyricsHeader = UIView()
+  private let lyricsArtwork = LibraryEntityImage()
+  private let lyricsTitle = UILabel()
+  private let lyricsArtist = UILabel()
+  private let lyricsOptions = UIButton(type: .system)
 
   @IBOutlet
   weak var upperContainerView: UIView!
@@ -168,7 +172,12 @@ class LargeCurrentlyPlayingPlayerView: UIView, UIGestureRecognizerDelegate {
       cornerRadius: 12
     ).cgPath
 
-    lyricsView?.frame = upperContainerView.bounds
+    lyricsHeader.frame = CGRect(x: 8, y: 0, width: bounds.width - 16, height: 66)
+    lyricsArtwork.frame = CGRect(x: 0, y: 4, width: 54, height: 54)
+    lyricsTitle.frame = CGRect(x: 68, y: 8, width: max(0, lyricsHeader.bounds.width - 116), height: 24)
+    lyricsArtist.frame = CGRect(x: 68, y: 33, width: max(0, lyricsHeader.bounds.width - 116), height: 22)
+    lyricsOptions.frame = CGRect(x: lyricsHeader.bounds.width - 40, y: 12, width: 40, height: 40)
+    lyricsView?.frame = CGRect(x: 0, y: 74, width: bounds.width, height: max(0, bounds.height - 74))
     visualizerHostingView?.hostingController?.view.frame = upperContainerView.bounds
   }
 
@@ -201,11 +210,21 @@ class LargeCurrentlyPlayingPlayerView: UIView, UIGestureRecognizerDelegate {
     lyricsView!.onLyricSelected = { [weak self] lyric in
       self?.appDelegate.player.seek(toSecond: lyric.startTime.seconds)
     }
-    let lyricsTap = UITapGestureRecognizer(target: self, action: #selector(handleLyricsTap(_:)))
-    lyricsTap.cancelsTouchesInView = false
-    lyricsTap.delegate = self
-    lyricsView!.addGestureRecognizer(lyricsTap)
-    upperContainerView.addSubview(lyricsView!)
+    addSubview(lyricsView!)
+    lyricsArtwork.contentMode = .scaleAspectFill
+    lyricsArtwork.layer.cornerRadius = 8
+    lyricsArtwork.clipsToBounds = true
+    lyricsTitle.font = .systemFont(ofSize: 17, weight: .semibold)
+    lyricsTitle.textColor = .white
+    lyricsArtist.font = .systemFont(ofSize: 16)
+    lyricsArtist.textColor = .white.withAlphaComponent(0.65)
+    lyricsOptions.setImage(UIImage(systemName: "ellipsis"), for: .normal)
+    lyricsOptions.tintColor = .white
+    lyricsOptions.backgroundColor = .white.withAlphaComponent(0.12)
+    lyricsOptions.layer.cornerRadius = 20
+    lyricsOptions.accessibilityLabel = "Song options".localized
+    [lyricsArtwork, lyricsTitle, lyricsArtist, lyricsOptions].forEach { lyricsHeader.addSubview($0) }
+    addSubview(lyricsHeader)
 
     visualizerHostingView = SwiftUIContentView()
     visualizerHostingView!.hostingController?.view.frame = upperContainerView.bounds
@@ -217,63 +236,10 @@ class LargeCurrentlyPlayingPlayerView: UIView, UIGestureRecognizerDelegate {
       )
     }
 
-    setupRatingView()
     addSwipeGesturesToArtwork()
-
-    appDelegate.notificationHandler.register(
-      self,
-      selector: #selector(refreshOfflineMode),
-      name: .offlineModeChanged,
-      object: nil
-    )
 
     displayElement = getDisplayElementBasedOnConfig()
     refresh()
-  }
-
-  @objc
-  private func refreshOfflineMode() {
-    refreshRating()
-  }
-
-  private func setupRatingView() {
-    ratingView = RatingView()
-    ratingView!.translatesAutoresizingMaskIntoConstraints = false
-    ratingView!.delegate = self
-    ratingView!.isUserInteractionEnabled = true
-    // Add directly to self and position between artwork and details
-    addSubview(ratingView!)
-
-    // Center vertically between artwork bottom and details top using a UILayoutGuide
-    let spacerGuide = UILayoutGuide()
-    addLayoutGuide(spacerGuide)
-
-    NSLayoutConstraint.activate([
-      // Spacer fills the gap between artwork and details
-      spacerGuide.topAnchor.constraint(equalTo: artworkImage.bottomAnchor),
-      spacerGuide.bottomAnchor.constraint(equalTo: detailsContainer.topAnchor),
-      // Center rating view in the spacer
-      ratingView!.centerXAnchor.constraint(equalTo: centerXAnchor),
-      ratingView!.centerYAnchor.constraint(equalTo: spacerGuide.centerYAnchor),
-      ratingView!.heightAnchor.constraint(equalToConstant: 36),
-      ratingView!.widthAnchor.constraint(equalToConstant: 180),
-    ])
-  }
-
-  @objc
-  private func handleLyricsTap(_ gesture: UITapGestureRecognizer) {
-    // Toggle back to artwork when lyrics are tapped
-    appDelegate.storage.settings.user.isPlayerLyricsDisplayed = false
-    display(element: .artwork)
-  }
-
-  func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer, shouldReceive touch: UITouch)
-    -> Bool {
-    guard let lyricsView = lyricsView,
-          gestureRecognizer is UITapGestureRecognizer
-    else { return true }
-    let location = touch.location(in: lyricsView)
-    return lyricsView.indexPathForRow(at: location) == nil
   }
 
   private func addSwipeGesturesToArtwork() {
@@ -381,6 +347,10 @@ class LargeCurrentlyPlayingPlayerView: UIView, UIGestureRecognizerDelegate {
   public func display(element: LargeDisplayElement) {
     displayElement = element
     artworkShadowView.isHidden = element != .artwork
+    upperContainerView.isHidden = element == .lyrics
+    detailsContainer.isHidden = element == .lyrics
+    lyricsHeader.isHidden = element != .lyrics
+    setNeedsLayout()
 
     switch element {
     case .artwork:
@@ -396,7 +366,6 @@ class LargeCurrentlyPlayingPlayerView: UIView, UIGestureRecognizerDelegate {
       almostHideArtwork()
       showVisualizer()
     }
-    refreshRating()
     rootView?.controlView?.refreshLyricsButton()
   }
 
@@ -454,28 +423,17 @@ class LargeCurrentlyPlayingPlayerView: UIView, UIGestureRecognizerDelegate {
       albumButton: albumButton,
       albumContainerView: albumContainerView
     )
+    lyricsTitle.text = titleLabel.text
+    lyricsArtist.text = artistLabel.text
+    rootView?.playerHandler?.refreshArtwork(artworkImage: lyricsArtwork)
+    rootView?.refreshOptionButton(button: lyricsOptions, rootView: rootView)
     rootView?.refreshFavoriteButton(button: favoriteButton)
     rootView?.refreshOptionButton(button: optionsButton, rootView: rootView)
-    refreshRating()
     display(element: displayElement)
   }
 
-  func refreshRating() {
-    guard appDelegate.storage.settings.user.isShowRating,
-          let song = rootView?.player.currentlyPlaying?.asSong else {
-      ratingView?.setRating(0, animated: false)
-      ratingView?.isHidden = true
-      return
-    }
-    // Keep rating hidden when lyrics are displayed
-    ratingView?.isHidden = (displayElement == .lyrics)
-    ratingView?.setRating(song.rating, animated: false)
-
-    // Disable rating interaction when offline (display only with reduced opacity)
-    ratingView?.isRatingEnabled = !appDelegate.storage.settings.user.isOfflineMode
-  }
-
   func refreshArtwork() {
+    rootView?.playerHandler?.refreshArtwork(artworkImage: lyricsArtwork)
     rootView?.playerHandler?.refreshArtwork(artworkImage: artworkImage)
   }
 
@@ -506,30 +464,5 @@ class LargeCurrentlyPlayingPlayerView: UIView, UIGestureRecognizerDelegate {
   func favoritePressed(_ sender: Any) {
     rootView?.favoritePressed()
     rootView?.refreshFavoriteButton(button: favoriteButton)
-  }
-}
-
-// MARK: RatingViewDelegate
-
-extension LargeCurrentlyPlayingPlayerView: RatingViewDelegate {
-  func ratingView(_ ratingView: RatingView, didChangeRating rating: Int) {
-    guard let song = rootView?.player.currentlyPlaying?.asSong,
-          let account = song.account
-    else { return }
-
-    // Update local rating immediately for responsive UI
-    song.rating = rating
-
-    // Sync rating to server
-    Task {
-      do {
-        try await appDelegate.getMeta(account.info).librarySyncer.setRating(
-          song: song,
-          rating: rating
-        )
-      } catch {
-        appDelegate.eventLogger.report(topic: "Song Rating".localized, error: error)
-      }
-    }
   }
 }

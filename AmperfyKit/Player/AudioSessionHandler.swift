@@ -27,6 +27,7 @@ import os.log
 public class AudioSessionHandler {
   var musicPlayer: AudioPlayer?
   var eventLogger: EventLogger?
+  private var wasPlayingBeforeInterruption = false
 
   func configureObserverForAudioSessionInterruption() {
     NotificationCenter.default.addObserver(
@@ -44,7 +45,7 @@ public class AudioSessionHandler {
   }
 
   @objc
-  private func handleAudioSessionInterruption(notification: NSNotification) {
+  func handleAudioSessionInterruption(notification: NSNotification) {
     guard let interruptionTypeRaw: NSNumber = notification
       .userInfo?[AVAudioSessionInterruptionTypeKey] as? NSNumber,
       let interruptionType = AVAudioSession
@@ -58,19 +59,23 @@ public class AudioSessionHandler {
       // Audio has stopped, already inactive
       // Change state of UI, etc., to reflect non-playing state
       os_log(.info, "Audio Session: Audio interruption began")
+      wasPlayingBeforeInterruption = musicPlayer?.isPlaying == true
       musicPlayer?.pause()
     case AVAudioSession.InterruptionType.ended:
       // Make session active
       // Update user interface
       // AVAudioSessionInterruptionOptionShouldResume option
       os_log(.info, "Audio Session: Audio interruption ended")
+      let shouldRestorePlayback = wasPlayingBeforeInterruption
+      wasPlayingBeforeInterruption = false
       if let interruptionOptionRaw: NSNumber = notification
         .userInfo?[AVAudioSessionInterruptionOptionKey] as? NSNumber {
         let interruptionOption = AVAudioSession
           .InterruptionOptions(rawValue: interruptionOptionRaw.uintValue)
-        if interruptionOption == AVAudioSession.InterruptionOptions.shouldResume {
+        if shouldRestorePlayback, interruptionOption.contains(.shouldResume) {
           // Here you should continue playback
           os_log(.info, "Audio Session: Audio interruption ended -> Resume playing")
+          configureBackgroundPlayback()
           musicPlayer?.play()
         }
       }
@@ -89,16 +94,9 @@ public class AudioSessionHandler {
 
     switch reason {
     case .newDeviceAvailable:
-      let session = AVAudioSession.sharedInstance()
-      for output in session.currentRoute.outputs where
-        output.portType == AVAudioSession.Port.headphones ||
-        output.portType == AVAudioSession.Port.bluetoothA2DP {
-        os_log(.info, "Audio Session: headphones connected")
-        Task { @MainActor in
-          self.musicPlayer?.play()
-        }
-        break
-      }
+      // Connecting an output (including route changes around screen locking) is
+      // not a request to start or reload a song. An active stream stays active.
+      break
     case .oldDeviceUnavailable:
       if let previousRoute =
         userInfo[AVAudioSessionRouteChangePreviousRouteKey] as? AVAudioSessionRouteDescription {

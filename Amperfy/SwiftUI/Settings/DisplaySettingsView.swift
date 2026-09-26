@@ -140,13 +140,6 @@ struct DisplaySettingsView: View {
           "Display artist duration in table rows.".localized
         )
 
-        SettingsSection(
-          content: {
-            SettingsCheckBoxRow(title: "Show Star Rating".localized, isOn: $settings.isShowRating)
-          },
-          footer:
-          "Display star rating in song cells and the currently playing view.".localized
-        )
 
         SettingsSection(
           content: {

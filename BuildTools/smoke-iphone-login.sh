@@ -64,3 +64,25 @@ for language in zh-Hans en; do
   fi
   echo "Signed-in cold launch passed for $language"
 done
+
+# Exercise real streaming, seeking, the server lyrics response, and the full player.
+xcrun simctl terminate "$device_id" "$bundle_id"
+xcrun simctl launch \
+  --stdout="$PWD/build/validation/player.stdout.log" \
+  --stderr="$PWD/build/validation/player.stderr.log" \
+  "$device_id" "$bundle_id" -AppleLanguages '(zh-Hans)' --smoke-login --smoke-player
+ready=false
+for attempt in {1..45}; do
+  if [[ -f "$container/Documents/player-smoke-ready" ]]; then
+    ready=true
+    break
+  fi
+  sleep 2
+done
+xcrun simctl io "$device_id" screenshot build/validation/player-lyrics-zh-Hans.png
+if [[ "$ready" != true ]]; then
+  echo "Streaming/seek/lyrics smoke test failed"
+  cat build/validation/player.stderr.log
+  exit 1
+fi
+echo "Original audio streaming, seek and synchronized lyrics smoke test passed"

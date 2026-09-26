@@ -28,46 +28,6 @@ struct PlayerSettingsView: View {
   @EnvironmentObject
   private var settings: Settings
 
-  private func updateBitrate(
-    wifi: StreamingMaxBitratePreference? = nil,
-    cellular: StreamingMaxBitratePreference? = nil
-  ) {
-    if let wifi = wifi {
-      settings.streamingMaxBitrateWifiPreference = wifi
-    }
-    if let cellular = cellular {
-      settings.streamingMaxBitrateCellularPreference = cellular
-    }
-    appDelegate.player.setStreamingMaxBitrates(
-      to: StreamingMaxBitrates(
-        wifi: settings.streamingMaxBitrateWifiPreference,
-        cellular: settings.streamingMaxBitrateCellularPreference
-      )
-    )
-  }
-
-  private func updateFormatCell(_ format: StreamingFormatPreference) {
-    settings.streamingFormatCellularPreference = format
-
-    appDelegate.player.setStreamingTranscodings(to: StreamingTranscodings(
-      wifi: settings.streamingFormatWifiPreference,
-      cellular: settings.streamingFormatCellularPreference
-    ))
-  }
-
-  private func updateFormatWifi(_ format: StreamingFormatPreference) {
-    settings.streamingFormatWifiPreference = format
-
-    appDelegate.player.setStreamingTranscodings(to: StreamingTranscodings(
-      wifi: settings.streamingFormatWifiPreference,
-      cellular: settings.streamingFormatCellularPreference
-    ))
-  }
-
-  private func updateCacheFormat(_ format: CacheTranscodingFormatPreference) {
-    settings.cacheTranscodingFormatPreference = format
-  }
-
   var body: some View {
     ZStack {
       SettingsList {
@@ -122,89 +82,6 @@ struct PlayerSettingsView: View {
           footer: "When the queue ends, automatically continue playback using Instant Mix to find similar songs.".localized
         )
 
-        // Streaming Format Settings
-        SettingsSection(
-          content: {
-            SettingsRow(title: "Cellular Streaming\nFormat (Transcoding)".localized) {
-              Menu(settings.streamingFormatCellularPreference.description) {
-                ForEach(StreamingFormatPreference.allCases, id: \.self) { format in
-                  Button(format.description) {
-                    updateFormatCell(format)
-                  }
-                }
-              }
-            }
-          },
-          footer: "Select a transcoding format for streaming while using Cellular. Transcoding is recommended for better compatibility.".localized
-        )
-
-        SettingsSection(
-          content: {
-            SettingsRow(title: "Cellular Streaming\nBitrate Limit".localized) {
-              Menu(settings.streamingMaxBitrateCellularPreference.description) {
-                ForEach(StreamingMaxBitratePreference.allCases, id: \.self) { bitrate in
-                  Button(bitrate.description) {
-                    updateBitrate(cellular: bitrate)
-                  }
-                }
-              }
-            }
-          },
-          footer: "Set the maximum streaming bitrate for Cellular.".localized
-        )
-
-        SettingsSection(
-          content: {
-            SettingsRow(title: "WiFi Streaming\nFormat (Transcoding)".localized) {
-              Menu(settings.streamingFormatWifiPreference.description) {
-                ForEach(StreamingFormatPreference.allCases, id: \.self) { format in
-                  Button(format.description) {
-                    updateFormatWifi(format)
-                  }
-                }
-              }
-            }
-          },
-          footer: "Select a transcoding format for streaming while on WiFi. Transcoding is recommended for better compatibility.".localized
-        )
-        // Streaming Bitrate Settings
-        SettingsSection(
-          content: {
-            SettingsRow(title: "WiFi Streaming\nBitrate Limit".localized) {
-              Menu(settings.streamingMaxBitrateWifiPreference.description) {
-                ForEach(StreamingMaxBitratePreference.allCases, id: \.self) { bitrate in
-                  Button(bitrate.description) {
-                    updateBitrate(wifi: bitrate)
-                  }
-                }
-              }
-            }
-          },
-          footer: "Set the maximum streaming bitrate for WiFi.".localized
-        )
-
-        // Cache Format Settings
-        SettingsSection(content: {
-          SettingsRow(title: "Cache\nFormat (Transcoding)".localized) {
-            Menu(settings.cacheTranscodingFormatPreference.description) {
-              ForEach(CacheTranscodingFormatPreference.allCases, id: \.self) { format in
-                Button(format.description) {
-                  updateCacheFormat(format)
-                }
-              }
-            }
-          }
-        }, footer: """
-        Select a transcoding format for cached songs. Changes will not apply to already downloaded songs; clear cache and redownload if needed.
-        \(
-          appDelegate.storage.settings.accounts.getSetting(settings.activeAccountInfo).read
-            .loginCredentials?.backendApi
-            .asServerApiType == .ampache ? "" :
-            """
-            For 'raw', Amperfy uses the Subsonic API's 'download' action, which skips transcoding. Other formats use the 'stream' action, which requires proper server configuration for transcoding.
-            """
-        )
-        """)
       }
     }
     .navigationTitle("Player, Stream & Scrobble".localized)

@@ -24,6 +24,8 @@ test_arguments=(
   -only-testing:AmperfyKitTests/SsPlaylistSongsParserTest
   -only-testing:AmperfyKitTests/PlaylistTest
   -only-testing:AmperfyKitTests/ArtworkTest
+  -only-testing:AmperfyKitTests/MusicPlayerTest
+  -only-testing:AmperfyKitTests/SsLyricsBySongId2ParserTest
 )
 # UI-only pushes need a simulator build and screenshots. The library regression
 # suite runs whenever library code, tests, or project configuration change.

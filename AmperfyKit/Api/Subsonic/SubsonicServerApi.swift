@@ -329,28 +329,8 @@ final class SubsonicServerApi: URLCleanser, Sendable {
 
   public func generateUrl(forDownloadingPlayableId apiId: String) async throws -> URL {
     let version = try await determineApiVersionToUse()
-    // If transcoding is selected for caching the subsonic API method 'stream' must be used
-    // For raw format subsonic API method 'download' can be used
-    switch settings.user.cacheTranscodingFormatPreference {
-    case .mp3:
-      var urlComp = try createAuthApiUrlComponent(version: version, forAction: "stream", id: apiId)
-      urlComp.addQueryItem(name: "format", value: "mp3")
-      let url = try createUrl(from: urlComp)
-      return url
-    case .serverConfig:
-      let urlComp = try createAuthApiUrlComponent(version: version, forAction: "stream", id: apiId)
-      // let the server decide which format to use
-      let url = try createUrl(from: urlComp)
-      return url
-    case .raw:
-      let urlComp = try createAuthApiUrlComponent(
-        version: version,
-        forAction: "download",
-        id: apiId
-      )
-      let url = try createUrl(from: urlComp)
-      return url
-    }
+    let urlComp = try createAuthApiUrlComponent(version: version, forAction: "download", id: apiId)
+    return try createUrl(from: urlComp)
   }
 
   public func generateUrl(
@@ -362,20 +342,8 @@ final class SubsonicServerApi: URLCleanser, Sendable {
     let version = try await determineApiVersionToUse()
     var urlComp = try createAuthApiUrlComponent(version: version, forAction: "stream", id: apiId)
 
-    switch formatPreference {
-    case .mp3:
-      urlComp.addQueryItem(name: "format", value: "mp3")
-    case .raw:
-      urlComp.addQueryItem(name: "format", value: "raw")
-    case .serverConfig:
-      break // do nothing
-    }
-    switch maxBitrate {
-    case .noLimit:
-      break
-    default:
-      urlComp.addQueryItem(name: "maxBitRate", value: maxBitrate.rawValue)
-    }
+    // Always request the original stream, even when an old preference requested transcoding.
+    urlComp.addQueryItem(name: "format", value: "raw")
     return try createUrl(from: urlComp)
   }
 

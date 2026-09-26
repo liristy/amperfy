@@ -28,7 +28,6 @@ import XCTest
 // MARK: - MOCK_AudioStreamingPlayer
 
 class MOCK_AudioStreamingPlayer: AudioStreamingPlayer {
-  static nonisolated(unsafe) private var delegateBackup: AudioPlayerDelegate?
 
   nonisolated(unsafe) private var _mockElapsedTime: Double = 0.0
   private let _mockElapsedTimeLock = NSLock()
@@ -64,15 +63,15 @@ class MOCK_AudioStreamingPlayer: AudioStreamingPlayer {
   }
 
   override func play(url: URL) {
-    Self.delegateBackup = delegate
     mockElapsedTime = 0.0
     isPlaying = true
     isStopped = false
     let currId = url.absoluteString
-    Task { @MainActor [currId] in
+    Task { @MainActor [weak self, currId] in
+      guard let self else { return }
       let entryID = AudioEntryId(id: currId)
-      Self.delegateBackup?.audioPlayerDidStartPlaying(
-        player: AudioStreaming.AudioPlayer(),
+      self.delegate?.audioPlayerDidStartPlaying(
+        player: self,
         with: entryID
       )
     }
@@ -80,6 +79,11 @@ class MOCK_AudioStreamingPlayer: AudioStreamingPlayer {
 
   override func pause() {
     isPlaying = false
+  }
+
+  override func resume() {
+    isPlaying = true
+    isStopped = false
   }
 
   override func stop(clearQueue: Bool = true) {
@@ -398,7 +402,105 @@ class MusicPlayerTest: XCTestCase {
     playlistAllCached = playlistAllCachedFetched
   }
 
-  override func tearDown() {}
+  override func tearDown() {
+    backendPlayer.stop()
+    mockAudioStreamingPlayer.delegate = nil
+  }
+
+  private func startCachedSong(at time: Double) async throws {
+    testPlayer.play(context: PlayContext(name: "Recovery", playables: [songCached]))
+    let url = try XCTUnwrap(library.getFileURL(forPlayable: songCached))
+    backendPlayer.didStartPlaying(url: url.absoluteString)
+    mockAudioStreamingPlayer.mockElapsedTime = time
+    for _ in 0..<5 { await Task.yield() }
+  }
+
+  func testCancelPendingQueuePreservesCurrentStreamAndPosition() async throws {
+    try await startCachedSong(at: 87.25)
+    testPlayer.pause()
+    let count = songCached.playCount
+    backendPlayer.audioPlayerDidCancel(player: mockAudioStreamingPlayer,
+      queuedItems: [AudioEntryId(id: "cancelled-next-song")])
+    for _ in 0..<5 { await Task.yield() }
+    XCTAssertTrue(backendPlayer.canBeContinued)
+    testPlayer.play()
+    XCTAssertEqual(testPlayer.elapsedTime, 87.25, accuracy: 0.01)
+    XCTAssertEqual(songCached.playCount, count)
+  }
+
+  func testEngineRestartResumesEarlyFractionalPositionWithResumeSettingDisabled() async throws {
+    storage.settings.user.isPlayerSongPlaybackResumeEnabled = false
+    try await startCachedSong(at: 5.25)
+    testPlayer.pause()
+    let count = songCached.playCount
+    mockAudioStreamingPlayer.isStopped = true
+    mockAudioStreamingPlayer.mockElapsedTime = 0
+    testPlayer.play()
+    let url = try XCTUnwrap(library.getFileURL(forPlayable: songCached))
+    backendPlayer.didStartPlaying(url: url.absoluteString)
+    XCTAssertEqual(testPlayer.elapsedTime, 5.25, accuracy: 0.01)
+    XCTAssertEqual(testPlayer.currentlyPlaying, songCached)
+    XCTAssertEqual(songCached.playCount, count)
+  }
+
+  func testAudioInterruptionResumesWithoutRestartingTrack() async throws {
+    try await startCachedSong(at: 42.75)
+    let session = AudioSessionHandler()
+    session.musicPlayer = testMusicPlayer
+    session.handleAudioSessionInterruption(notification: NSNotification(
+      name: AVAudioSession.interruptionNotification, object: nil,
+      userInfo: [AVAudioSessionInterruptionTypeKey: NSNumber(value: AVAudioSession.InterruptionType.began.rawValue)]))
+    XCTAssertFalse(testPlayer.isPlaying)
+    session.handleAudioSessionInterruption(notification: NSNotification(
+      name: AVAudioSession.interruptionNotification, object: nil,
+      userInfo: [AVAudioSessionInterruptionTypeKey: NSNumber(value: AVAudioSession.InterruptionType.ended.rawValue),
+                 AVAudioSessionInterruptionOptionKey: NSNumber(value: AVAudioSession.InterruptionOptions.shouldResume.rawValue)]))
+    XCTAssertTrue(testPlayer.isPlaying)
+    XCTAssertEqual(testPlayer.elapsedTime, 42.75, accuracy: 0.01)
+  }
+
+  func testInterruptionDoesNotStartManuallyPausedTrack() async throws {
+    try await startCachedSong(at: 42.75)
+    testPlayer.pause()
+    let session = AudioSessionHandler()
+    session.musicPlayer = testMusicPlayer
+    session.handleAudioSessionInterruption(notification: NSNotification(
+      name: AVAudioSession.interruptionNotification, object: nil,
+      userInfo: [AVAudioSessionInterruptionTypeKey: NSNumber(value: AVAudioSession.InterruptionType.began.rawValue)]))
+    session.handleAudioSessionInterruption(notification: NSNotification(
+      name: AVAudioSession.interruptionNotification, object: nil,
+      userInfo: [AVAudioSessionInterruptionTypeKey: NSNumber(value: AVAudioSession.InterruptionType.ended.rawValue),
+                 AVAudioSessionInterruptionOptionKey: NSNumber(value: AVAudioSession.InterruptionOptions.shouldResume.rawValue)]))
+    XCTAssertFalse(testPlayer.isPlaying)
+    XCTAssertEqual(testPlayer.elapsedTime, 42.75, accuracy: 0.01)
+  }
+
+  func testNonEOFStopDoesNotAdvanceQueue() async throws {
+    try await startCachedSong(at: 42.75)
+    testPlayer.appendContextQueue(playables: [songToDownload])
+    let url = try XCTUnwrap(library.getFileURL(forPlayable: songCached))
+    for reason in [AudioPlayerStopReason.userAction, .error, .disposed] {
+      backendPlayer.audioPlayerDidFinishPlaying(player: mockAudioStreamingPlayer,
+        entryId: AudioEntryId(id: url.absoluteString), stopReason: reason, progress: 42.75, duration: 180)
+    }
+    for _ in 0..<5 { await Task.yield() }
+    XCTAssertEqual(testPlayer.currentlyPlaying, songCached)
+    XCTAssertTrue(backendPlayer.canBeContinued)
+  }
+
+  func testRemovedFeaturesIgnoreLegacyPreferences() {
+    storage.settings.user.isShowRating = true
+    storage.settings.user.streamingFormatWifiPreference = .mp3
+    storage.settings.user.streamingFormatCellularPreference = .mp3
+    storage.settings.user.cacheTranscodingFormatPreference = .mp3
+    storage.settings.user.songsSortSetting = .rating
+    XCTAssertFalse(storage.settings.user.isShowRating)
+    XCTAssertEqual(storage.settings.user.streamingFormatWifiPreference, .raw)
+    XCTAssertEqual(storage.settings.user.streamingFormatCellularPreference, .raw)
+    XCTAssertEqual(storage.settings.user.cacheTranscodingFormatPreference, .raw)
+    XCTAssertEqual(storage.settings.user.songsSortSetting, .name)
+  }
+
 
   func getAccountForSong(atIndex: Int) -> Account {
     let accIndex = cdHelper.seeder.songs[atIndex].accountIndex

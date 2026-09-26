@@ -117,6 +117,15 @@ public struct StructuredLyrics {
   public var offset =
     0 // The offset to apply to all lyrics, in milliseconds. Positive means lyrics appear sooner, negative means later. If not included, the offset must be assumed to be 0
   public init() {}
+
+  public func activeLineIndex(at time: CMTime) -> Int? {
+    guard synced, time.seconds.isFinite else { return nil }
+    let milliseconds = time.seconds * 1_000 + Double(offset)
+    return line.lastIndex { lyric in
+      guard let start = lyric.start else { return false }
+      return Double(start) <= milliseconds
+    }
+  }
 }
 
 // MARK: - LyricsLine

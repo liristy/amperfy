@@ -96,7 +96,7 @@ class EntityPreviewActionBuilder {
 
     var playActions = [UIMenuElement]()
     var gotoActions = [UIMenuElement]()
-    var ratingFavActions = [UIMenuElement]()
+    var favoriteActions = [UIMenuElement]()
     var elementHandlingActions = [UIMenuElement]()
 
     if isPlay {
@@ -140,14 +140,10 @@ class EntityPreviewActionBuilder {
     }
     if let libraryEntity = entityContainer as? AbstractLibraryEntity, entityContainer.isFavoritable,
        appDelegate.storage.settings.user.isOnlineMode {
-      ratingFavActions.append(createFavoriteMenu(libraryEntity: libraryEntity))
+      favoriteActions.append(createFavoriteMenu(libraryEntity: libraryEntity))
     }
-    if let libraryEntity = entityContainer as? AbstractLibraryEntity, entityContainer.isRateable,
-       appDelegate.storage.settings.user.isOnlineMode {
-      ratingFavActions.append(createRatingMenu(libraryEntity: libraryEntity))
-    }
-    if !ratingFavActions.isEmpty {
-      menuActions.append(UIMenu(options: .displayInline, children: ratingFavActions))
+    if !favoriteActions.isEmpty {
+      menuActions.append(UIMenu(options: .displayInline, children: favoriteActions))
     }
     if isAddToPlaylist {
       elementHandlingActions.append(createAddToPlaylistAction())
@@ -565,93 +561,6 @@ class EntityPreviewActionBuilder {
         self.appDelegate.eventLogger.report(topic: "Toggle Favorite".localized, error: error)
       }
       self.reloadRootView()
-    }
-  }
-
-  private func createRatingMenu(libraryEntity: AbstractLibraryEntity) -> UIMenu {
-    let rating = libraryEntity
-      .rating == 0 ? "Not rated".localized :
-      "%ld Stars".localizedFormat(libraryEntity.rating)
-    let menuIcon = libraryEntity
-      .rating == 0 ? UIImage.starEmpty : UIImage.starFill
-    let children = [
-      UIAction(title: "No Rating".localized, image: .ban) { action in self.setRating(rating: 0) },
-      UIAction(
-        title: "1 Star",
-        image: libraryEntity.rating >= 1 ? .starFill : .starEmpty
-      ) { action in
-        self.setRating(rating: 1)
-      },
-      UIAction(
-        title: "2 Stars",
-        image: libraryEntity.rating >= 2 ? .starFill : .starEmpty
-      ) { action in self
-        .setRating(rating: 2)
-      },
-      UIAction(
-        title: "3 Stars",
-        image: libraryEntity.rating >= 3 ? .starFill : .starEmpty
-      ) { action in self
-        .setRating(rating: 3)
-      },
-      UIAction(
-        title: "4 Stars",
-        image: libraryEntity.rating >= 4 ? .starFill : .starEmpty
-      ) { action in self
-        .setRating(rating: 4)
-      },
-      UIAction(
-        title: "5 Stars",
-        image: libraryEntity.rating >= 5 ? .starFill : .starEmpty
-      ) { action in self
-        .setRating(rating: 5)
-      },
-    ]
-
-    return UIMenu(
-      title: "Rating: %ld".localizedFormat(rating),
-      image: menuIcon,
-      options: .displayAsPalette,
-      children: children
-    )
-  }
-
-  private func setRating(rating: Int) {
-    guard appDelegate.storage.settings.user.isOnlineMode,
-          let account = entityContainer.account else { return }
-    if let song = (entityContainer as? AbstractPlayable)?.asSong {
-      song.rating = rating
-      appDelegate.storage.main.saveContext()
-      Task { @MainActor in do {
-        try await self.appDelegate.getMeta(account.info).librarySyncer.setRating(
-          song: song,
-          rating: rating
-        )
-      } catch {
-        self.appDelegate.eventLogger.report(topic: "Song Rating Sync", error: error)
-      }}
-    } else if let album = entityContainer as? Album {
-      album.rating = rating
-      appDelegate.storage.main.saveContext()
-      Task { @MainActor in do {
-        try await self.appDelegate.getMeta(account.info).librarySyncer.setRating(
-          album: album,
-          rating: rating
-        )
-      } catch {
-        self.appDelegate.eventLogger.report(topic: "Album Rating Sync", error: error)
-      }}
-    } else if let artist = entityContainer as? Artist {
-      artist.rating = rating
-      appDelegate.storage.main.saveContext()
-      Task { @MainActor in do {
-        try await self.appDelegate.getMeta(account.info).librarySyncer.setRating(
-          artist: artist,
-          rating: rating
-        )
-      } catch {
-        self.appDelegate.eventLogger.report(topic: "Artist Rating Sync", error: error)
-      }}
     }
   }
 

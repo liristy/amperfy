@@ -21,6 +21,7 @@
 
 @testable import AmperfyKit
 import XCTest
+import CoreMedia
 
 class SsLyricsBySongId2ParserTest: AbstractSsParserTest {
   override func setUp() async throws {
@@ -31,6 +32,30 @@ class SsLyricsBySongId2ParserTest: AbstractSsParserTest {
 
   override func createParserDelegate() {
     ssParserDelegate = SsLyricsParserDelegate(performanceMonitor: MOCK_PerformanceMonitor())
+  }
+
+  func testActiveLineAtBoundariesAndAfterFinalLine() {
+    var lyrics = StructuredLyrics()
+    lyrics.synced = true
+    lyrics.line = [1000, 2000, 3000].map { start in
+      var line = LyricsLine()
+      line.start = start
+      line.value = "Line"
+      return line
+    }
+    func time(_ milliseconds: Int64) -> CMTime { CMTime(value: milliseconds, timescale: 1000) }
+    XCTAssertNil(lyrics.activeLineIndex(at: time(999)))
+    XCTAssertEqual(lyrics.activeLineIndex(at: time(1000)), 0)
+    XCTAssertEqual(lyrics.activeLineIndex(at: time(1999)), 0)
+    XCTAssertEqual(lyrics.activeLineIndex(at: time(2000)), 1)
+    XCTAssertEqual(lyrics.activeLineIndex(at: time(3000)), 2)
+    XCTAssertEqual(lyrics.activeLineIndex(at: time(60000)), 2)
+    lyrics.offset = 100
+    XCTAssertEqual(lyrics.activeLineIndex(at: time(1900)), 1)
+    lyrics.offset = -100
+    XCTAssertEqual(lyrics.activeLineIndex(at: time(2000)), 0)
+    lyrics.synced = false
+    XCTAssertNil(lyrics.activeLineIndex(at: time(2000)))
   }
 
   override func checkCorrectParsing() {

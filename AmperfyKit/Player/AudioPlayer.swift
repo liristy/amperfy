@@ -64,6 +64,8 @@ public class AudioPlayer: NSObject, BackendAudioPlayerNotifiable {
   private var notifierList: [WeakMusicPlayable] = []
   public private(set) var currentRadioNowPlaying: RadioNowPlayingInfo?
   private var lastRadioStreamTitle: String?
+  private var pendingResumeTime: Double?
+  var isPlaying: Bool { backendAudioPlayer.isPlaying }
 
   init(
     coreData: PlayerStatusPersistent,
@@ -107,12 +109,15 @@ public class AudioPlayer: NSObject, BackendAudioPlayerNotifiable {
     notifyItemStartedPlayingFromBeginning()
   }
 
-  private func insertIntoPlayer(playable: AbstractPlayable) {
-    userStatistics.playedItem(
-      repeatMode: playerStatus.repeatMode,
-      isShuffle: playerStatus.isShuffle
-    )
-    playable.countPlayed()
+  private func insertIntoPlayer(playable: AbstractPlayable, resumeTime: Double? = nil) {
+    pendingResumeTime = resumeTime
+    if resumeTime == nil {
+      userStatistics.playedItem(
+        repeatMode: playerStatus.repeatMode,
+        isShuffle: playerStatus.isShuffle
+      )
+      playable.countPlayed()
+    }
     backendAudioPlayer.requestToPlay(
       playable: playable,
       playbackRate: playerStatus.playbackRate,
@@ -149,7 +154,9 @@ public class AudioPlayer: NSObject, BackendAudioPlayerNotifiable {
   func play() {
     if !backendAudioPlayer.canBeContinued {
       if let currentPlayable = currentlyPlaying {
-        insertIntoPlayer(playable: currentPlayable)
+        let resumeTime = !currentPlayable.isRadio && !backendAudioPlayer.isStopped ?
+          backendAudioPlayer.resumePlaybackTime : nil
+        insertIntoPlayer(playable: currentPlayable, resumeTime: resumeTime)
       }
     } else {
       backendAudioPlayer.continuePlay()
@@ -333,7 +340,12 @@ public class AudioPlayer: NSObject, BackendAudioPlayerNotifiable {
     for notifier in notifierList {
       notifier.value?.didStartPlayingFromBeginning()
     }
-    seekToLastStoppedPlayTime()
+    if let pendingResumeTime {
+      self.pendingResumeTime = nil
+      backendAudioPlayer.seek(toSecond: pendingResumeTime)
+    } else {
+      seekToLastStoppedPlayTime()
+    }
   }
 
   func notifyItemStartedPlaying() {
