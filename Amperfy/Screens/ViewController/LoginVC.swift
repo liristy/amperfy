@@ -69,7 +69,7 @@ class LoginVC: UIViewController {
   fileprivate lazy var iconView: UIImageView = {
     let imageView = UIImageView()
     imageView.contentMode = .scaleAspectFit
-    imageView.image = .appIconTemplate
+    imageView.image = UIImage.appIcon.withRenderingMode(.alwaysOriginal)
     imageView.tintColor = appDelegate.storage.settings.accounts.getSetting(nil).read.themePreference
       .asColor
     return imageView

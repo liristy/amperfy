@@ -46,6 +46,8 @@ class SyncVC: UIViewController {
 
   override func viewDidLoad() {
     super.viewDidLoad()
+    skipButton.setTitle("Skip".localized, for: .normal)
+    skipButton.configuration?.title = "Skip".localized
     progressBar.setProgress(0.0, animated: true)
     progressInfo.text = ""
     progressLabel.text = String(format: "%.1f", 0.0) + "%"
