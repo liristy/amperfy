@@ -18,7 +18,7 @@ sleep 1
 for language in zh-Hans en; do
   # Only the throwaway CI simulator is reset; each language must complete a fresh login.
   xcrun simctl terminate "$device_id" "$bundle_id" || true
-  xcrun simctl uninstall "$device_id" "$bundle_id"
+  xcrun simctl uninstall "$device_id" "$bundle_id" || true
   xcrun simctl install "$device_id" "$app_path"
   container=$(xcrun simctl get_app_container "$device_id" "$bundle_id" data)
   xcrun simctl launch --terminate-running-process \
