@@ -4906,6 +4906,28 @@
           }
         }
       }
+    },
+    "Auto-Detect": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "自动检测"
+          }
+        }
+      }
+    },
+    "Subsonic (legacy login)": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Subsonic（旧版登录）"
+          }
+        }
+      }
     }
   },
   "version": "1.0"

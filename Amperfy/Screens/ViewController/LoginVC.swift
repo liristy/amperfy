@@ -70,6 +70,8 @@ class LoginVC: UIViewController {
     let imageView = UIImageView()
     imageView.contentMode = .scaleAspectFit
     imageView.image = UIImage.appIcon.withRenderingMode(.alwaysOriginal)
+    imageView.clipsToBounds = true
+    imageView.layer.cornerRadius = 14
     imageView.tintColor = appDelegate.storage.settings.accounts.getSetting(nil).read.themePreference
       .asColor
     return imageView
@@ -78,7 +80,7 @@ class LoginVC: UIViewController {
   fileprivate lazy var amperfyLabel: UILabel = {
     let label = UILabel()
     label.text = "Amperfy"
-    label.font = .systemFont(ofSize: 50, weight: .bold)
+    label.font = .systemFont(ofSize: 36, weight: .bold)
     label.textColor = .tintColor
     label.tintColor = appDelegate.storage.settings.accounts.getSetting(nil).read.themePreference
       .asColor
@@ -492,7 +494,7 @@ class LoginVC: UIViewController {
 
     apiSelectorButton.showsMenuAsPrimaryAction = true
     apiSelectorButton.menu = UIMenu(title: "Select API".localized, children: [
-      UIAction(title: BackenApiType.notDetected.selectorDescription, handler: { _ in
+      UIAction(title: BackenApiType.notDetected.selectorDescription.localized, handler: { _ in
         self.selectedApiType = .notDetected
         self.updateApiSelectorText()
       }),
@@ -504,7 +506,7 @@ class LoginVC: UIViewController {
         self.selectedApiType = .subsonic
         self.updateApiSelectorText()
       }),
-      UIAction(title: BackenApiType.subsonic_legacy.selectorDescription, handler: { _ in
+      UIAction(title: BackenApiType.subsonic_legacy.selectorDescription.localized, handler: { _ in
         self.selectedApiType = .subsonic_legacy
         self.updateApiSelectorText()
       }),
@@ -517,8 +519,12 @@ class LoginVC: UIViewController {
     formGlassContainer.translatesAutoresizingMaskIntoConstraints = false
     loginGlassContainer.translatesAutoresizingMaskIntoConstraints = false
     closeButton.translatesAutoresizingMaskIntoConstraints = false
-    view.addSubview(amperfyLabel)
-    view.addSubview(iconView)
+    let brandHeader = UIStackView(arrangedSubviews: [iconView, amperfyLabel])
+    brandHeader.axis = .horizontal
+    brandHeader.alignment = .center
+    brandHeader.spacing = 12
+    brandHeader.translatesAutoresizingMaskIntoConstraints = false
+    view.addSubview(brandHeader)
     view.addSubview(formGlassContainer)
     view.addSubview(loginGlassContainer)
     view.addSubview(closeButton)
@@ -546,9 +552,9 @@ class LoginVC: UIViewController {
       constant: 0
     ))
     NSLayoutConstraint.activate([
-      amperfyLabel.centerXAnchor.constraint(equalTo: view.centerXAnchor, constant: 0),
-      amperfyLabel.bottomAnchor.constraint(equalTo: formGlassContainer.topAnchor, constant: -30),
-      amperfyLabel.heightAnchor.constraint(equalToConstant: 60),
+      brandHeader.centerXAnchor.constraint(equalTo: view.centerXAnchor),
+      brandHeader.bottomAnchor.constraint(equalTo: formGlassContainer.topAnchor, constant: -24),
+      brandHeader.heightAnchor.constraint(equalToConstant: 64),
 
       formGlassContainer.centerXAnchor.constraint(equalTo: view.centerXAnchor, constant: 0),
       formGlassContainer.centerYAnchor.constraint(equalTo: view.centerYAnchor, constant: 0),
@@ -564,9 +570,7 @@ class LoginVC: UIViewController {
       loginGlassContainer.widthAnchor.constraint(equalToConstant: 140),
       loginGlassContainer.heightAnchor.constraint(equalToConstant: 40),
 
-      iconView.centerXAnchor.constraint(equalTo: view.centerXAnchor, constant: 0),
-      iconView.centerYAnchor.constraint(equalTo: view.centerYAnchor, constant: 0),
-      iconView.heightAnchor.constraint(equalTo: formGlassContainer.heightAnchor, constant: 40),
+      iconView.heightAnchor.constraint(equalToConstant: 56),
 
       // Close button top-right
       closeButton.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor, constant: 16),
@@ -635,6 +639,6 @@ class LoginVC: UIViewController {
   }
 
   func updateApiSelectorText() {
-    apiSelectorButton.setTitle("\(selectedApiType.selectorDescription)", for: .normal)
+    apiSelectorButton.setTitle(selectedApiType.selectorDescription.localized, for: .normal)
   }
 }

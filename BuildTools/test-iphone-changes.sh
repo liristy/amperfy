@@ -16,18 +16,30 @@ for runtime, entries in devices.items():
 raise SystemExit("No iOS 26 iPhone simulator is installed")
 ')
 
-xcodebuild test \
+test_arguments=(
+  test
+  -resultBundlePath build/validation/PlaylistTests.xcresult
+  -parallel-testing-enabled NO
+  -only-testing:AmperfyKitTests/SsPlaylistsParserTest
+  -only-testing:AmperfyKitTests/SsPlaylistSongsParserTest
+  -only-testing:AmperfyKitTests/PlaylistTest
+  -only-testing:AmperfyKitTests/ArtworkTest
+)
+# UI-only pushes need a simulator build and screenshots. The library regression
+# suite runs whenever library code, tests, or project configuration change.
+# Missing history and manual runs always execute the tests.
+if [[ "${GITHUB_EVENT_NAME:-}" == push && -n "${BASE_SHA:-}" ]] &&
+  git cat-file -e "${BASE_SHA}^{commit}" 2>/dev/null &&
+  git diff --quiet "$BASE_SHA" HEAD -- AmperfyKit AmperfyKitTests Amperfy.xcodeproj; then
+  test_arguments=(build)
+fi
+
+xcodebuild "${test_arguments[@]}" \
   -project Amperfy.xcodeproj \
   -scheme Amperfy \
   -destination "platform=iOS Simulator,id=$device_id" \
   -derivedDataPath build/validation/DerivedData \
-  -resultBundlePath build/validation/PlaylistTests.xcresult \
   -onlyUsePackageVersionsFromResolvedFile \
-  -parallel-testing-enabled NO \
-  -only-testing:AmperfyKitTests/SsPlaylistsParserTest \
-  -only-testing:AmperfyKitTests/SsPlaylistSongsParserTest \
-  -only-testing:AmperfyKitTests/PlaylistTest \
-  -only-testing:AmperfyKitTests/ArtworkTest \
   CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO \
   2>&1 | tee build/validation/test.log
 
