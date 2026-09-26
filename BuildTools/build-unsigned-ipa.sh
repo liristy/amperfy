@@ -38,7 +38,7 @@ if [[ ! -f "$app_path/Amperfy" || ! -f "$app_path/Frameworks/AmperfyKit.framewor
   echo "Archive is missing the app executable or its embedded AmperfyKit framework." >&2
   exit 1
 fi
-xcrun lipo -verify_arch arm64 "$app_path/Amperfy"
+xcrun lipo "$app_path/Amperfy" -verify_arch arm64
 
 mkdir -p "$work_dir/package/Payload"
 ditto "$app_path" "$work_dir/package/Payload/Amperfy.app"
