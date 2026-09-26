@@ -59,6 +59,11 @@ class PlaylistTest: XCTestCase {
   override func tearDown() {}
 
   func testPlaylistCoverFallsBackToSongsAndSurvivesReload() throws {
+    let song = try XCTUnwrap(testPlaylist.playables.first)
+    let songArtwork = library.createArtwork(account: account)
+    songArtwork.id = "song-cover"
+    song.artwork = songArtwork
+    testPlaylist.updateArtworkItems()
     XCTAssertNil(testPlaylist.getArtworkCollection(theme: .blue).serverArtwork)
     XCTAssertNotNil(testPlaylist.getArtworkCollection(theme: .blue).singleImageEntity)
     testPlaylist.id = "playlist-cover-test"

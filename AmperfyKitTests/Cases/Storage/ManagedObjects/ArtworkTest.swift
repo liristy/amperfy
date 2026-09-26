@@ -38,6 +38,41 @@ class ArtworkTest: XCTestCase {
 
   override func tearDown() {}
 
+  func testFailedArtworkRequestCanRetryWithoutDuplicatingPendingDownloads() async throws {
+    testArtwork.id = "retry-cover"
+    testArtwork.status = .NotChecked
+    library.saveContext()
+    let info = try XCTUnwrap(testArtwork.threadSafeInfo)
+    let asyncStorage = AsyncCoreDataAccessWrapper(persistentContainer: cdHelper.persistentContainer)
+    let manager = DownloadRequestManager(
+      accountObjectId: account.managedObject.objectID,
+      storage: asyncStorage,
+      getDownloadDelegateCB: { MOCK_DownloadManagerDelegate() }
+    )
+    let created = await manager.add(downloadInfo: info)
+    let requestID = try XCTUnwrap(created?.objectID)
+    let duplicate = await manager.add(downloadInfo: info)
+    XCTAssertNil(duplicate)
+
+    try await asyncStorage.perform { companion in
+      let download = Download(managedObject: companion.context.object(with: requestID) as! DownloadMO)
+      download.error = .fetchFailed
+      download.isDownloading = false
+    }
+    let retried = await manager.add(downloadInfo: info)
+    XCTAssertEqual(retried?.objectID, requestID)
+    let duplicateRetry = await manager.add(downloadInfo: info)
+    XCTAssertNil(duplicateRetry)
+
+    // A completed download whose file was lost must also be recoverable.
+    try await asyncStorage.perform { companion in
+      let download = Download(managedObject: companion.context.object(with: requestID) as! DownloadMO)
+      download.isDownloading = false
+    }
+    let missingCacheRetry = await manager.add(downloadInfo: info)
+    XCTAssertEqual(missingCacheRetry?.objectID, requestID)
+  }
+
   func testCreation() {
     let artwork = library.createArtwork(account: account)
     XCTAssertEqual(artwork.account?.serverHash, TestAccountInfo.test1ServerHash)
