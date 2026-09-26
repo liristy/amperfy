@@ -13,6 +13,8 @@ on:
       - 'Amperfy.xcodeproj/**'
       - 'BuildTools/build-unsigned-ipa.sh'
       - 'BuildTools/test-iphone-changes.sh'
+      - 'BuildTools/smoke-iphone-login.sh'
+      - 'BuildTools/subsonic-smoke-server.py'
       - 'docs/iphone-install-zh.md'
       - '.github/workflows/ios-sideload.yml'
 
@@ -45,9 +47,10 @@ jobs:
         with:
           name: Amperfy-validation-${{ github.run_number }}
           path: |
-            build/validation/test.log
+            build/validation/*.log
             build/validation/PlaylistTests.xcresult
-            build/validation/login-*.png
+            build/validation/*.png
+            build/validation/crashes
           retention-days: 7
 
   build:

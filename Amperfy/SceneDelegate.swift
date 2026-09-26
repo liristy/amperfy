@@ -129,6 +129,17 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
 
   func replaceMainRootViewController(vc: UIViewController) {
     window?.rootViewController = vc
+    #if DEBUG && targetEnvironment(simulator)
+      if ProcessInfo.processInfo.arguments.contains("--smoke-login"),
+         vc is MainSceneHostingViewController {
+        Task { @MainActor in
+          // Allow view loading, initial home requests and artwork downloads to complete.
+          try? await Task.sleep(for: .seconds(10))
+          let marker = URL.documentsDirectory.appendingPathComponent("login-smoke-ready")
+          try? "ready".write(to: marker, atomically: true, encoding: .utf8)
+        }
+      }
+    #endif
   }
 
   /** Called when the user activates your application by selecting a shortcut on the Home Screen,

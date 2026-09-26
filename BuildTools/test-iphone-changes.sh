@@ -54,3 +54,5 @@ for language in zh-Hans en; do
   sleep 5
   xcrun simctl io "$device_id" screenshot "build/validation/login-$language.png"
 done
+
+bash BuildTools/smoke-iphone-login.sh "$device_id" "$app_path" "$bundle_id"

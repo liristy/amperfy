@@ -488,6 +488,23 @@ class LoginVC: UIViewController {
     present(alert, animated: true, completion: nil)
   }
 
+  #if DEBUG && targetEnvironment(simulator)
+    private var didStartLoginSmokeTest = false
+
+    override func viewDidAppear(_ animated: Bool) {
+      super.viewDidAppear(animated)
+      // Exercise the real login and synchronization path with the local CI fixture.
+      guard ProcessInfo.processInfo.arguments.contains("--smoke-login"),
+            !didStartLoginSmokeTest else { return }
+      didStartLoginSmokeTest = true
+      serverUrlTF.text = "http://127.0.0.1:8765"
+      usernameTF.text = "smoke"
+      passwordTF.text = "smoke"
+      selectedApiType = .subsonic
+      login()
+    }
+  #endif
+
   override func viewDidLoad() {
     super.viewDidLoad()
     updateApiSelectorText()
