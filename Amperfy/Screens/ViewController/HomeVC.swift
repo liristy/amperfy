@@ -32,7 +32,7 @@ final class HomeVC: UICollectionViewController {
   private var dataSource: UICollectionViewDiffableDataSource<HomeSection, HomeItem>!
   private let log = OSLog(subsystem: "Amperfy", category: "HomeVC")
 
-  private static let itemWidth: CGFloat = 160.0
+  private static let itemWidth: CGFloat = 176.0
 
   private var userButton: UIButton?
   private var userBarButtonItem: UIBarButtonItem?
@@ -132,18 +132,18 @@ final class HomeVC: UICollectionViewController {
       // We'll use a vertical group containing the cell's content; the cell itself handles layout.
       let groupSize = NSCollectionLayoutSize(
         widthDimension: .absolute(itemWidth),
-        heightDimension: .estimated(210)
+        heightDimension: .estimated(232)
       )
       let group = NSCollectionLayoutGroup.horizontal(layoutSize: groupSize, subitems: [item])
 
       let sectionLayout = NSCollectionLayoutSection(group: group)
-      sectionLayout.orthogonalScrollingBehavior = .continuous
-      sectionLayout.interGroupSpacing = 12
+      sectionLayout.orthogonalScrollingBehavior = .continuousGroupLeadingBoundary
+      sectionLayout.interGroupSpacing = 16
       sectionLayout.contentInsets = NSDirectionalEdgeInsets(
-        top: 8,
-        leading: 16,
-        bottom: 24,
-        trailing: 16
+        top: 12,
+        leading: 24,
+        bottom: 32,
+        trailing: 24
       )
 
       // Header
@@ -197,6 +197,9 @@ final class HomeVC: UICollectionViewController {
         itemWidth: Self.itemWidth,
         initialIndexPath: indexPath
       )
+      cell.titleLabel.font = .systemFont(ofSize: 15, weight: .medium)
+      cell.subtitleLabel.font = .systemFont(ofSize: 13)
+      cell.subtitleLabel.textColor = .secondaryLabel
       return cell
     }
 
@@ -439,7 +442,8 @@ final class SectionHeaderView: UICollectionReusableView {
   private let titleLabel: UILabel = {
     let lbl = UILabel()
     lbl.translatesAutoresizingMaskIntoConstraints = false
-    lbl.font = UIFont.preferredFont(forTextStyle: .title3).withWeight(.semibold)
+    lbl.font = UIFont.preferredFont(forTextStyle: .title2).withWeight(.bold)
+    lbl.adjustsFontForContentSizeCategory = true
     lbl.textColor = .label
     return lbl
   }()
@@ -464,14 +468,14 @@ final class SectionHeaderView: UICollectionReusableView {
     addSubview(titleLabel)
     addSubview(refreshButton)
     NSLayoutConstraint.activate([
-      titleLabel.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 16),
+      titleLabel.leadingAnchor.constraint(equalTo: leadingAnchor),
       titleLabel.trailingAnchor.constraint(
         lessThanOrEqualTo: refreshButton.leadingAnchor,
         constant: -8
       ),
       titleLabel.topAnchor.constraint(equalTo: topAnchor),
       titleLabel.bottomAnchor.constraint(equalTo: bottomAnchor),
-      refreshButton.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -16),
+      refreshButton.trailingAnchor.constraint(equalTo: trailingAnchor),
       refreshButton.centerYAnchor.constraint(equalTo: centerYAnchor),
     ])
   }
@@ -481,14 +485,14 @@ final class SectionHeaderView: UICollectionReusableView {
     addSubview(titleLabel)
     addSubview(refreshButton)
     NSLayoutConstraint.activate([
-      titleLabel.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 16),
+      titleLabel.leadingAnchor.constraint(equalTo: leadingAnchor),
       titleLabel.trailingAnchor.constraint(
         lessThanOrEqualTo: refreshButton.leadingAnchor,
         constant: -8
       ),
       titleLabel.topAnchor.constraint(equalTo: topAnchor),
       titleLabel.bottomAnchor.constraint(equalTo: bottomAnchor),
-      refreshButton.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -16),
+      refreshButton.trailingAnchor.constraint(equalTo: trailingAnchor),
       refreshButton.centerYAnchor.constraint(equalTo: centerYAnchor),
     ])
   }

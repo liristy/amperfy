@@ -53,7 +53,6 @@ class TabBarVC: UITabBarController {
       )
     }
     searchTab!.automaticallyActivatesSearch = true
-    fixTabs.append(searchTab!)
 
     homeTab = UITab(
       title: TabNavigatorItem.home.title,
@@ -112,6 +111,7 @@ class TabBarVC: UITabBarController {
     libraryGroup!.managingNavigationController = UINavigationController()
     libraryGroup!.allowsReordering = true
     fixTabs.append(libraryGroup!)
+    fixTabs.append(searchTab!)
 
     delegate = self
     tabs = fixTabs
@@ -132,7 +132,7 @@ class TabBarVC: UITabBarController {
     let accessory = UITabAccessory(contentView: miniPlayer!.glassContainer)
     bottomAccessory = accessory
 
-    heightConstraint = miniPlayer!.glassContainer.heightAnchor.constraint(equalToConstant: 48.0)
+    heightConstraint = miniPlayer!.glassContainer.heightAnchor.constraint(equalToConstant: 56.0)
     heightConstraint?.isActive = true
     compactWidthConstraint = miniPlayer!.glassContainer.widthAnchor
       .constraint(equalTo: miniPlayer!.glassContainer.superview!.widthAnchor)
@@ -173,6 +173,7 @@ class TabBarVC: UITabBarController {
     let isInline = miniPlayer.glassContainer.traitCollection.tabAccessoryEnvironment == .inline
 
     if traitCollection.horizontalSizeClass == .regular {
+      centerConstraint?.isActive = false
       centerConstraint = miniPlayer.glassContainer.safeAreaLayoutGuide.centerXAnchor.constraint(
         equalTo: mainContent().safeAreaLayoutGuide.centerXAnchor,
         constant: 0
@@ -194,7 +195,7 @@ class TabBarVC: UITabBarController {
       regularWidthConstraint?.isActive = false
       compactWidthConstraint?.isActive = true
     } else {
-      heightConstraint?.constant = 48.0
+      heightConstraint?.constant = 56.0
       centerConstraint?.isActive = false
       regularWidthConstraint?.isActive = false
       compactWidthConstraint?.isActive = true

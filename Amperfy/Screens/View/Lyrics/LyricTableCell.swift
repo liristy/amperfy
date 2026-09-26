@@ -59,15 +59,15 @@ class LyricTableCellModel {
       string: lyric.value,
       attributes:
       [
-        .font: UIFont.systemFont(ofSize: 20),
-        .foregroundColor: UIColor.gray,
+        .font: UIFont.systemFont(ofSize: 28, weight: .bold),
+        .foregroundColor: UIColor.label.withAlphaComponent(0.4),
       ]
     )
     self.highlightedAttributedString = NSAttributedString(
       string: lyric.value,
       attributes:
       [
-        .font: UIFont.boldSystemFont(ofSize: 20),
+        .font: UIFont.systemFont(ofSize: 28, weight: .bold),
         .foregroundColor: UIColor.label,
       ]
     )
@@ -123,9 +123,9 @@ class LyricTableCell: UITableViewCell {
       width: bounds.width - (2 * layoutMargins.right),
       height: bounds.height
     ))
-    lyricLabel.textAlignment = .center
+    lyricLabel.textAlignment = .natural
     lyricLabel.lineBreakMode = .byWordWrapping
-    lyricLabel.numberOfLines = 5
+    lyricLabel.numberOfLines = 0
     selectionStyle = .none
     contentView.addSubview(lyricLabel)
     backgroundColor = .clear

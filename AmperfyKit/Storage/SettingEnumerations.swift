@@ -269,7 +269,7 @@ public enum ThemePreference: Int, CaseIterable, Sendable, Codable {
   case orange = 4
   case purple = 5
 
-  public static let defaultValue: ThemePreference = .blue
+  public static let defaultValue: ThemePreference = .red
 
   public var description: String {
     switch self {

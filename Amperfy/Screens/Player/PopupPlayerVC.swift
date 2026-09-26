@@ -39,8 +39,12 @@ class PopupPlayerVC: UIViewController, UIScrollViewDelegate {
 
   @IBOutlet
   weak var controlPlaceholderHeightConstraint: NSLayoutConstraint!
-  private let safetyMarginOnBottom = 20.0
+  private let safetyMarginOnBottom = 8.0
   internal var artworkGradientColors = [UIColor]()
+  internal let artworkGradientLayer = CAGradientLayer()
+  private var portraitLayoutConstraints = [NSLayoutConstraint]()
+  private var landscapeLayoutConstraints = [NSLayoutConstraint]()
+  private var usesLandscapeLayout = false
 
   lazy var tableViewKeyCommandsController = TableViewKeyCommandsController(
     tableView: tableView,
@@ -81,7 +85,10 @@ class PopupPlayerVC: UIViewController, UIScrollViewDelegate {
     player.addNotifier(notifier: self)
     playerHandler = PlayerUIHandler(player: player, style: .popupPlayer)
 
-    backgroundImage.setBackgroundBlur(style: .prominent)
+    // Keep controls legible over every artwork palette, in either app appearance.
+    overrideUserInterfaceStyle = .dark
+    view.backgroundColor = UIColor(white: 0.12, alpha: 1)
+    backgroundImage.layer.insertSublayer(artworkGradientLayer, at: 0)
 
     controlPlaceholderHeightConstraint.constant = PlayerControlView
       .frameHeight + safetyMarginOnBottom
@@ -109,6 +116,7 @@ class PopupPlayerVC: UIViewController, UIScrollViewDelegate {
     }
 
     closeButtonPlaceholderView.isHidden = true
+    configureAdaptiveLayout()
 
     setupTableView()
     fetchSongInfoAndUpdateViews()
@@ -198,7 +206,58 @@ class PopupPlayerVC: UIViewController, UIScrollViewDelegate {
   }
 
   override func viewWillLayoutSubviews() {
+    super.viewWillLayoutSubviews()
     adjustLayoutMargins()
+    let landscape = view.bounds.width > 600 && view.bounds.height < 500
+    if landscape != usesLandscapeLayout {
+      NSLayoutConstraint.deactivate(
+        landscape ? portraitLayoutConstraints : landscapeLayoutConstraints
+      )
+      NSLayoutConstraint.activate(
+        landscape ? landscapeLayoutConstraints : portraitLayoutConstraints
+      )
+      usesLandscapeLayout = landscape
+    }
+  }
+
+  private func configureAdaptiveLayout() {
+    let contentViews: [UIView] = [largePlayerPlaceholderView, tableView, controlPlaceholderView]
+    portraitLayoutConstraints = view.constraints.filter { constraint in
+      contentViews.contains { content in
+        (constraint.firstItem as? UIView) === content ||
+          (constraint.secondItem as? UIView) === content
+      }
+    }
+    landscapeLayoutConstraints = [
+      largePlayerPlaceholderView.leadingAnchor.constraint(
+        equalTo: view.layoutMarginsGuide.leadingAnchor
+      ),
+      largePlayerPlaceholderView.topAnchor.constraint(
+        equalTo: view.safeAreaLayoutGuide.topAnchor,
+        constant: 16
+      ),
+      largePlayerPlaceholderView.bottomAnchor.constraint(
+        equalTo: view.safeAreaLayoutGuide.bottomAnchor,
+        constant: -8
+      ),
+      largePlayerPlaceholderView.trailingAnchor.constraint(
+        equalTo: controlPlaceholderView.leadingAnchor,
+        constant: -32
+      ),
+      largePlayerPlaceholderView.widthAnchor.constraint(
+        equalTo: controlPlaceholderView.widthAnchor
+      ),
+      controlPlaceholderView.trailingAnchor.constraint(
+        equalTo: view.layoutMarginsGuide.trailingAnchor
+      ),
+      controlPlaceholderView.centerYAnchor.constraint(
+        equalTo: largePlayerPlaceholderView.centerYAnchor
+      ),
+      tableView.leadingAnchor.constraint(equalTo: largePlayerPlaceholderView.leadingAnchor),
+      tableView.trailingAnchor.constraint(equalTo: largePlayerPlaceholderView.trailingAnchor),
+      tableView.topAnchor.constraint(equalTo: largePlayerPlaceholderView.topAnchor),
+      tableView.bottomAnchor.constraint(equalTo: largePlayerPlaceholderView.bottomAnchor),
+    ]
   }
 
   func fetchSongInfoAndUpdateViews() {

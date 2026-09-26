@@ -1,0 +1,49 @@
+# 在 Windows 上安装 Amperfy 测试版
+
+需要 iOS 26 或更新版本的 iPhone、Windows 电脑、数据线和普通 Apple ID。
+无需购买 Mac 或 Apple 开发者会员。
+
+## 获取测试包
+
+1. 打开本仓库的 **Actions → Build iPhone IPA**。
+2. 等待对应提交的运行显示绿色成功标记。
+3. 下载 **Amperfy-iPhone-unsigned-数字** artifact 并解压。
+4. 找到 `Amperfy-unsigned.ipa`，不要把外层 artifact ZIP 当成 IPA。
+
+首次推送 `codex/apple-music-sideload` 分支会自动构建。如果 fork 的 Actions 被暂停，
+先在 Actions 页面启用，再推送一次提交。工作流合入默认分支后，也可以通过
+**Run workflow** 手动打包。只有成功的云端构建才会生成可用 IPA。
+
+此工作流使用公开仓库免费的标准 macOS runner，并在私有仓库中跳过执行。
+下载文件保留 7 天，过期后可重新构建。`build-info.txt` 记录源码提交和 Xcode 版本，
+`SHA256SUMS` 可用于核对 IPA 下载完整性。
+
+## 爱思助手免费签名安装
+
+1. 从 [爱思助手官网](https://www.i4.cn/) 安装或更新 Windows 客户端。
+2. 用数据线连接 iPhone，解锁手机，按提示选择“信任此电脑”。
+3. 进入爱思助手的 **工具箱 → IPA 签名**（具体名称可能随版本变化）。
+4. 添加 `Amperfy-unsigned.ipa`，选择 **使用 Apple ID 签名**，选择连接的设备。
+5. 在你本机填写 Apple ID 并完成验证，等待签名成功。
+6. 打开签名文件保存目录，将**签名后的 IPA**安装到 iPhone。
+7. 按系统提示在“设置 → 通用 → VPN 与设备管理”中信任开发者。
+8. 如果系统要求，在“设置 → 隐私与安全性 → 开发者模式”开启并重启确认。
+9. 打开 **Amperfy Test**，配置你的 Ampache / Subsonic 音乐服务器。
+
+签名由爱思助手在你本机处理，不需要在 GitHub Secrets 中填写 Apple ID、密码或证书。
+免费个人签名通常有效 7 天，到期需要重新签名安装；保留 Apple ID 和应用标识一致，
+不要为了续签先卸载应用。实际签名能否成功还取决于爱思助手版本及 Apple 账号状态。
+
+官方参考：[IPA 签名教程](https://helper.i4.cn/news_detail_38195.html)、
+[签名常见问题](https://www.i4.cn/news_detail_40956.html)、
+[Apple 开发者模式说明](https://developer.apple.com/documentation/xcode/enabling-developer-mode-on-a-device)。
+
+## 测试版范围
+
+- 安装名称为 **Amperfy Test**，应用标识带 `.sideload`，与 App Store 版分开存储数据。
+- 包含当前分支的播放器和界面修改，支持在手机上测试音乐播放、歌词和播放队列。
+- 不包含需要相应授权的 Siri / CarPlay 签名权限。
+- 这是未签名的真机安装包，不可直接导入安装，也不提供 Xcode 远程断点调试。
+
+构建失败时下载 **Amperfy-build-log**，或打开失败步骤的日志查看首个 `error:`。
+安装失败时记录爱思助手的完整错误文字及 iOS 版本，方便定位签名或兼容性问题。

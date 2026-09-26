@@ -27,17 +27,18 @@ import UIKit
 // MARK: - PlayerControlView
 
 class PlayerControlView: UIView {
-  static let frameHeight: CGFloat = 175
+  static let frameHeight: CGFloat = 255
   static private let margin = UIEdgeInsets(
     top: 0,
-    left: UIView.defaultMarginX,
+    left: 0,
     bottom: 20,
-    right: UIView.defaultMarginX
+    right: 0
   )
 
   private var player: PlayerFacade!
   private var rootView: PopupPlayerVC?
   private var playerHandler: PlayerUIHandler?
+  private let volumeSlider = UISlider()
   #if targetEnvironment(macCatalyst) // ok
     var airplayVolume: MPVolumeView?
   #endif
@@ -78,6 +79,8 @@ class PlayerControlView: UIView {
   weak var volumeButton: UIButton!
   @IBOutlet
   weak var optionsButton: UIButton!
+  @IBOutlet
+  weak var lyricsButton: UIButton!
 
   required init?(coder aDecoder: NSCoder) {
     #if targetEnvironment(macCatalyst) // ok
@@ -100,6 +103,19 @@ class PlayerControlView: UIView {
     rootView = toWorkOnRootView
 
     playerHandler = PlayerUIHandler(player: player, style: .popupPlayer)
+    configureVolumeSlider()
+    timeSlider.minimumTrackTintColor = .white.withAlphaComponent(0.8)
+    timeSlider.maximumTrackTintColor = .white.withAlphaComponent(0.18)
+    timeSlider.accessibilityLabel = "Playback position"
+    for label in [elapsedTimeLabel, remainingTimeLabel, audioInfoLabel] {
+      label?.font = .monospacedDigitSystemFont(ofSize: 12, weight: .medium)
+      label?.textColor = .white.withAlphaComponent(0.65)
+    }
+    airplayButton.accessibilityLabel = "AirPlay"
+    displayPlaylistButton.accessibilityLabel = "Playing next"
+    optionsButton.accessibilityLabel = "Player options"
+    volumeButton.accessibilityLabel = "Volume options"
+    lyricsButton.addTarget(self, action: #selector(lyricsPressed), for: .touchUpInside)
 
     playButton.imageView?.tintColor = .label
     previousButton.tintColor = .label
@@ -129,6 +145,68 @@ class PlayerControlView: UIView {
         )
       }
     )
+  }
+
+  private func configureVolumeSlider() {
+    volumeSlider.translatesAutoresizingMaskIntoConstraints = false
+    volumeSlider.minimumValue = 0
+    volumeSlider.maximumValue = 1
+    volumeSlider.value = player.volume
+    volumeSlider.minimumTrackTintColor = .white.withAlphaComponent(0.7)
+    volumeSlider.maximumTrackTintColor = .white.withAlphaComponent(0.18)
+    volumeSlider.preferredBehavioralStyle = .pad
+    volumeSlider.sliderStyle = .thumbless
+    volumeSlider.accessibilityLabel = "Volume"
+    volumeSlider.addTarget(self, action: #selector(volumeChanged), for: .valueChanged)
+    addSubview(volumeSlider)
+
+    let quietSpeaker = UIImageView(image: UIImage(systemName: "speaker.fill"))
+    quietSpeaker.translatesAutoresizingMaskIntoConstraints = false
+    quietSpeaker.contentMode = .scaleAspectFit
+    quietSpeaker.tintColor = .white.withAlphaComponent(0.5)
+    addSubview(quietSpeaker)
+    NSLayoutConstraint.activate([
+      quietSpeaker.leadingAnchor.constraint(equalTo: layoutMarginsGuide.leadingAnchor),
+      quietSpeaker.centerYAnchor.constraint(equalTo: volumeButton.centerYAnchor),
+      quietSpeaker.widthAnchor.constraint(equalToConstant: 16),
+      quietSpeaker.heightAnchor.constraint(equalToConstant: 16),
+      volumeSlider.leadingAnchor.constraint(equalTo: quietSpeaker.trailingAnchor, constant: 12),
+      volumeSlider.trailingAnchor.constraint(equalTo: volumeButton.leadingAnchor, constant: -4),
+      volumeSlider.centerYAnchor.constraint(equalTo: volumeButton.centerYAnchor),
+      volumeSlider.heightAnchor.constraint(equalToConstant: 32),
+    ])
+  }
+
+  @objc
+  private func volumeChanged() {
+    player.volume = volumeSlider.value
+  }
+
+  @objc
+  private func lyricsPressed() {
+    let showLyrics = !appDelegate.storage.settings.user.isPlayerLyricsDisplayed ||
+      appDelegate.storage.settings.user.playerDisplayStyle != .large
+    appDelegate.storage.settings.user.isPlayerLyricsDisplayed = showLyrics
+    appDelegate.storage.settings.user.isPlayerVisualizerDisplayed = false
+    if appDelegate.storage.settings.user.playerDisplayStyle != .large {
+      displayPlaylistPressed()
+    }
+    rootView?.largeCurrentlyPlayingView?.display(element: showLyrics ? .lyrics : .artwork)
+    refreshLyricsButton()
+  }
+
+  func refreshLyricsButton() {
+    let selected = appDelegate.storage.settings.user.isPlayerLyricsDisplayed &&
+      appDelegate.storage.settings.user.playerDisplayStyle == .large
+    var configuration = UIButton.Configuration.plain()
+    configuration.image = UIImage(systemName: "quote.bubble")
+    configuration.baseForegroundColor = .white
+    configuration.background.backgroundColor = selected ? .white.withAlphaComponent(0.18) : .clear
+    configuration.background.cornerRadius = 12
+    lyricsButton.configuration = configuration
+    lyricsButton.isSelected = selected
+    lyricsButton.isEnabled = playerHandler?.isLyricsButtonAllowedToDisplay ?? false
+    lyricsButton.accessibilityLabel = selected ? "Hide Lyrics" : "Show Lyrics"
   }
 
   @IBAction
@@ -207,6 +285,7 @@ class PlayerControlView: UIView {
 
     sliderMenuView.sliderValueChangedCB = {
       self.appDelegate.player.volume = Float(sliderMenuView.slider.value) / 100.0
+      self.volumeSlider.value = self.appDelegate.player.volume
     }
 
     popoverContentController.modalPresentationStyle = .popover
@@ -228,6 +307,7 @@ class PlayerControlView: UIView {
   func displayPlaylistPressed() {
     rootView?.switchDisplayStyleOptionPersistent()
     playerHandler?.refreshDisplayPlaylistButton(displayPlaylistButton: displayPlaylistButton)
+    refreshLyricsButton()
     playerHandler?.refreshPlayerOptions(
       optionsButton: optionsButton,
       menuCreateCB: createPlayerOptionsMenu
@@ -250,6 +330,10 @@ class PlayerControlView: UIView {
   }
 
   func refreshPlayer() {
+    if !volumeSlider.isTracking {
+      volumeSlider.value = player.volume
+    }
+    refreshLyricsButton()
     playerHandler?.refreshSkipButtons(
       skipBackwardButton: skipBackwardButton,
       skipForwardButton: skipForwardButton

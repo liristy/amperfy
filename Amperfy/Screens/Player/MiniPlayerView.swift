@@ -644,9 +644,19 @@ class MiniPlayerView: UIView {
 
   public func configureForiOS() {
     playerHandler = PlayerUIHandler(player: player, style: .miniPlayeriOS)
+    titleLabel.textAlignment = .natural
+    subtitleLabel.textAlignment = .natural
+    artworkImage.layer.cornerRadius = 7
+    artworkImage.layer.cornerCurve = .continuous
+    artworkImage.clipsToBounds = true
+    timeSlider.minimumTrackTintColor = .secondaryLabel
+    timeSlider.maximumTrackTintColor = .clear
     let miniPlayerGotTouchedView = UIView()
     let tapGesture = UITapGestureRecognizer(target: self, action: #selector(miniPlayerGotTouched))
-    addGestureRecognizer(tapGesture)
+    miniPlayerGotTouchedView.addGestureRecognizer(tapGesture)
+    miniPlayerGotTouchedView.isAccessibilityElement = true
+    miniPlayerGotTouchedView.accessibilityLabel = "Open Now Playing"
+    miniPlayerGotTouchedView.accessibilityTraits = .button
 
     miniPlayerGotTouchedView.translatesAutoresizingMaskIntoConstraints = false
     artworkImage.translatesAutoresizingMaskIntoConstraints = false
@@ -685,28 +695,28 @@ class MiniPlayerView: UIView {
       liveLabel.widthAnchor.constraint(equalToConstant: 0),
       liveLabel.heightAnchor.constraint(equalTo: liveLabel.widthAnchor),
 
-      artworkImage.topAnchor.constraint(equalTo: topAnchor, constant: 8),
-      artworkImage.bottomAnchor.constraint(equalTo: timeSlider.topAnchor, constant: -8),
+      artworkImage.topAnchor.constraint(equalTo: topAnchor, constant: 7),
+      artworkImage.bottomAnchor.constraint(equalTo: timeSlider.topAnchor, constant: -4),
       artworkImage.widthAnchor.constraint(equalTo: artworkImage.heightAnchor),
       artworkImage.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 10),
 
-      titleLabel.topAnchor.constraint(equalTo: topAnchor, constant: 8),
-      titleLabel.bottomAnchor.constraint(equalTo: playButton.centerYAnchor),
-      titleLabel.leadingAnchor.constraint(equalTo: artworkImage.trailingAnchor, constant: 8),
+      titleLabel.topAnchor.constraint(equalTo: topAnchor, constant: 6),
+      titleLabel.bottomAnchor.constraint(equalTo: playButton.centerYAnchor, constant: 1),
+      titleLabel.leadingAnchor.constraint(equalTo: artworkImage.trailingAnchor, constant: 12),
       titleLabel.trailingAnchor.constraint(equalTo: playButton.leadingAnchor, constant: -8),
 
-      subtitleLabel.topAnchor.constraint(equalTo: playButton.centerYAnchor, constant: 0),
-      subtitleLabel.bottomAnchor.constraint(equalTo: timeSlider.topAnchor, constant: -8),
-      subtitleLabel.leadingAnchor.constraint(equalTo: artworkImage.trailingAnchor, constant: 8),
+      subtitleLabel.topAnchor.constraint(equalTo: playButton.centerYAnchor, constant: 1),
+      subtitleLabel.bottomAnchor.constraint(equalTo: timeSlider.topAnchor, constant: -5),
+      subtitleLabel.leadingAnchor.constraint(equalTo: artworkImage.trailingAnchor, constant: 12),
       subtitleLabel.trailingAnchor.constraint(equalTo: playButton.leadingAnchor, constant: -8),
 
       playButton.centerYAnchor.constraint(equalTo: artworkImage.centerYAnchor, constant: 0),
-      playButton.widthAnchor.constraint(equalToConstant: 30),
+      playButton.widthAnchor.constraint(equalToConstant: 44),
       playButton.heightAnchor.constraint(equalTo: playButton.widthAnchor),
       // playButton trailing constraint is depending on tab bar bottom accessory
 
       nextButton.centerYAnchor.constraint(equalTo: artworkImage.centerYAnchor, constant: 0),
-      nextButton.widthAnchor.constraint(equalToConstant: 30),
+      nextButton.widthAnchor.constraint(equalToConstant: 44),
       nextButton.heightAnchor.constraint(equalTo: nextButton.widthAnchor),
       nextButton.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -10),
     ])
@@ -716,13 +726,8 @@ class MiniPlayerView: UIView {
   }
 
   public func refreshForTraitChange(horizontalSizeClass: UIUserInterfaceSizeClass) {
-    if horizontalSizeClass == .regular {
-      titleLabel.font = .systemFont(ofSize: 8.0)
-      subtitleLabel.font = .systemFont(ofSize: 15.0)
-    } else {
-      titleLabel.font = .systemFont(ofSize: 11.0)
-      subtitleLabel.font = .systemFont(ofSize: 13.0)
-    }
+    titleLabel.font = .systemFont(ofSize: 15, weight: .semibold)
+    subtitleLabel.font = .systemFont(ofSize: 12, weight: .regular)
   }
 
   private var playButtonTrailingConstraint: NSLayoutConstraint?
@@ -739,7 +744,7 @@ class MiniPlayerView: UIView {
     if let sheet = popupPlayer.sheetPresentationController {
       sheet.detents = [.large()]
       sheet.prefersGrabberVisible = true
-      sheet.preferredCornerRadius = 24
+      sheet.preferredCornerRadius = 32
     }
     hostVC.present(popupPlayer, animated: true, completion: completion)
   }
@@ -844,13 +849,8 @@ class MiniPlayerView: UIView {
   }
 
   func refreshPlayer() {
-    if traitCollection.userInterfaceStyle == .dark {
-      titleLabel.textColor = .white
-      subtitleLabel.textColor = .lightGray
-    } else {
-      titleLabel.textColor = .black
-      subtitleLabel.textColor = .darkGray
-    }
+    titleLabel.textColor = .label
+    subtitleLabel.textColor = .secondaryLabel
     playerHandler?.refreshCurrentlyPlayingInfo(
       artworkImage: artworkImage,
       titleLabel: titleLabel,

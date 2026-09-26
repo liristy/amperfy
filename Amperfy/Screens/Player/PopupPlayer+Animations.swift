@@ -36,14 +36,12 @@ extension PopupPlayerVC {
   func changeDisplayStyleVisually(to displayStyle: PlayerDisplayStyle, animated: Bool = true) {
     var viewToDisapper: UIView?
     var artworkToDisapper: UIView?
-    var containerToDisapper: UIView?
     var detailsContainerToDisapper: UIView?
     var favoriteToDisapper: UIView?
     var optionsToDisapper: UIView?
 
     var viewToApper: UIView?
     var artworkToApper: UIView?
-    var containerToApper: UIView?
     var detailsContainerToApper: UIView?
     var favoriteToApper: UIView?
     var optionsToApper: UIView?
@@ -52,13 +50,11 @@ extension PopupPlayerVC {
     case .compact:
       viewToDisapper = largePlayerPlaceholderView
       artworkToDisapper = largeCurrentlyPlayingView?.artworkImage
-      containerToDisapper = largeCurrentlyPlayingView
       detailsContainerToDisapper = largeCurrentlyPlayingView?.detailsContainer
       favoriteToDisapper = largeCurrentlyPlayingView?.favoriteButton
       optionsToDisapper = largeCurrentlyPlayingView?.optionsButton
       viewToApper = tableView
       artworkToApper = currentlyPlayingTableCell?.artworkImage
-      containerToApper = currentlyPlayingTableCell
       detailsContainerToApper = currentlyPlayingTableCell
       favoriteToApper = currentlyPlayingTableCell?.favoriteButton
       optionsToApper = currentlyPlayingTableCell?.optionsButton
@@ -67,13 +63,11 @@ extension PopupPlayerVC {
     case .large:
       viewToDisapper = tableView
       artworkToDisapper = currentlyPlayingTableCell?.artworkImage
-      containerToDisapper = currentlyPlayingTableCell
       detailsContainerToDisapper = currentlyPlayingTableCell
       favoriteToDisapper = currentlyPlayingTableCell?.favoriteButton
       optionsToDisapper = currentlyPlayingTableCell?.optionsButton
       viewToApper = largePlayerPlaceholderView
       artworkToApper = largeCurrentlyPlayingView?.artworkImage
-      containerToApper = largeCurrentlyPlayingView
       detailsContainerToApper = largeCurrentlyPlayingView?.detailsContainer
       favoriteToApper = largeCurrentlyPlayingView?.favoriteButton
       optionsToApper = largeCurrentlyPlayingView?.optionsButton
@@ -84,7 +78,7 @@ extension PopupPlayerVC {
           let viewToApper = viewToApper
     else { return }
 
-    if animated {
+    if animated, !UIAccessibility.isReduceMotionEnabled {
       guard let artworkToDisapper = artworkToDisapper,
             let artworkToApper = artworkToApper,
             let detailsContainerToDisapper = detailsContainerToDisapper,
@@ -93,17 +87,23 @@ extension PopupPlayerVC {
             let favoriteToApper = favoriteToApper,
             let optionsToDisapper = optionsToDisapper,
             let optionsToApper = optionsToApper
-      else { return }
+      else {
+        viewToDisapper.alpha = 0
+        viewToDisapper.isHidden = true
+        viewToApper.alpha = 1
+        viewToApper.isHidden = false
+        return
+      }
 
       // 1. Force autolayout to layout
       artworkToApper.layoutIfNeeded()
       // 2. Calculate source and target frames
-      var artworkSourceFrame = view.convert(artworkToDisapper.frame, from: containerToDisapper)
+      var artworkSourceFrame = view.convert(artworkToDisapper.bounds, from: artworkToDisapper)
       artworkSourceFrame = limitSizeToInsideThePlaceholder(
         targetFrame: artworkSourceFrame,
         placeholderFrame: largePlayerPlaceholderView.frame
       )
-      var artworkTargetFrame = view.convert(artworkToApper.frame, from: containerToApper)
+      var artworkTargetFrame = view.convert(artworkToApper.bounds, from: artworkToApper)
       artworkTargetFrame = limitSizeToInsideThePlaceholder(
         targetFrame: artworkTargetFrame,
         placeholderFrame: largePlayerPlaceholderView.frame

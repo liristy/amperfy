@@ -112,11 +112,15 @@ class PlayerUIHandler: NSObject {
             .SymbolConfiguration(pointSize: Self.playAndNextiOSButtonImagePointSize)
         )
     case .popupPlayer:
-      break
+      buttonImg = buttonImg.withConfiguration(
+        UIImage.SymbolConfiguration(pointSize: 44, weight: .semibold)
+      )
     }
 
     button.setImage(buttonImg, for: UIControl.State.normal)
     button.configuration?.image = buttonImg
+    button.accessibilityLabel = player.isPlaying ?
+      (player.isStopInsteadOfPause ? "Stop" : "Pause") : "Play"
   }
 
   func refreshSkipButtons(skipBackwardButton: UIButton, skipForwardButton: UIButton) {
@@ -158,7 +162,12 @@ class PlayerUIHandler: NSObject {
       previouseImg = previouseImg.withConfiguration(UIImage.SymbolConfiguration(scale: .medium))
       nextImg = nextImg.withConfiguration(UIImage.SymbolConfiguration(scale: .medium))
     case .popupPlayer:
-      break
+      previouseImg = previouseImg.withConfiguration(
+        UIImage.SymbolConfiguration(pointSize: 30, weight: .semibold)
+      )
+      nextImg = nextImg.withConfiguration(
+        UIImage.SymbolConfiguration(pointSize: 30, weight: .semibold)
+      )
     case .miniPlayeriOS:
       previouseImg = previouseImg
         .withConfiguration(
@@ -176,6 +185,9 @@ class PlayerUIHandler: NSObject {
     previousButton.configuration?.image = previouseImg
     nextButton.setImage(nextImg, for: UIControl.State.normal)
     nextButton.configuration?.image = nextImg
+    previousButton.accessibilityLabel = player.playerMode == .podcast ?
+      "Back 15 seconds" : "Previous track"
+    nextButton.accessibilityLabel = player.playerMode == .podcast ? "Forward 30 seconds" : "Next track"
   }
 
   func refreshRepeatButton(repeatButton: UIButton) {
@@ -258,8 +270,11 @@ class PlayerUIHandler: NSObject {
     case .miniPlayeriOS, .miniPlayerMac:
       displayPlaylistButton.tintColor = isSelected ? .tintColor : .label
     case .popupPlayer:
-      var config = UIButton.Configuration.player(isSelected: isSelected)
-      config.image = .playlistDisplayStyle
+      var config = UIButton.Configuration.plain()
+      config.image = UIImage(systemName: "list.bullet")
+      config.baseForegroundColor = .white
+      config.background.backgroundColor = isSelected ? .white.withAlphaComponent(0.18) : .clear
+      config.background.cornerRadius = 12
       displayPlaylistButton.isSelected = isSelected
       displayPlaylistButton.configuration = config
     }

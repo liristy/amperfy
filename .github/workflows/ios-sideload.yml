@@ -1,0 +1,74 @@
+name: Build iPhone IPA
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - master
+      - codex/apple-music-sideload
+    paths:
+      - 'Amperfy/**'
+      - 'AmperfyKit/**'
+      - 'Amperfy.xcodeproj/**'
+      - 'BuildTools/build-unsigned-ipa.sh'
+      - 'docs/iphone-install-zh.md'
+      - '.github/workflows/ios-sideload.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: iphone-ipa-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    # Standard hosted runners are free for public repositories only.
+    if: github.event.repository.private == false
+    runs-on: macos-26
+    timeout-minutes: 45
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_26.3.app/Contents/Developer
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Build unsigned device IPA
+        run: bash BuildTools/build-unsigned-ipa.sh
+
+      - name: Upload IPA and installation instructions
+        uses: actions/upload-artifact@v4
+        with:
+          name: Amperfy-iPhone-unsigned-${{ github.run_number }}
+          path: |
+            build/sideload/Amperfy-unsigned.ipa
+            build/sideload/SHA256SUMS
+            build/sideload/build-info.txt
+            docs/iphone-install-zh.md
+          if-no-files-found: error
+          retention-days: 7
+          compression-level: 0
+
+      - name: Upload build log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: Amperfy-build-log-${{ github.run_number }}
+          path: build/sideload/build.log
+          if-no-files-found: ignore
+          retention-days: 7
+
+      - name: Show next steps
+        run: |
+          cat >> "$GITHUB_STEP_SUMMARY" <<'EOF'
+          ## iPhone 测试包已生成
+          下载本次运行的 **Amperfy-iPhone-unsigned** artifact，解压后找到 `Amperfy-unsigned.ipa`。
+
+          这是 **iOS 26+ 真机包**，还需要在 Windows 爱思助手中使用自己的 Apple ID 签名后安装。
+          免费个人签名通常有效 7 天。本测试包不包含 Siri / CarPlay 授权。
+          Apple ID 和密码不需要上传到 GitHub。
+
+          安装步骤见压缩包内的 `iphone-install-zh.md`；具体构建版本见 `build-info.txt`。
+          EOF

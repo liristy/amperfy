@@ -130,6 +130,7 @@ class LargeCurrentlyPlayingPlayerView: UIView, UIGestureRecognizerDelegate {
   private var visualizerHostingView: SwiftUIContentView?
   private var displayElement: LargeDisplayElement = .artwork
   private var ratingView: RatingView?
+  private let artworkShadowView = UIView()
 
   @IBOutlet
   weak var upperContainerView: UIView!
@@ -161,6 +162,11 @@ class LargeCurrentlyPlayingPlayerView: UIView, UIGestureRecognizerDelegate {
     super.layoutSubviews()
     // Force a layout to prevent wrong size on first appearance on macOS
     upperContainerView.layoutIfNeeded()
+    artworkShadowView.frame = artworkImage.frame
+    artworkShadowView.layer.shadowPath = UIBezierPath(
+      roundedRect: artworkShadowView.bounds,
+      cornerRadius: 12
+    ).cgPath
 
     lyricsView?.frame = upperContainerView.bounds
     visualizerHostingView?.hostingController?.view.frame = upperContainerView.bounds
@@ -171,6 +177,24 @@ class LargeCurrentlyPlayingPlayerView: UIView, UIGestureRecognizerDelegate {
     titleLabel.applyAmperfyStyle()
     albumLabel.applyAmperfyStyle()
     artistLabel.applyAmperfyStyle()
+    titleLabel.font = .systemFont(ofSize: 23, weight: .bold)
+    artistLabel.font = .systemFont(ofSize: 20, weight: .regular)
+    albumLabel.font = .systemFont(ofSize: 13, weight: .medium)
+    titleLabel.textColor = .white
+    artistLabel.textColor = .white.withAlphaComponent(0.72)
+    albumLabel.textColor = .white.withAlphaComponent(0.65)
+    artworkImage.contentMode = .scaleAspectFill
+    artworkImage.layer.cornerRadius = 12
+    artworkImage.layer.cornerCurve = .continuous
+    artworkImage.clipsToBounds = true
+    artworkShadowView.isUserInteractionEnabled = false
+    artworkShadowView.layer.shadowColor = UIColor.black.cgColor
+    artworkShadowView.layer.shadowOpacity = 0.3
+    artworkShadowView.layer.shadowRadius = 22
+    artworkShadowView.layer.shadowOffset = CGSize(width: 0, height: 14)
+    upperContainerView.insertSubview(artworkShadowView, belowSubview: artworkImage)
+    favoriteButton.accessibilityLabel = "Favorite"
+    optionsButton.accessibilityLabel = "Song options"
 
     lyricsView = LyricsView()
     lyricsView!.frame = upperContainerView.bounds
@@ -356,6 +380,7 @@ class LargeCurrentlyPlayingPlayerView: UIView, UIGestureRecognizerDelegate {
 
   public func display(element: LargeDisplayElement) {
     displayElement = element
+    artworkShadowView.isHidden = element != .artwork
 
     switch element {
     case .artwork:
@@ -371,6 +396,8 @@ class LargeCurrentlyPlayingPlayerView: UIView, UIGestureRecognizerDelegate {
       almostHideArtwork()
       showVisualizer()
     }
+    refreshRating()
+    rootView?.controlView?.refreshLyricsButton()
   }
 
   public func almostHideArtwork() {

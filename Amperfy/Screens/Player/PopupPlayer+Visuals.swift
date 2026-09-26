@@ -134,7 +134,6 @@ extension PopupPlayerVC {
       }
     }
     guard let artwork = artwork else { return }
-    backgroundImage.image = artwork
     artworkGradientColors = (try? artwork.dominantColors(max: 2)) ?? [
       themePreference.asColor,
       UIColor.systemBackground,
@@ -143,19 +142,33 @@ extension PopupPlayerVC {
   }
 
   internal func applyGradientBackground() {
-    let colors = artworkGradientColors.compactMap { $0.cgColor }
-    // remove existing gradient layer
-    backgroundImage.layer.sublayers?.forEach { layer in
-      if layer is CAGradientLayer {
-        layer.removeFromSuperlayer()
-      }
+    func shaded(_ color: UIColor, brightness: CGFloat) -> CGColor {
+      var red: CGFloat = 0
+      var green: CGFloat = 0
+      var blue: CGFloat = 0
+      var alpha: CGFloat = 0
+      color.getRed(&red, green: &green, blue: &blue, alpha: &alpha)
+      return UIColor(
+        red: red * brightness + 0.04,
+        green: green * brightness + 0.04,
+        blue: blue * brightness + 0.04,
+        alpha: 1
+      ).cgColor
     }
-    let gradientLayer = CAGradientLayer()
-    gradientLayer.frame = backgroundImage.bounds
-    gradientLayer.colors = colors
-    gradientLayer.startPoint = CGPoint(x: 0.5, y: 0.0)
-    gradientLayer.endPoint = CGPoint(x: 0.5, y: 1.0)
-    backgroundImage.layer.insertSublayer(gradientLayer, at: 0)
+    let first = artworkGradientColors.first ?? .darkGray
+    let last = artworkGradientColors.last ?? first
+    CATransaction.begin()
+    CATransaction.setDisableActions(true)
+    artworkGradientLayer.frame = backgroundImage.bounds
+    artworkGradientLayer.colors = [
+      shaded(first, brightness: 0.38),
+      shaded(last, brightness: 0.26),
+      shaded(first, brightness: 0.14),
+    ]
+    artworkGradientLayer.locations = [0, 0.55, 1]
+    artworkGradientLayer.startPoint = CGPoint(x: 0, y: 0)
+    artworkGradientLayer.endPoint = CGPoint(x: 1, y: 1)
+    CATransaction.commit()
   }
 
   @objc
@@ -177,6 +190,8 @@ extension PopupPlayerVC {
   }
 
   func adjustLayoutMargins() {
-    view.layoutMargins = UIEdgeInsets(top: 0.0, left: 0.0, bottom: 0.0, right: 0.0)
+    let isLandscape = view.bounds.width > 600 && view.bounds.height < 500
+    let inset = max(24, (view.bounds.width - (isLandscape ? 1000 : 520)) / 2)
+    view.layoutMargins = UIEdgeInsets(top: 0, left: inset, bottom: 0, right: inset)
   }
 }
