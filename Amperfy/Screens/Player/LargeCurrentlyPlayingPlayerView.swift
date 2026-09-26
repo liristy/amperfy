@@ -131,7 +131,7 @@ class LargeCurrentlyPlayingPlayerView: UIView {
   private var displayElement: LargeDisplayElement = .artwork
   private let artworkShadowView = UIView()
   private let lyricsHeader = UIView()
-  private let lyricsArtwork = LibraryEntityImage()
+  private let lyricsArtwork = LibraryEntityImage(frame: .zero)
   private let lyricsTitle = UILabel()
   private let lyricsArtist = UILabel()
   private let lyricsOptions = UIButton(type: .system)
@@ -347,8 +347,9 @@ class LargeCurrentlyPlayingPlayerView: UIView {
   public func display(element: LargeDisplayElement) {
     displayElement = element
     artworkShadowView.isHidden = element != .artwork
-    upperContainerView.isHidden = element == .lyrics
-    detailsContainer.isHidden = element == .lyrics
+    // Hide the original stack as a whole; hiding its fixed-height arranged views
+    // independently would introduce conflicting UIStackView height constraints.
+    upperContainerView.superview?.isHidden = element == .lyrics
     lyricsHeader.isHidden = element != .lyrics
     setNeedsLayout()
 
@@ -412,6 +413,7 @@ class LargeCurrentlyPlayingPlayerView: UIView {
       scrollAnimation: appDelegate.storage.settings.user.isLyricsSmoothScrolling
     )
     lyricsView?.isHidden = false
+    lyricsView?.scroll(toTime: CMTime(seconds: appDelegate.player.elapsedTime, preferredTimescale: 1000))
   }
 
   func refresh() {

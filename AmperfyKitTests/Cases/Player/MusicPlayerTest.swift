@@ -459,6 +459,33 @@ class MusicPlayerTest: XCTestCase {
     XCTAssertEqual(testPlayer.elapsedTime, 42.75, accuracy: 0.01)
   }
 
+  func testUnexpectedEngineErrorRecreatesPlayerAtCurrentPosition() async throws {
+    storage.settings.user.isPlayerSongPlaybackResumeEnabled = false
+    try await startCachedSong(at: 87.25)
+    let oldEngine = try XCTUnwrap(mockAudioStreamingPlayer)
+    let count = songCached.playCount
+    // The real recovery factory creates a fresh engine whose progress starts at zero.
+    mockAudioStreamingPlayer = MOCK_AudioStreamingPlayer()
+    backendPlayer.triggerReinsertPlayableCB = { self.testMusicPlayer.play() }
+    let restarted = expectation(description: "Recovered player prepared")
+    mockMusicPlayable.expectationDidStartPlaying = restarted
+    backendPlayer.audioPlayerUnexpectedError(player: oldEngine, error: .audioSystemError(.engineFailure))
+    await fulfillment(of: [restarted], timeout: 3)
+    mockMusicPlayable.expectationDidStartPlaying = nil
+    let url = try XCTUnwrap(library.getFileURL(forPlayable: songCached))
+    backendPlayer.didStartPlaying(url: url.absoluteString)
+    XCTAssertEqual(testPlayer.elapsedTime, 87.25, accuracy: 0.01)
+    XCTAssertEqual(songCached.playCount, count)
+    XCTAssertTrue(testPlayer.isPlaying)
+    // Late callbacks from the disposed engine must not interrupt the replacement.
+    backendPlayer.audioPlayerUnexpectedError(player: oldEngine, error: .other)
+    backendPlayer.audioPlayerDidFinishPlaying(player: oldEngine,
+      entryId: AudioEntryId(id: url.absoluteString), stopReason: .eof, progress: 87.25, duration: 180)
+    for _ in 0..<5 { await Task.yield() }
+    XCTAssertEqual(testPlayer.currentlyPlaying, songCached)
+    XCTAssertEqual(testPlayer.elapsedTime, 87.25, accuracy: 0.01)
+  }
+
   func testInterruptionDoesNotStartManuallyPausedTrack() async throws {
     try await startCachedSong(at: 42.75)
     testPlayer.pause()
@@ -499,6 +526,22 @@ class MusicPlayerTest: XCTestCase {
     XCTAssertEqual(storage.settings.user.streamingFormatCellularPreference, .raw)
     XCTAssertEqual(storage.settings.user.cacheTranscodingFormatPreference, .raw)
     XCTAssertEqual(storage.settings.user.songsSortSetting, .name)
+  }
+
+  func testSubsonicURLsRequestOriginalAudioDespiteOldTranscodingArguments() async throws {
+    let api = SubsonicServerApi(performanceMonitor: MOCK_PerformanceMonitor(),
+                               eventLogger: eventLogger, settings: storage.settings)
+    api.provideCredentials(credentials: LoginCredentials(serverUrl: "https://example.invalid",
+      username: "fixture", password: "fixture", backendApi: .subsonic))
+    api.clientApiVersion.wrappedValue = SubsonicServerApi.defaultClientApiVersionWithToken
+    let stream = try await api.generateUrl(forStreamingPlayableId: "song-1",
+      maxBitrate: .limit32, formatPreference: .mp3)
+    let query = try XCTUnwrap(URLComponents(url: stream, resolvingAgainstBaseURL: false)?.queryItems)
+    XCTAssertEqual(query.first(where: { $0.name == "format" })?.value, "raw")
+    XCTAssertNil(query.first(where: { $0.name == "maxBitRate" }))
+    storage.settings.user.cacheTranscodingFormatPreference = .mp3
+    let download = try await api.generateUrl(forDownloadingPlayableId: "song-1")
+    XCTAssertEqual(download.lastPathComponent, "download.view")
   }
 
 

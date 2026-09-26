@@ -89,6 +89,7 @@ class LyricsVC: UIViewController {
       lyrics: structuredLyrics,
       scrollAnimation: appDelegate.storage.settings.user.isLyricsSmoothScrolling
     )
+    lyricsView?.scroll(toTime: CMTime(seconds: player.elapsedTime, preferredTimescale: 1000))
   }
 
   private func showLyricsAreNotAvailable() {

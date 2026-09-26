@@ -235,6 +235,10 @@ class BackendAudioPlayer: NSObject {
       Task { @MainActor in
         guard let self = self else { return }
         if self.elapsedTime.isFinite, self.elapsedTime > 0 {
+          if self.elapsedTime > self.lastKnownPlaybackTime {
+            // A healthy engine can recover from a later, independent interruption.
+            self.isTriggerReinsertPlayableAllowed = true
+          }
           self.lastKnownPlaybackTime = self.elapsedTime
         }
         self.checkForPreloadNextPlayerItem()
@@ -793,7 +797,9 @@ extension BackendAudioPlayer: AudioStreaming.AudioPlayerDelegate {
     with entryId: AudioStreaming.AudioEntryId
   ) {
     let entryID = entryId.id
+    let identity = ObjectIdentifier(player)
     Task { @MainActor in
+      guard self.player.map(ObjectIdentifier.init) == identity else { return }
       didStartPlaying(url: entryID)
     }
   }
@@ -843,7 +849,9 @@ extension BackendAudioPlayer: AudioStreaming.AudioPlayerDelegate {
   ) {
     guard stopReason == .eof else { return }
     let entryID = entryId.id
+    let identity = ObjectIdentifier(player)
     Task { @MainActor in
+      guard self.player.map(ObjectIdentifier.init) == identity else { return }
       if self.currentPlayUrl == entryID {
         self.currentPlayUrl = ""
         self.itemFinishedPlaying()
@@ -855,7 +863,9 @@ extension BackendAudioPlayer: AudioStreaming.AudioPlayerDelegate {
     player: AudioStreaming.AudioPlayer,
     error: AudioStreaming.AudioPlayerError
   ) {
+    let identity = ObjectIdentifier(player)
     Task { @MainActor in
+      guard self.player.map(ObjectIdentifier.init) == identity else { return }
       self.handleError(error: error)
     }
   }
@@ -867,7 +877,9 @@ extension BackendAudioPlayer: AudioStreaming.AudioPlayerDelegate {
     // The library cancels pending queue entries, not the currently playing item.
     // Clearing currentPlayUrl here made the next resume restart the current song.
     let cancelledIDs = queuedItems.map(\.id)
+    let identity = ObjectIdentifier(player)
     Task { @MainActor in
+      guard self.player.map(ObjectIdentifier.init) == identity else { return }
       if cancelledIDs.contains(self.nextPreloadedUrl) {
         self.nextPreloadedPlayable = nil
         self.nextPreloadedUrl = ""
@@ -879,7 +891,9 @@ extension BackendAudioPlayer: AudioStreaming.AudioPlayerDelegate {
     player: AudioStreaming.AudioPlayer,
     metadata: [String: String]
   ) {
+    let identity = ObjectIdentifier(player)
     Task { @MainActor in
+      guard self.player.map(ObjectIdentifier.init) == identity else { return }
       self.responder?.didReadStreamMetadata(metadata)
     }
   }
