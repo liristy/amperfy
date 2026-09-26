@@ -66,15 +66,8 @@ class MOCK_AudioStreamingPlayer: AudioStreamingPlayer {
     mockElapsedTime = 0.0
     isPlaying = true
     isStopped = false
-    let currId = url.absoluteString
-    Task { @MainActor [weak self, currId] in
-      guard let self else { return }
-      let entryID = AudioEntryId(id: currId)
-      self.delegate?.audioPlayerDidStartPlaying(
-        player: self,
-        with: entryID
-      )
-    }
+    // The backend delegate performs its own main-actor hop, just as for a real engine.
+    delegate?.audioPlayerDidStartPlaying(player: self, with: AudioEntryId(id: url.absoluteString))
   }
 
   override func pause() {
@@ -402,7 +395,7 @@ class MusicPlayerTest: XCTestCase {
     playlistAllCached = playlistAllCachedFetched
   }
 
-  override func tearDown() {
+  override func tearDown() async throws {
     backendPlayer.stop()
     mockAudioStreamingPlayer.delegate = nil
   }
