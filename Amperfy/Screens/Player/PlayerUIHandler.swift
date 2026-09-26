@@ -532,7 +532,7 @@ class PlayerUIHandler: NSObject {
         case "MP3", "MPEG":
           contentFormatText = "MP3"
         default:
-          if format.contains("LOSSLESS".localized) {
+          if format.contains("LOSSLESS") {
             contentFormatText = "LOSSLESS".localized
           } else if format.hasPrefix("X-"), format.count > "X-".count {
             contentFormatText = String(format.dropFirst("X-".count))

@@ -40,4 +40,27 @@ for language in zh-Hans en; do
     exit 1
   fi
   echo "Login/sync/home smoke test passed for $language"
+
+  # Reopening a signed-in app must also load the persisted library successfully.
+  rm "$container/Documents/login-smoke-ready"
+  xcrun simctl terminate "$device_id" "$bundle_id"
+  xcrun simctl launch \
+    --stdout="$PWD/build/validation/reopen-$language.stdout.log" \
+    --stderr="$PWD/build/validation/reopen-$language.stderr.log" \
+    "$device_id" "$bundle_id" -AppleLanguages "($language)" --smoke-login
+  ready=false
+  for attempt in {1..30}; do
+    if [[ -f "$container/Documents/login-smoke-ready" ]]; then
+      ready=true
+      break
+    fi
+    sleep 2
+  done
+  xcrun simctl io "$device_id" screenshot "build/validation/reopen-$language.png"
+  if [[ "$ready" != true ]]; then
+    echo "Signed-in cold launch failed for $language"
+    cat "build/validation/reopen-$language.stderr.log"
+    exit 1
+  fi
+  echo "Signed-in cold launch passed for $language"
 done

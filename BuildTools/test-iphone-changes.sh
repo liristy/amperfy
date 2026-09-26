@@ -47,12 +47,4 @@ app_path="build/validation/DerivedData/Build/Products/Debug-iphonesimulator/Ampe
 bundle_id=$(/usr/libexec/PlistBuddy -c 'Print CFBundleIdentifier' "$app_path/Info.plist")
 xcrun simctl boot "$device_id" || true
 xcrun simctl bootstatus "$device_id" -b
-xcrun simctl install "$device_id" "$app_path"
-for language in zh-Hans en; do
-  xcrun simctl terminate "$device_id" "$bundle_id" || true
-  xcrun simctl launch "$device_id" "$bundle_id" -AppleLanguages "($language)"
-  sleep 5
-  xcrun simctl io "$device_id" screenshot "build/validation/login-$language.png"
-done
-
 bash BuildTools/smoke-iphone-login.sh "$device_id" "$app_path" "$bundle_id"

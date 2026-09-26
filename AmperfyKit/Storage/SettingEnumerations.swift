@@ -272,19 +272,24 @@ public enum ThemePreference: Int, CaseIterable, Sendable, Codable {
   public static let defaultValue: ThemePreference = .red
 
   public var description: String {
+    assetName.localized
+  }
+
+  /// Stable prefix used by the asset catalog, independent of the interface language.
+  public var assetName: String {
     switch self {
     case .blue:
-      return "Blue".localized
+      return "Blue"
     case .green:
-      return "Green".localized
+      return "Green"
     case .red:
-      return "Red".localized
+      return "Red"
     case .yellow:
-      return "Yellow".localized
+      return "Yellow"
     case .orange:
-      return "Orange".localized
+      return "Orange"
     case .purple:
-      return "Purple".localized
+      return "Purple"
     }
   }
 

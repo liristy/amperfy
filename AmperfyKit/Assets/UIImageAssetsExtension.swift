@@ -433,8 +433,10 @@ extension UIImage {
     artworkType: ArtworkType
   )
     -> UIImage {
-    let resourceName = "\(theme.description)\(artworkType.description)"
-    return UIImage(imageLiteralResourceName: resourceName)
+    let resourceName = "\(theme.assetName)\(artworkType.description)"
+    // A missing placeholder must never prevent the player or library from opening.
+    return UIImage(named: resourceName, in: Bundle(for: Artwork.self), compatibleWith: nil) ??
+      artworkType.image.asUIImage.withTintColor(theme.asColor, renderingMode: .alwaysOriginal)
   }
 
   public static func generateArtwork(

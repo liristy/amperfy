@@ -135,6 +135,9 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
         Task { @MainActor in
           // Allow view loading, initial home requests and artwork downloads to complete.
           try? await Task.sleep(for: .seconds(10))
+          guard let activeAccount = self.appDelegate.storage.settings.accounts.active,
+                self.appDelegate.storage.settings.accounts.getSetting(activeAccount).read
+                  .initialSyncCompletionStatus == .completed else { return }
           let marker = URL.documentsDirectory.appendingPathComponent("login-smoke-ready")
           try? "ready".write(to: marker, atomically: true, encoding: .utf8)
         }

@@ -20,6 +20,7 @@
 //
 
 @testable import AmperfyKit
+import UIKit
 import XCTest
 
 @MainActor
@@ -37,6 +38,27 @@ class ArtworkTest: XCTestCase {
   }
 
   override func tearDown() {}
+
+  func testEveryThemeHasReadablePlaceholdersInBothAppearances() {
+    let bundle = Bundle(for: Artwork.self)
+    for theme in ThemePreference.allCases {
+      for artworkType in ArtworkType.allCases {
+        for appearance in [UIUserInterfaceStyle.light, .dark] {
+          let resource = theme.assetName + artworkType.description
+          let traits = UITraitCollection(userInterfaceStyle: appearance)
+          let image = UIImage(named: resource, in: bundle, compatibleWith: traits)
+          XCTAssertNotNil(image, "Missing placeholder: \(resource), \(appearance.rawValue)")
+          XCTAssertGreaterThan(image?.size.width ?? 0, 0)
+          traits.performAsCurrent {
+            XCTAssertGreaterThan(
+              UIImage.getGeneratedArtwork(theme: theme, artworkType: artworkType).size.width,
+              0
+            )
+          }
+        }
+      }
+    }
+  }
 
   func testFailedArtworkRequestCanRetryWithoutDuplicatingPendingDownloads() async throws {
     testArtwork.id = "retry-cover"
