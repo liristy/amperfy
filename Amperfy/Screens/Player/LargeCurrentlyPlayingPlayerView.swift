@@ -351,8 +351,10 @@ class LargeCurrentlyPlayingPlayerView: UIView {
   }
 
   public func display(element: LargeDisplayElement, animated: Bool = true) {
-    displayAnimator?.stopAnimation(false)
-    displayAnimator?.finishAnimation(at: .end)
+    if let displayAnimator, displayAnimator.state == .active {
+      displayAnimator.stopAnimation(false)
+      displayAnimator.finishAnimation(at: .end)
+    }
     displayAnimator = nil
     let changed = element != displayElement
     let animate = changed && animated && window != nil && !UIAccessibility.isReduceMotionEnabled
