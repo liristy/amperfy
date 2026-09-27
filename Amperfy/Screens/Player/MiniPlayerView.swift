@@ -653,6 +653,12 @@ class MiniPlayerView: UIView {
     timeSlider.maximumTrackTintColor = .clear
     let miniPlayerGotTouchedView = UIView()
     let tapGesture = UITapGestureRecognizer(target: self, action: #selector(miniPlayerGotTouched))
+    for direction in [UISwipeGestureRecognizer.Direction.left, .right] {
+      let swipe = UISwipeGestureRecognizer(target: self, action: #selector(handleTrackSwipe(_:)))
+      swipe.direction = direction
+      miniPlayerGotTouchedView.addGestureRecognizer(swipe)
+      tapGesture.require(toFail: swipe)
+    }
     miniPlayerGotTouchedView.addGestureRecognizer(tapGesture)
     miniPlayerGotTouchedView.isAccessibilityElement = true
     miniPlayerGotTouchedView.accessibilityLabel = "Open Now Playing".localized
@@ -723,6 +729,31 @@ class MiniPlayerView: UIView {
     refreshPlayer()
     refreshForTraitChange(horizontalSizeClass: traitCollection.horizontalSizeClass)
     refreshForTabAccessoryTraitChange()
+  }
+
+  @objc
+  private func handleTrackSwipe(_ gesture: UISwipeGestureRecognizer) {
+    guard gesture.state == .ended else { return }
+    switchTrack(direction: gesture.direction)
+  }
+
+  func switchTrack(direction: UISwipeGestureRecognizer.Direction) {
+    guard player.currentlyPlaying != nil else { return }
+    switch direction {
+    case .left: player.playNext()
+    case .right: player.playPrevious()
+    default: return
+    }
+    refreshPlayer()
+    if !UIAccessibility.isReduceMotionEnabled {
+      let transition = CATransition()
+      transition.type = .push
+      transition.subtype = direction == .left ? .fromRight : .fromLeft
+      transition.duration = 0.2
+      [artworkImage, titleLabel, subtitleLabel].forEach {
+        $0.layer.add(transition, forKey: "trackSwipe")
+      }
+    }
   }
 
   public func refreshForTraitChange(horizontalSizeClass: UIUserInterfaceSizeClass) {

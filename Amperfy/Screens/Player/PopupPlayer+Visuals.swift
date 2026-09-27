@@ -55,7 +55,9 @@ extension PopupPlayerVC {
   }
 
   func refreshOptionButton(button: UIButton, rootView: UIViewController?) {
-    var config = UIButton.Configuration.playerRound()
+    var config = UIButton.Configuration.plain()
+    config.preferredSymbolConfigurationForImage = .init(pointSize: 21, weight: .semibold)
+    config.background = .clear()
     config.image = .ellipsis
     config.baseForegroundColor = .label
     button.isEnabled = true
@@ -74,7 +76,9 @@ extension PopupPlayerVC {
   }
 
   func refreshFavoriteButton(button: UIButton) {
-    var config = UIButton.Configuration.playerRound()
+    var config = UIButton.Configuration.plain()
+    config.preferredSymbolConfigurationForImage = .init(pointSize: 21, weight: .regular)
+    config.background = .clear()
     switch player.playerMode {
     case .music:
       if let playableInfo = player.currentlyPlaying,

@@ -401,6 +401,36 @@ class MusicPlayerTest: XCTestCase {
     mockAudioStreamingPlayer.delegate = nil
   }
 
+  func testOrangeLibraryDefaultsApplyOnceAndPreserveLaterCustomization() {
+    let marker = "playerAppearance.orangeSixLibraryItems.v1"
+    let oldMarker = UserDefaults.standard.object(forKey: marker)
+    let oldAccounts = storage.settings.accounts
+    defer {
+      storage.settings.accounts = oldAccounts
+      if let oldMarker { UserDefaults.standard.set(oldMarker, forKey: marker) }
+      else { UserDefaults.standard.removeObject(forKey: marker) }
+    }
+    UserDefaults.standard.removeObject(forKey: marker)
+    storage.settings.accounts.updateSetting(account.info) {
+      $0.themePreference = .blue
+      $0.libraryDisplaySettings = LibraryDisplaySettings(inUse: [.artists, .radios])
+    }
+    storage.settings.applyPlayerAppearanceDefaultsIfNeeded()
+    var migrated = storage.settings.accounts.getSetting(account.info).read
+    XCTAssertEqual(migrated.themePreference, .orange)
+    XCTAssertEqual(migrated.libraryDisplaySettings.inUse, [.artists, .albums, .songs, .favoriteSongs, .playlists, .downloads])
+    XCTAssertEqual(AccountSetting().themePreference, .orange)
+    XCTAssertEqual(AccountSetting().libraryDisplaySettings.inUse, migrated.libraryDisplaySettings.inUse)
+    storage.settings.accounts.updateSetting(account.info) {
+      $0.themePreference = .green
+      $0.libraryDisplaySettings = LibraryDisplaySettings(inUse: [.songs, .playlists])
+    }
+    storage.settings.applyPlayerAppearanceDefaultsIfNeeded()
+    migrated = storage.settings.accounts.getSetting(account.info).read
+    XCTAssertEqual(migrated.themePreference, .green)
+    XCTAssertEqual(migrated.libraryDisplaySettings.inUse, [.songs, .playlists])
+  }
+
   func testLateLockScreenArtworkLoadsWithoutAnyPlayerViewAndSurvivesTimingUpdates() async throws {
     storage.settings.accounts.updateSetting(account.info) { $0.artworkDisplayPreference = .serverArtworkOnly }
     let artwork = library.createArtwork(account: account)

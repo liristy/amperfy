@@ -245,8 +245,8 @@ class BackendAudioPlayer: NSObject {
         self.responder?.didElapsedTimeChange()
       }
     }
-    timerLyricsTimeInterval = Timer.scheduledTimer(
-      withTimeInterval: updateLyricsTimeInterval.seconds,
+    timerLyricsTimeInterval = Timer(
+      timeInterval: updateLyricsTimeInterval.seconds,
       repeats: true
     ) { [weak self] timer in
       Task { @MainActor in
@@ -254,6 +254,10 @@ class BackendAudioPlayer: NSObject {
         let cmTime = CMTime(value: Int64(self.elapsedTime * 1_000), timescale: 1_000)
         self.responder?.didLyricsTimeChange(time: cmTime)
       }
+    }
+    // Keep synchronized highlighting alive while a scroll view is tracking touches.
+    if let timerLyricsTimeInterval {
+      RunLoop.main.add(timerLyricsTimeInterval, forMode: .common)
     }
   }
 

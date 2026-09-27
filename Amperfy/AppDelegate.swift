@@ -264,6 +264,7 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
     }
 
     storage.applyMultiAccountSettingsUpdateIfNeeded()
+    storage.settings.applyPlayerAppearanceDefaultsIfNeeded()
     libraryUpdater.performAccountCleanUpIfNeccessaryInBackground()
 
     configureDefaultNavigationBarStyle()

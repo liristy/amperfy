@@ -15,8 +15,28 @@
                     <view key="view" contentMode="scaleToFill" id="Ze5-6b-2t3">
                         <rect key="frame" x="0.0" y="0.0" width="768" height="1024"/>
                         <autoresizingMask key="autoresizingMask" widthSizable="YES" heightSizable="YES"/>
+                        <subviews>
+                            <imageView userInteractionEnabled="NO" contentMode="scaleToFill" image="LaunchBackground" translatesAutoresizingMaskIntoConstraints="NO" id="launch-background">
+                                <rect key="frame" x="0.0" y="0.0" width="768" height="1024"/>
+                            </imageView>
+                            <imageView userInteractionEnabled="NO" contentMode="scaleAspectFit" image="LaunchNote" translatesAutoresizingMaskIntoConstraints="NO" id="launch-note">
+                                <rect key="frame" x="270" y="398" width="228" height="228"/>
+                                <constraints>
+                                    <constraint firstAttribute="width" constant="228" id="note-width"/>
+                                    <constraint firstAttribute="height" constant="228" id="note-height"/>
+                                </constraints>
+                            </imageView>
+                        </subviews>
                         <viewLayoutGuide key="safeArea" id="Bcu-3y-fUS"/>
-                        <color key="backgroundColor" systemColor="systemBackgroundColor"/>
+                        <color key="backgroundColor" red="0.6902" green="0.06275" blue="0.44706" alpha="1" colorSpace="custom" customColorSpace="sRGB"/>
+                        <constraints>
+                            <constraint firstItem="launch-background" firstAttribute="leading" secondItem="Ze5-6b-2t3" secondAttribute="leading" id="bg-left"/>
+                            <constraint firstItem="launch-background" firstAttribute="trailing" secondItem="Ze5-6b-2t3" secondAttribute="trailing" id="bg-right"/>
+                            <constraint firstItem="launch-background" firstAttribute="top" secondItem="Ze5-6b-2t3" secondAttribute="top" id="bg-top"/>
+                            <constraint firstItem="launch-background" firstAttribute="bottom" secondItem="Ze5-6b-2t3" secondAttribute="bottom" id="bg-bottom"/>
+                            <constraint firstItem="launch-note" firstAttribute="centerX" secondItem="Ze5-6b-2t3" secondAttribute="centerX" id="note-center-x"/>
+                            <constraint firstItem="launch-note" firstAttribute="centerY" secondItem="Ze5-6b-2t3" secondAttribute="centerY" id="note-center-y"/>
+                        </constraints>
                     </view>
                 </viewController>
                 <placeholder placeholderIdentifier="IBFirstResponder" id="iYj-Kq-Ea1" userLabel="First Responder" sceneMemberID="firstResponder"/>
@@ -25,8 +45,7 @@
         </scene>
     </scenes>
     <resources>
-        <systemColor name="systemBackgroundColor">
-            <color white="1" alpha="1" colorSpace="custom" customColorSpace="genericGamma22GrayColorSpace"/>
-        </systemColor>
+        <image name="LaunchBackground" width="390" height="844"/>
+        <image name="LaunchNote" width="1280" height="1280"/>
     </resources>
 </document>

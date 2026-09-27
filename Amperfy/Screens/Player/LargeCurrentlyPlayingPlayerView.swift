@@ -189,8 +189,9 @@ class LargeCurrentlyPlayingPlayerView: UIView {
     titleLabel.applyAmperfyStyle()
     albumLabel.applyAmperfyStyle()
     artistLabel.applyAmperfyStyle()
-    titleLabel.font = .systemFont(ofSize: 23, weight: .bold)
-    artistLabel.font = .systemFont(ofSize: 20, weight: .regular)
+    titleLabel.font = .systemFont(ofSize: 26, weight: .bold)
+    titleLabel.adjustsFontSizeToFitWidth = false
+    artistLabel.font = .systemFont(ofSize: 18, weight: .regular)
     albumLabel.font = .systemFont(ofSize: 13, weight: .medium)
     titleLabel.textColor = .white
     artistLabel.textColor = .white.withAlphaComponent(0.72)
@@ -232,8 +233,7 @@ class LargeCurrentlyPlayingPlayerView: UIView {
     lyricsArtist.textColor = .white.withAlphaComponent(0.65)
     lyricsOptions.setImage(UIImage(systemName: "ellipsis"), for: .normal)
     lyricsOptions.tintColor = .white
-    lyricsOptions.backgroundColor = .white.withAlphaComponent(0.12)
-    lyricsOptions.layer.cornerRadius = 20
+    lyricsOptions.backgroundColor = .clear
     lyricsOptions.accessibilityLabel = "Song options".localized
     [lyricsArtwork, lyricsTitle, lyricsArtist, lyricsOptions].forEach { lyricsHeader.addSubview($0) }
     addSubview(lyricsHeader)

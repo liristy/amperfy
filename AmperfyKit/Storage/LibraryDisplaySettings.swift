@@ -69,7 +69,7 @@ public enum LibraryDisplayType: Int, CaseIterable, Sendable {
     case .downloads:
       return "Downloads".localized
     case .favoriteSongs:
-      return "Favorite Songs".localized
+      return "Favorites".localized
     case .favoriteAlbums:
       return "Favorite Albums".localized
     case .favoriteArtists:
@@ -173,14 +173,10 @@ public struct LibraryDisplaySettings: Sendable, Codable {
       inUse: [
         .artists,
         .albums,
-        .newestAlbums,
-        .recentAlbums,
         .songs,
         .favoriteSongs,
-        .directories,
         .playlists,
-        .podcasts,
-        .radios,
+        .downloads,
       ]
     )
   }

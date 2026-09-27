@@ -81,14 +81,18 @@ class LyricTableCell: UITableViewCell {
 
   override func prepareForReuse() {
     super.prepareForReuse()
-    viewModel?.cell = nil
+    if viewModel?.cell === self { viewModel?.cell = nil }
     viewModel = nil
+    lyricLabel.layer.removeAllAnimations()
   }
 
   func display(model: LyricTableCellModel) {
-    viewModel?.cell = nil
+    // reloadData can bind a replacement cell before UIKit recycles the old one.
+    // Only detach the binding that this cell still owns.
+    if viewModel?.cell === self { viewModel?.cell = nil }
     viewModel = model
     model.cell = self
+    lyricLabel.layer.removeAllAnimations()
     refresh()
   }
 

@@ -458,25 +458,28 @@ public struct AccountSettings: Sendable, Codable {
     })
   }
 
-  private var themeColorForNextNewAccount: ThemePreference {
-    var theme = ThemePreference.blue
-    let usedThemes = Set(_accounts.compactMap { $0.value.themePreference })
-    let allThemes = Set(ThemePreference.allCases)
-    let availableThemes = allThemes.subtracting(usedThemes)
-    if let firstAvailable = availableThemes.sorted(by: { $0.rawValue < $1.rawValue }).first {
-      theme = firstAvailable
-    } else if let activeAccount = _activeAccount {
-      let activeTheme = getSetting(activeAccount).read.themePreference
-      theme = allThemes.subtracting(Set([activeTheme])).sorted(by: { $0.rawValue < $1.rawValue })
-        .first ?? .blue
-    }
-    return theme
-  }
+  private var themeColorForNextNewAccount: ThemePreference { .defaultValue }
+
 }
 
 // MARK: - AmperfySettings
 
 public struct AmperfySettings: Sendable, Codable {
+  @MainActor
+  public mutating func applyPlayerAppearanceDefaultsIfNeeded() {
+    let key = "playerAppearance.orangeSixLibraryItems.v1"
+    guard !UserDefaults.standard.bool(forKey: key) else { return }
+    var updatedAccounts = accounts
+    for info in updatedAccounts.allAccounts {
+      updatedAccounts.updateSetting(info) {
+        $0.themePreference = .orange
+        $0.libraryDisplaySettings = .defaultSettings
+      }
+    }
+    accounts = updatedAccounts
+    UserDefaults.standard.set(true, forKey: key)
+  }
+
   // MARK: - Persistence
 
   private static let decoder: JSONDecoder = .init()

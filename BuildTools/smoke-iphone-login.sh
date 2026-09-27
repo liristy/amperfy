@@ -102,6 +102,6 @@ fi
 echo "Original audio streaming, seek and synchronized lyrics smoke test passed"
 cat build/validation/player.stdout.log
 
-for screenshot in player-mini-spacing player-opening player-lyrics-upward player-artwork-landscape player-next-song player-lyrics-controls player-lyrics-immersive player-lyrics-restored; do
+for screenshot in player-library-defaults player-mini-spacing player-opening player-lyrics-upward player-artwork-landscape player-next-song player-lyrics-controls player-lyrics-immersive player-lyrics-restored; do
   cp "$container/Documents/$screenshot.png" "build/validation/$screenshot.png"
 done

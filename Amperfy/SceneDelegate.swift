@@ -160,6 +160,22 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
               FileHandle.standardOutput.write(Data((message + "\n").utf8))
             }
             do {
+              // Reproduce UIKit's reload/reuse ordering: a new cell may be bound
+              // before the old one is recycled. Its highlight binding must survive.
+              var lyricLine = LyricsLine()
+              lyricLine.value = "Highlight reuse regression"
+              let lyricModel = LyricTableCellModel(lyric: lyricLine)
+              let oldLyricCell = LyricTableCell(style: .default, reuseIdentifier: nil)
+              let newLyricCell = LyricTableCell(style: .default, reuseIdentifier: nil)
+              oldLyricCell.display(model: lyricModel)
+              newLyricCell.display(model: lyricModel)
+              oldLyricCell.prepareForReuse()
+              lyricModel.isActiveLine = true
+              guard newLyricCell.accessibilityTraits.contains(.selected) else {
+                smokeLog("Recycling the old lyrics cell disconnected the visible highlight")
+                return
+              }
+              smokeLog("Lyrics highlight survived replacement-cell reuse")
               smokeLog("Player smoke: preparing playback")
               let library = self.appDelegate.storage.main.library
               let account = library.getAccount(info: activeAccount)
@@ -179,6 +195,20 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
               guard self.appDelegate.player.elapsedTime > 0 else { return }
               vc.dismiss(animated: false)
               guard let miniPlayer = (vc as? MainSceneHostingViewController)?.miniPlayer else { return }
+              miniPlayer.switchTrack(direction: .left)
+              try await Task.sleep(for: .seconds(2))
+              guard self.appDelegate.player.currentlyPlaying == nextSong else {
+                smokeLog("Mini player left swipe did not play the next track")
+                return
+              }
+              self.appDelegate.player.seek(toSecond: 35)
+              miniPlayer.switchTrack(direction: .right)
+              try await Task.sleep(for: .seconds(2))
+              guard self.appDelegate.player.currentlyPlaying == song else {
+                smokeLog("Mini player right swipe replayed the current track instead of switching back")
+                return
+              }
+              smokeLog("Mini player swipes switched next and previous tracks")
               if let tabHost = vc as? UITabBarController {
                 tabHost.view.layoutIfNeeded()
                 guard tabHost.bottomAccessory != nil,
@@ -252,6 +282,11 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
                 }
                 try image.pngData()?.write(to: URL.documentsDirectory.appendingPathComponent(name))
               }
+              guard let fullPlayer = popup.largeCurrentlyPlayingView,
+                    fullPlayer.titleLabel.font.pointSize >= fullPlayer.artistLabel.font.pointSize + 6 else {
+                smokeLog("Full player title is not larger than the artist after appearance")
+                return
+              }
               try screenshot("player-artwork-landscape.png")
               // Leave enough time for the real engine to preload the second stream.
               self.appDelegate.player.seek(toSecond: 174)
@@ -271,6 +306,12 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
               popup.largeCurrentlyPlayingView?.display(element: .lyrics)
               try await Task.sleep(for: .seconds(1))
               popup.largeCurrentlyPlayingView?.refreshLyricsTime(time: CMTime(seconds: 42, preferredTimescale: 1000))
+              guard let lyricsTable = descendants(of: popup.view).compactMap({ $0 as? LyricsView }).first else { return }
+              func activeLyricIsVisible() -> Bool {
+                lyricsTable.layoutIfNeeded()
+                return lyricsTable.visibleCells.contains { $0.accessibilityTraits.contains(.selected) }
+              }
+              guard activeLyricIsVisible() else { smokeLog("Lyrics did not highlight when opened"); return }
               let heightWithControls = popup.largePlayerPlaceholderView.bounds.height
               try screenshot("player-lyrics-controls.png")
               try await Task.sleep(for: .seconds(5))
@@ -279,11 +320,15 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
                 smokeLog("Lyrics controls did not hide and expand lyrics")
                 return
               }
+              popup.largeCurrentlyPlayingView?.refreshLyricsTime(time: CMTime(seconds: 42, preferredTimescale: 1000))
+              guard activeLyricIsVisible() else { smokeLog("Immersive lyrics lost their highlight"); return }
               try screenshot("player-lyrics-immersive.png")
               popup.restoreLyricsControls()
               try await Task.sleep(for: .seconds(1))
               guard !popup.areLyricsControlsHidden,
                     abs(popup.largePlayerPlaceholderView.bounds.height - heightWithControls) < 1 else { return }
+              guard activeLyricIsVisible() else { smokeLog("Restoring controls lost the lyrics highlight"); return }
+              smokeLog("Lyrics stayed highlighted across immersive layout changes")
               try screenshot("player-lyrics-restored.png")
               guard let lyricsView = descendants(of: popup.view).compactMap({ $0 as? LyricsView }).first else { return }
               lyricsView.handleDrag(velocity: CGPoint(x: 0, y: 300))
@@ -318,6 +363,17 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
                 return
               }
               smokeLog("Cover zoom, cancelled dismissal, upward lyrics gesture and quick dismissal passed")
+              if let tabHost = vc as? UITabBarController,
+                 let libraryTab = tabHost.tabs.first(where: { $0.identifier == "Tabs.Library" }) {
+                vc.dismiss(animated: false)
+                tabHost.selectedTab = libraryTab
+                try await Task.sleep(for: .seconds(1))
+                tabHost.view.layoutIfNeeded()
+                let image = UIGraphicsImageRenderer(bounds: tabHost.view.bounds).image { _ in
+                  tabHost.view.drawHierarchy(in: tabHost.view.bounds, afterScreenUpdates: true)
+                }
+                try image.pngData()?.write(to: URL.documentsDirectory.appendingPathComponent("player-library-defaults.png"))
+              }
               let marker = URL.documentsDirectory.appendingPathComponent("player-smoke-ready")
               try "ready".write(to: marker, atomically: true, encoding: .utf8)
             } catch { smokeLog("Player smoke failed: \(error)") }
