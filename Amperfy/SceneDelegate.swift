@@ -190,15 +190,18 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
               self.appDelegate.storage.settings.user.playerDisplayStyle = .large
               self.appDelegate.storage.settings.user.isPlayerLyricsDisplayed = false
               self.appDelegate.player.isAutoCachePlayedItems = false
+              self.appDelegate.player.setRepeatMode(.off)
               self.appDelegate.player.play(context: PlayContext(name: "Gapless smoke", playables: [song, nextSong]))
               try await Task.sleep(for: .seconds(3))
               guard self.appDelegate.player.elapsedTime > 0 else { return }
               vc.dismiss(animated: false)
               guard let miniPlayer = (vc as? MainSceneHostingViewController)?.miniPlayer else { return }
               miniPlayer.beginTrackDrag()
-              miniPlayer.updateTrackDrag(translation: -70)
+              miniPlayer.updateTrackDrag(translation: -120)
               guard self.appDelegate.player.currentlyPlaying == song,
-                    miniPlayer.trackDragTranslation == -70 else { return }
+                    miniPlayer.trackDragTranslation == -120,
+                    miniPlayer.trackDragNextSong == nextSong,
+                    miniPlayer.trackDragPreviousSong == nil else { return }
               let dragImage = UIGraphicsImageRenderer(bounds: vc.view.bounds).image { _ in
                 vc.view.drawHierarchy(in: vc.view.bounds, afterScreenUpdates: true)
               }
@@ -210,7 +213,8 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
                     miniPlayer.trackDragTranslation == 0 else { return }
               miniPlayer.beginTrackDrag()
               miniPlayer.updateTrackDrag(translation: 120)
-              miniPlayer.endTrackDrag(velocity: 0, cancelled: true)
+              guard miniPlayer.trackDragTranslation < 40 else { return }
+              miniPlayer.endTrackDrag(velocity: 300)
               try await Task.sleep(for: .milliseconds(350))
               guard self.appDelegate.player.currentlyPlaying == song else { return }
               smokeLog("Mini player intermediate drag, pull-back and cancellation preserved the song")
@@ -224,6 +228,18 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
               }
               self.appDelegate.player.seek(toSecond: 35)
               miniPlayer.beginTrackDrag()
+              miniPlayer.updateTrackDrag(translation: 170)
+              guard miniPlayer.trackDragPreviousSong == song,
+                    miniPlayer.trackDragNextSong == nil,
+                    self.appDelegate.player.currentlyPlaying == nextSong else { return }
+              let previousImage = UIGraphicsImageRenderer(bounds: vc.view.bounds).image { _ in
+                vc.view.drawHierarchy(in: vc.view.bounds, afterScreenUpdates: true)
+              }
+              try previousImage.pngData()?.write(to: URL.documentsDirectory.appendingPathComponent("player-mini-drag-previous.png"))
+              miniPlayer.endTrackDrag(velocity: 0, cancelled: true)
+              try await Task.sleep(for: .milliseconds(350))
+              guard self.appDelegate.player.currentlyPlaying == nextSong else { return }
+              miniPlayer.beginTrackDrag()
               miniPlayer.updateTrackDrag(translation: 120)
               miniPlayer.endTrackDrag(velocity: 300)
               try await Task.sleep(for: .seconds(2))
@@ -232,6 +248,20 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
                 return
               }
               smokeLog("Mini player swipes switched next and previous tracks")
+              // Preview the actual queue order, including user-queued songs and repeat wrapping.
+              self.appDelegate.player.insertUserQueue(playables: [song])
+              miniPlayer.beginTrackDrag()
+              guard miniPlayer.trackDragNextSong == song else { return }
+              miniPlayer.endTrackDrag(velocity: 0, cancelled: true)
+              try await Task.sleep(for: .milliseconds(250))
+              self.appDelegate.player.clearUserQueue()
+              self.appDelegate.player.setRepeatMode(.all)
+              miniPlayer.beginTrackDrag()
+              guard miniPlayer.trackDragPreviousSong == nextSong else { return }
+              miniPlayer.endTrackDrag(velocity: 0, cancelled: true)
+              try await Task.sleep(for: .milliseconds(250))
+              self.appDelegate.player.setRepeatMode(.off)
+              smokeLog("Adjacent song previews, edge resistance, user queue priority and repeat wrapping passed")
               if let tabHost = vc as? UITabBarController {
                 tabHost.view.layoutIfNeeded()
                 guard tabHost.bottomAccessory != nil,
@@ -353,6 +383,41 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
               guard activeLyricIsVisible() else { smokeLog("Restoring controls lost the lyrics highlight"); return }
               smokeLog("Lyrics stayed highlighted across immersive layout changes")
               try screenshot("player-lyrics-restored.png")
+              // Both compact headers must share one artwork size throughout the
+              // queue/lyrics transition, including its intermediate frames.
+              func compactArtworkStayedSmall() async throws -> Bool {
+                var sampled = false
+                for _ in 0..<22 {
+                  try await Task.sleep(for: .milliseconds(16))
+                  if let moving = descendants(of: popup.view).first(where: {
+                    $0.accessibilityIdentifier == "player-layout-transition-artwork"
+                  }) {
+                    sampled = true
+                    let width = moving.layer.presentation()?.bounds.width ?? moving.bounds.width
+                    if abs(width - CurrentlyPlayingTableCell.artworkSide) > 1 { return false }
+                  }
+                }
+                return sampled
+              }
+              guard abs((popup.transitionArtwork?.bounds.width ?? 0) - CurrentlyPlayingTableCell.artworkSide) < 1 else { return }
+              popup.controlView?.displayPlaylistPressed()
+              guard try await compactArtworkStayedSmall(),
+                    self.appDelegate.storage.settings.user.playerDisplayStyle == .compact,
+                    abs((popup.transitionArtwork?.bounds.width ?? 0) - CurrentlyPlayingTableCell.artworkSide) < 1 else {
+                smokeLog("Lyrics to queue enlarged the compact artwork")
+                return
+              }
+              try screenshot("player-queue-from-lyrics.png")
+              popup.controlView?.lyricsButton.sendActions(for: .touchUpInside)
+              guard try await compactArtworkStayedSmall(),
+                    popup.largeCurrentlyPlayingView?.isDisplayingLyrics == true,
+                    self.appDelegate.storage.settings.user.playerDisplayStyle == .large,
+                    abs((popup.transitionArtwork?.bounds.width ?? 0) - CurrentlyPlayingTableCell.artworkSide) < 1 else {
+                smokeLog("Queue to lyrics enlarged the compact artwork")
+                return
+              }
+              try screenshot("player-lyrics-from-queue.png")
+              smokeLog("Lyrics and queue artwork stayed the same size throughout both transitions")
               guard let lyricsView = descendants(of: popup.view).compactMap({ $0 as? LyricsView }).first else { return }
               lyricsView.handleDrag(velocity: CGPoint(x: 0, y: 300))
               guard !popup.areLyricsControlsHidden else { return }

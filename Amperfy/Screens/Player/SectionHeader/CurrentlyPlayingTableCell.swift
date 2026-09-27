@@ -25,6 +25,7 @@ import UIKit
 
 class CurrentlyPlayingTableCell: BasicTableCell {
   static let rowHeight: CGFloat = 94.0
+  static let artworkSide: CGFloat = 72.0
 
   private var rootView: PopupPlayerVC?
 
@@ -45,6 +46,9 @@ class CurrentlyPlayingTableCell: BasicTableCell {
 
   func prepare(toWorkOnRootView: PopupPlayerVC?) {
     rootView = toWorkOnRootView
+    artworkImage.constraints.first {
+      $0.firstAttribute == .width && $0.secondItem == nil
+    }?.constant = Self.artworkSide
     titleLabel.applyAmperfyStyle()
     artistLabel.applyAmperfyStyle()
     refresh()

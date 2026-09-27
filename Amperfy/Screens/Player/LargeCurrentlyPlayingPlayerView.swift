@@ -175,12 +175,15 @@ class LargeCurrentlyPlayingPlayerView: UIView {
       cornerRadius: 12
     ).cgPath
 
-    lyricsHeader.frame = CGRect(x: 8, y: 0, width: bounds.width - 16, height: 66)
-    lyricsArtwork.frame = CGRect(x: 0, y: 4, width: 54, height: 54)
-    lyricsTitle.frame = CGRect(x: 68, y: 8, width: max(0, lyricsHeader.bounds.width - 116), height: 24)
-    lyricsArtist.frame = CGRect(x: 68, y: 33, width: max(0, lyricsHeader.bounds.width - 116), height: 22)
-    lyricsOptions.frame = CGRect(x: lyricsHeader.bounds.width - 40, y: 12, width: 40, height: 40)
-    lyricsView?.frame = CGRect(x: 0, y: 74, width: bounds.width, height: max(0, bounds.height - 74))
+    let headerHeight = CurrentlyPlayingTableCell.rowHeight
+    let artworkSide = CurrentlyPlayingTableCell.artworkSide
+    let textX = artworkSide + 14
+    lyricsHeader.frame = CGRect(x: 8, y: 0, width: bounds.width - 16, height: headerHeight)
+    lyricsArtwork.frame = CGRect(x: 0, y: (headerHeight - artworkSide) / 2, width: artworkSide, height: artworkSide)
+    lyricsTitle.frame = CGRect(x: textX, y: 23, width: max(0, lyricsHeader.bounds.width - textX - 48), height: 24)
+    lyricsArtist.frame = CGRect(x: textX, y: 48, width: max(0, lyricsHeader.bounds.width - textX - 48), height: 22)
+    lyricsOptions.frame = CGRect(x: lyricsHeader.bounds.width - 40, y: 27, width: 40, height: 40)
+    lyricsView?.frame = CGRect(x: 0, y: headerHeight + 8, width: bounds.width, height: max(0, bounds.height - headerHeight - 8))
     visualizerHostingView?.hostingController?.view.frame = upperContainerView.bounds
   }
 
@@ -357,12 +360,16 @@ class LargeCurrentlyPlayingPlayerView: UIView {
     }
   }
 
-  public func display(element: LargeDisplayElement, animated: Bool = true) {
+  func finishDisplayAnimation() {
     if let displayAnimator, displayAnimator.state == .active {
       displayAnimator.stopAnimation(false)
       displayAnimator.finishAnimation(at: .end)
     }
     displayAnimator = nil
+  }
+
+  public func display(element: LargeDisplayElement, animated: Bool = true) {
+    finishDisplayAnimation()
     let changed = element != displayElement
     let animate = changed && animated && window != nil && !UIAccessibility.isReduceMotionEnabled
     layoutIfNeeded()

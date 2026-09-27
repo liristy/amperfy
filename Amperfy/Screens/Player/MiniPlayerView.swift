@@ -37,6 +37,10 @@ class MiniPlayerView: UIView, UIGestureRecognizerDelegate {
   private var trackDragOverlay: UIView?
   private var trackDragContent: UIView?
   private var trackDragSong: AbstractPlayable?
+  private(set) var trackDragPreviousSong: AbstractPlayable?
+  private(set) var trackDragNextSong: AbstractPlayable?
+  private var previousTrackPreview: UIView?
+  private var nextTrackPreview: UIView?
   private var trackDragAnimator: UIViewPropertyAnimator?
   private(set) var trackDragTranslation: CGFloat = 0
 
@@ -590,6 +594,7 @@ class MiniPlayerView: UIView, UIGestureRecognizerDelegate {
   public var tabAccessoryTraitChangeCB: VoidFunctionCallback?
 
   private func refreshForTabAccessoryTraitChange() {
+    resetTrackDrag()
     let isInline = traitCollection.tabAccessoryEnvironment == .inline
     playButtonTrailingConstraint?.isActive = false
     if isInline {
@@ -779,37 +784,99 @@ class MiniPlayerView: UIView, UIGestureRecognizerDelegate {
     trackDragOverlay = overlay
     trackDragContent = content
     trackDragSong = song
+    trackDragPreviousSong = adjacentPlayable(isNext: false)
+    trackDragNextSong = adjacentPlayable(isNext: true)
+    if let previous = trackDragPreviousSong {
+      previousTrackPreview = makeTrackPreview(for: previous, in: overlay)
+    }
+    if let next = trackDragNextSong {
+      nextTrackPreview = makeTrackPreview(for: next, in: overlay)
+    }
+    positionTrackPages(at: 0)
+  }
+
+  private func adjacentPlayable(isNext: Bool) -> AbstractPlayable? {
+    if isNext {
+      if player.userQueueCount > 0 { return player.getUserQueueItems(from: 0, to: 0).first }
+      if player.nextQueueCount > 0 { return player.getNextQueueItems(from: 0, to: 0).first }
+      if player.repeatMode == .all, player.prevQueueCount > 0 {
+        return player.getPrevQueueItems(from: 0, to: 0).first
+      }
+    } else {
+      if player.prevQueueCount > 0 {
+        let index = player.prevQueueCount - 1
+        return player.getPrevQueueItems(from: index, to: index).first
+      }
+      if player.repeatMode == .all, player.nextQueueCount > 0 {
+        let index = player.nextQueueCount - 1
+        return player.getNextQueueItems(from: index, to: index).first
+      }
+    }
+    return nil
+  }
+
+  private func makeTrackPreview(for song: AbstractPlayable, in viewport: UIView) -> UIView {
+    let page = UIView(frame: viewport.bounds)
+    page.isUserInteractionEnabled = false
+    page.clipsToBounds = true
+    let cover = LibraryEntityImage(frame: .zero)
+    cover.frame = artworkImage.convert(artworkImage.bounds, to: viewport)
+    cover.layer.cornerRadius = artworkImage.layer.cornerRadius
+    cover.layer.cornerCurve = .continuous
+    cover.clipsToBounds = true
+    page.addSubview(cover)
+    cover.displayAndUpdate(entity: song)
+    for (source, text) in [(titleLabel, song.title), (subtitleLabel, song.creatorName)] {
+      let label = UILabel(frame: source.convert(source.bounds, to: viewport))
+      label.font = source.font
+      label.textColor = source.textColor
+      label.textAlignment = source.textAlignment
+      label.lineBreakMode = .byTruncatingTail
+      label.text = text
+      page.addSubview(label)
+    }
+    viewport.addSubview(page)
+    return page
+  }
+
+  private func positionTrackPages(at translation: CGFloat) {
+    guard let viewport = trackDragOverlay else { return }
+    let width = viewport.bounds.width
+    trackDragContent?.transform = CGAffineTransform(translationX: translation, y: 0)
+    previousTrackPreview?.transform = CGAffineTransform(translationX: translation - width, y: 0)
+    nextTrackPreview?.transform = CGAffineTransform(translationX: translation + width, y: 0)
   }
 
   func updateTrackDrag(translation: CGFloat) {
     guard let overlay = trackDragOverlay else { return }
-    trackDragTranslation = min(overlay.bounds.width, max(-overlay.bounds.width, translation))
-    trackDragContent?.transform = CGAffineTransform(translationX: trackDragTranslation, y: 0)
+    let hasNeighbor = translation < 0 ? trackDragNextSong != nil : trackDragPreviousSong != nil
+    let distance = hasNeighbor ? translation : translation * 0.22
+    trackDragTranslation = min(overlay.bounds.width, max(-overlay.bounds.width, distance))
+    positionTrackPages(at: trackDragTranslation)
   }
 
   func endTrackDrag(velocity: CGFloat, cancelled: Bool = false) {
-    guard let overlay = trackDragOverlay, let content = trackDragContent else { return }
+    guard let overlay = trackDragOverlay, trackDragContent != nil else { return }
     let distance = trackDragTranslation
     let threshold = min(92, overlay.bounds.width * 0.30)
     let pullingBack = distance * velocity < 0 && abs(velocity) > 150
-    let commit = !cancelled && !pullingBack && abs(distance) >= threshold && trackDragSong == player.currentlyPlaying
-    let animator = UIViewPropertyAnimator(duration: UIAccessibility.isReduceMotionEnabled ? 0 : 0.18, curve: .easeOut) {
-      content.transform = commit ? CGAffineTransform(translationX: distance < 0 ? -overlay.bounds.width : overlay.bounds.width, y: 0) : .identity
+    let isNext = distance < 0
+    let target = isNext ? trackDragNextSong : trackDragPreviousSong
+    let commit = !cancelled && !pullingBack && abs(distance) >= threshold && trackDragSong == player.currentlyPlaying && target != nil && target == adjacentPlayable(isNext: isNext)
+    let animator = UIViewPropertyAnimator(duration: UIAccessibility.isReduceMotionEnabled ? 0 : 0.18, curve: .easeOut) { [weak self] in
+      self?.positionTrackPages(at: commit ? (isNext ? -overlay.bounds.width : overlay.bounds.width) : 0)
     }
     trackDragAnimator = animator
     animator.addCompletion { [weak self] position in
       guard let self else { return }
-      let shouldSwitch = position == .end && commit && self.trackDragSong == self.player.currentlyPlaying
+      let shouldSwitch = position == .end && commit && self.trackDragSong == self.player.currentlyPlaying && target == self.adjacentPlayable(isNext: isNext)
       self.trackDragAnimator = nil
+      if shouldSwitch {
+        if isNext { self.player.playNext() } else { self.player.playPrevious() }
+      }
       self.resetTrackDrag()
       guard shouldSwitch else { return }
-      if distance < 0 { self.player.playNext() } else { self.player.playPrevious() }
       self.refreshPlayer()
-      if !UIAccessibility.isReduceMotionEnabled {
-        let views = [self.artworkImage, self.titleLabel, self.subtitleLabel]
-        views.forEach { $0.alpha = 0 }
-        UIView.animate(withDuration: 0.16) { views.forEach { $0.alpha = 1 } }
-      }
     }
     animator.startAnimation()
   }
@@ -818,6 +885,12 @@ class MiniPlayerView: UIView, UIGestureRecognizerDelegate {
     trackDragAnimator?.stopAnimation(true)
     trackDragAnimator = nil
     trackContent?.transform = .identity
+    previousTrackPreview?.removeFromSuperview()
+    nextTrackPreview?.removeFromSuperview()
+    previousTrackPreview = nil
+    nextTrackPreview = nil
+    trackDragPreviousSong = nil
+    trackDragNextSong = nil
     trackDragOverlay = nil
     trackDragContent = nil
     trackDragSong = nil

@@ -139,6 +139,7 @@ extension PopupPlayerVC {
   }
 
   func changeDisplayStyleVisually(to displayStyle: PlayerDisplayStyle, animated: Bool = true) {
+    largeCurrentlyPlayingView?.finishDisplayAnimation()
     lyricsModeDidChange()
     var viewToDisapper: UIView?
     var artworkToDisapper: UIView?
@@ -155,7 +156,7 @@ extension PopupPlayerVC {
     switch displayStyle {
     case .compact:
       viewToDisapper = largePlayerPlaceholderView
-      artworkToDisapper = largeCurrentlyPlayingView?.artworkImage
+      artworkToDisapper = largeCurrentlyPlayingView?.transitionArtwork
       detailsContainerToDisapper = largeCurrentlyPlayingView?.detailsContainer
       favoriteToDisapper = largeCurrentlyPlayingView?.favoriteButton
       optionsToDisapper = largeCurrentlyPlayingView?.optionsButton
@@ -167,13 +168,18 @@ extension PopupPlayerVC {
       scrollToCurrentlyPlayingRow()
       currentlyPlayingTableCell?.refresh()
     case .large:
+      if let largeView = largeCurrentlyPlayingView {
+        // Prepare the destination before measuring it: queue -> lyrics must
+        // travel directly to the lyrics header, not via the hidden large cover.
+        largeView.display(element: largeView.getDisplayElementBasedOnConfig(), animated: false)
+      }
       viewToDisapper = tableView
       artworkToDisapper = currentlyPlayingTableCell?.artworkImage
       detailsContainerToDisapper = currentlyPlayingTableCell
       favoriteToDisapper = currentlyPlayingTableCell?.favoriteButton
       optionsToDisapper = currentlyPlayingTableCell?.optionsButton
       viewToApper = largePlayerPlaceholderView
-      artworkToApper = largeCurrentlyPlayingView?.artworkImage
+      artworkToApper = largeCurrentlyPlayingView?.transitionArtwork
       detailsContainerToApper = largeCurrentlyPlayingView?.detailsContainer
       favoriteToApper = largeCurrentlyPlayingView?.favoriteButton
       optionsToApper = largeCurrentlyPlayingView?.optionsButton
@@ -223,47 +229,49 @@ extension PopupPlayerVC {
         targetFrame: artworkTargetFrame
       )
 
-      favoriteToApper.layoutIfNeeded()
-      var favoriteSourceFrame = view.convert(
-        favoriteToDisapper.frame,
-        from: detailsContainerToDisapper
-      )
-      favoriteSourceFrame = limitSizeToInsideThePlaceholder(
-        targetFrame: favoriteSourceFrame,
-        placeholderFrame: largePlayerPlaceholderView.frame
-      )
-      var favoriteTargetFrame = view.convert(favoriteToApper.frame, from: detailsContainerToApper)
-      favoriteTargetFrame = limitSizeToInsideThePlaceholder(
-        targetFrame: favoriteTargetFrame,
-        placeholderFrame: largePlayerPlaceholderView.frame
-      )
-      animateFavorite(
-        sourceView: favoriteToDisapper,
-        targetView: favoriteToApper,
-        sourceFrame: favoriteSourceFrame,
-        targetFrame: favoriteTargetFrame
-      )
+      if largeCurrentlyPlayingView?.isDisplayingLyrics != true {
+        favoriteToApper.layoutIfNeeded()
+        var favoriteSourceFrame = view.convert(
+          favoriteToDisapper.frame,
+          from: detailsContainerToDisapper
+        )
+        favoriteSourceFrame = limitSizeToInsideThePlaceholder(
+          targetFrame: favoriteSourceFrame,
+          placeholderFrame: largePlayerPlaceholderView.frame
+        )
+        var favoriteTargetFrame = view.convert(favoriteToApper.frame, from: detailsContainerToApper)
+        favoriteTargetFrame = limitSizeToInsideThePlaceholder(
+          targetFrame: favoriteTargetFrame,
+          placeholderFrame: largePlayerPlaceholderView.frame
+        )
+        animateFavorite(
+          sourceView: favoriteToDisapper,
+          targetView: favoriteToApper,
+          sourceFrame: favoriteSourceFrame,
+          targetFrame: favoriteTargetFrame
+        )
 
-      optionsToApper.layoutIfNeeded()
-      var optionsSourceFrame = view.convert(
-        optionsToDisapper.frame,
-        from: detailsContainerToDisapper
-      )
-      optionsSourceFrame = limitSizeToInsideThePlaceholder(
-        targetFrame: optionsSourceFrame,
-        placeholderFrame: largePlayerPlaceholderView.frame
-      )
-      var optionsTargetFrame = view.convert(optionsToApper.frame, from: detailsContainerToApper)
-      optionsTargetFrame = limitSizeToInsideThePlaceholder(
-        targetFrame: optionsTargetFrame,
-        placeholderFrame: largePlayerPlaceholderView.frame
-      )
-      animateOptions(
-        sourceView: optionsToDisapper,
-        targetView: optionsToApper,
-        sourceFrame: optionsSourceFrame,
-        targetFrame: optionsTargetFrame
-      )
+        optionsToApper.layoutIfNeeded()
+        var optionsSourceFrame = view.convert(
+          optionsToDisapper.frame,
+          from: detailsContainerToDisapper
+        )
+        optionsSourceFrame = limitSizeToInsideThePlaceholder(
+          targetFrame: optionsSourceFrame,
+          placeholderFrame: largePlayerPlaceholderView.frame
+        )
+        var optionsTargetFrame = view.convert(optionsToApper.frame, from: detailsContainerToApper)
+        optionsTargetFrame = limitSizeToInsideThePlaceholder(
+          targetFrame: optionsTargetFrame,
+          placeholderFrame: largePlayerPlaceholderView.frame
+        )
+        animateOptions(
+          sourceView: optionsToDisapper,
+          targetView: optionsToApper,
+          sourceFrame: optionsSourceFrame,
+          targetFrame: optionsTargetFrame
+        )
+      }
 
       viewToDisapper.isHidden = false
       viewToApper.isHidden = false
@@ -325,6 +333,7 @@ extension PopupPlayerVC {
   ) {
     // 3. Create a replica of the artwork
     let fakeImageView = RoundedImage(frame: sourceFrame)
+    fakeImageView.accessibilityIdentifier = "player-layout-transition-artwork"
     fakeImageView.backgroundColor = .clear
     fakeImageView.image = image
     fakeImageView.contentMode = .scaleAspectFit
