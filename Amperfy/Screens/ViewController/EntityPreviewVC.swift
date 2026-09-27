@@ -543,8 +543,8 @@ class EntityPreviewActionBuilder {
 
   private func createFavoriteMenu(libraryEntity: AbstractLibraryEntity) -> UIAction {
     libraryEntity.isFavorite ?
-      UIAction(title: "Unmark favorite".localized, image: .heartSlash) { action in self.toggleFavorite() } :
-      UIAction(title: "Favorite".localized, image: .heartEmpty) { action in self.toggleFavorite() }
+      UIAction(title: "Unmark favorite".localized, image: .starSlash) { action in self.toggleFavorite() } :
+      UIAction(title: "Favorite".localized, image: .starEmpty) { action in self.toggleFavorite() }
   }
 
   private func toggleFavorite() {

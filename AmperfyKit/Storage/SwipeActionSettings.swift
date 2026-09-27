@@ -122,7 +122,7 @@ public enum SwipeActionType: Int, CaseIterable, Sendable, Codable {
     case .appendPodcastQueue:
       return UIImage.podcastQueueAppend.withTintColor(.white)
     case .favorite:
-      return UIImage.heartFill.withTintColor(.white)
+      return UIImage.starFill.withTintColor(.white)
     }
   }
 }

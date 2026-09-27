@@ -53,7 +53,7 @@ extension CarPlaySceneDelegate {
         let isFavorite = appDelegate.player.currentlyPlaying?.isFavorite ?? false
         buttons.append(
           CPNowPlayingImageButton(
-            image: isFavorite ? .heartFill : .heartEmpty,
+            image: isFavorite ? .starFill : .starEmpty,
             handler: { [weak self] button in
               guard let self = self else { return }
               guard let playableInfo = appDelegate.player.currentlyPlaying,

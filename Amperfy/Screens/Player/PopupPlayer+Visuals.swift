@@ -83,9 +83,9 @@ extension PopupPlayerVC {
     case .music:
       if let playableInfo = player.currentlyPlaying,
          playableInfo.isSong {
-        config.image = playableInfo.isFavorite ? .heartFill : .heartEmpty
-        config.baseForegroundColor = appDelegate.storage.settings.user
-          .isOnlineMode ? .redHeart : .label
+        config.image = playableInfo.isFavorite ? .starFill : .starEmpty
+        config.baseForegroundColor = playableInfo.isFavorite ? appDelegate.storage.settings.accounts
+          .getSetting(playableInfo.account?.info).read.themePreference.asColor : .label
         button.isEnabled = appDelegate.storage.settings.user.isOnlineMode
       } else if let playableInfo = player.currentlyPlaying,
                 let radio = playableInfo.asRadio {
@@ -93,8 +93,8 @@ extension PopupPlayerVC {
         config.baseForegroundColor = .label
         button.isEnabled = radio.siteURL != nil
       } else {
-        config.image = .heartEmpty
-        config.baseForegroundColor = .redHeart
+        config.image = .starEmpty
+        config.baseForegroundColor = .label
         button.isEnabled = false
       }
     case .podcast:

@@ -102,11 +102,11 @@ public enum LibraryDisplayType: Int, CaseIterable, Sendable {
     case .downloads:
       return UIImage.download
     case .favoriteSongs:
-      return UIImage.heartFill
+      return UIImage.starFill
     case .favoriteAlbums:
-      return UIImage.heartFill
+      return UIImage.starFill
     case .favoriteArtists:
-      return UIImage.heartFill
+      return UIImage.starFill
     case .newestAlbums:
       return UIImage.albumNewest
     case .recentAlbums:

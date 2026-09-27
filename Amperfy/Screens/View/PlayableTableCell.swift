@@ -334,7 +334,7 @@ class PlayableTableCell: BasicTableCell {
   func refreshCacheAndDuration() {
     guard let playable = playable else { return }
     favoriteIconImage.isHidden = !playable.isFavorite
-    favoriteIconImage.tintColor = .red
+    favoriteIconImage.tintColor = tintColor
 
     let isDurationVisible = !playable.isRadio &&
       (

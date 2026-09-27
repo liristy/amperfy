@@ -62,7 +62,7 @@
                                     <color key="tintColor" systemColor="systemRedColor"/>
                                     <state key="normal" title="Button"/>
                                     <buttonConfiguration key="configuration" style="plain" buttonSize="small">
-                                        <imageReference key="image" image="heart" catalog="system" symbolScale="medium"/>
+                                        <imageReference key="image" image="star" catalog="system" symbolScale="medium"/>
                                         <backgroundConfiguration key="background"/>
                                     </buttonConfiguration>
                                     <connections>
@@ -216,7 +216,7 @@
     </objects>
     <resources>
         <image name="ellipsis" catalog="system" width="128" height="37"/>
-        <image name="heart" catalog="system" width="128" height="107"/>
+        <image name="star" catalog="system" width="128" height="107"/>
         <systemColor name="labelColor">
             <color white="0.0" alpha="1" colorSpace="custom" customColorSpace="genericGamma22GrayColorSpace"/>
         </systemColor>

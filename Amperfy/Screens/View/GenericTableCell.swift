@@ -63,7 +63,7 @@ class GenericTableCell: BasicTableCell {
     infoLabel.text = infoText
     infoLabel.textAlignment = (traitCollection.horizontalSizeClass == .regular) ? .right : .left
     favoriteIconImage.isHidden = !container.isFavorite
-    favoriteIconImage.tintColor = .red
+    favoriteIconImage.tintColor = tintColor
 
     if container is Album {
       infoLabelWidthConstraint.constant = 75

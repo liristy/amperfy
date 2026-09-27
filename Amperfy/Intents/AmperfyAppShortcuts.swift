@@ -86,7 +86,7 @@ struct AmperfyAppShortcuts: AppShortcutsProvider {
         "\(\.$isFavorite) song in \(.applicationName)",
       ],
       shortTitle: "Favorite Song",
-      systemImageName: "heart"
+      systemImageName: "star"
     )
     //
     // Change Repeat / Shuffle

@@ -28,9 +28,9 @@ extension FavoriteTypeAppEnum {
   var image: Image {
     switch self {
     case .favorite:
-      return AmperfyImage.heartFill.asImage
+      return AmperfyImage.starFill.asImage
     case .removeFromFavorites:
-      return AmperfyImage.heartSlash.asImage
+      return AmperfyImage.starSlash.asImage
     }
   }
 }
