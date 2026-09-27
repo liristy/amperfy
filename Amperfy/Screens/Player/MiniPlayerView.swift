@@ -750,7 +750,7 @@ class MiniPlayerView: UIView, UIGestureRecognizerDelegate {
     }
   }
 
-  func gestureRecognizerShouldBegin(_ gestureRecognizer: UIGestureRecognizer) -> Bool {
+  override func gestureRecognizerShouldBegin(_ gestureRecognizer: UIGestureRecognizer) -> Bool {
     guard gestureRecognizer === trackPan, let pan = gestureRecognizer as? UIPanGestureRecognizer else { return true }
     let velocity = pan.velocity(in: self)
     return player.currentlyPlaying != nil && trackDragAnimator == nil && abs(velocity.x) > abs(velocity.y)
