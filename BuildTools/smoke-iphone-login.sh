@@ -25,6 +25,15 @@ for language in zh-Hans en; do
   xcrun simctl uninstall "$device_id" "$bundle_id" || true
   xcrun simctl install "$device_id" "$app_path"
   container=$(xcrun simctl get_app_container "$device_id" "$bundle_id" data)
+  if [[ "$language" == zh-Hans ]]; then
+    xcrun simctl launch "$device_id" "$bundle_id" --smoke-launch-screen
+    for attempt in {1..20}; do
+      [[ -f "$container/Documents/launch-screen.png" ]] && break
+      sleep 1
+    done
+    cp "$container/Documents/launch-screen.png" build/validation/launch-screen.png
+    xcrun simctl terminate "$device_id" "$bundle_id"
+  fi
   xcrun simctl launch --terminate-running-process \
     --stdout="$PWD/build/validation/login-$language.stdout.log" \
     --stderr="$PWD/build/validation/login-$language.stderr.log" \

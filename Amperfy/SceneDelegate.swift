@@ -105,6 +105,22 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
     appDelegate.window = window
     var initialViewController: UIViewController?
 
+    #if DEBUG && targetEnvironment(simulator)
+      if ProcessInfo.processInfo.arguments.contains("--smoke-launch-screen") {
+        window?.rootViewController = UIStoryboard(name: "LaunchScreen", bundle: nil).instantiateInitialViewController()
+        window?.makeKeyAndVisible()
+        Task { @MainActor in
+          try? await Task.sleep(for: .seconds(1))
+          guard let window = self.window else { return }
+          let image = UIGraphicsImageRenderer(bounds: window.bounds).image { _ in
+            window.drawHierarchy(in: window.bounds, afterScreenUpdates: true)
+          }
+          try? image.pngData()?.write(to: URL.documentsDirectory.appendingPathComponent("launch-screen.png"))
+        }
+        return
+      }
+    #endif
+
     #if false
       windowScene.sizeRestrictions?.minimumSize = Self.mainWindowSize
     #endif

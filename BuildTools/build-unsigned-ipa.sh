@@ -60,8 +60,22 @@ with path.open("wb") as handle:
     plistlib.dump(info, handle, fmt=plistlib.FMT_BINARY)
 PY
 
+# Give Windows re-signers an existing, Apple-generated signature layout instead
+# of asking them to insert LC_CODE_SIGNATURE into every unsigned framework.
+# This is certificate-free ad-hoc signing, not device installation authorization.
+# Sign inside-out, then verify every framework explicitly (iOS bundle layout).
+payload_app="$work_dir/package/Payload/Amperfy.app"
+while IFS= read -r -d '' library; do
+  codesign --force --sign - --timestamp=none "$library"
+  codesign --verify --strict --verbose=2 "$library"
+done < <(find "$payload_app/Frameworks" -depth \( -name '*.framework' -o -name '*.dylib' \) -print0)
+codesign --force --sign - --timestamp=none "$payload_app"
+codesign --verify --deep --strict --verbose=2 "$payload_app"
+
 ditto -c -k --keepParent "$work_dir/package/Payload" "$work_dir/Amperfy-unsigned.ipa"
 unzip -tq "$work_dir/Amperfy-unsigned.ipa"
+python3 "$project_root/BuildTools/verify_ipa.py" --require-signature "$work_dir/Amperfy-unsigned.ipa" \
+  | tee "$output_dir/ipa-integrity.log"
 cp "$work_dir/Amperfy-unsigned.ipa" "$output_dir/Amperfy-unsigned.ipa"
 (
   cd "$output_dir"
@@ -73,7 +87,7 @@ cp "$work_dir/Amperfy-unsigned.ipa" "$output_dir/Amperfy-unsigned.ipa"
   xcodebuild -version
   echo "Device: iPhone / iPad, iOS 26 or newer, arm64"
   echo "Bundle ID: de.familie-zimba.amperfy-music.sideload"
-  echo "Signing: unsigned; sign locally before installing"
+  echo "Signing: Apple ad-hoc signature layout; personal signing still required before installing"
   echo "Siri / CarPlay entitlements: excluded"
 } > "$output_dir/build-info.txt"
 

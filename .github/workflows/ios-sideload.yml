@@ -12,6 +12,8 @@ on:
       - 'AmperfyKitTests/**'
       - 'Amperfy.xcodeproj/**'
       - 'BuildTools/build-unsigned-ipa.sh'
+      - 'BuildTools/verify_ipa.py'
+      - 'BuildTools/test_verify_ipa.py'
       - 'BuildTools/test-iphone-changes.sh'
       - 'BuildTools/smoke-iphone-login.sh'
       - 'BuildTools/subsonic-smoke-server.py'
@@ -67,7 +69,9 @@ jobs:
           persist-credentials: false
 
       - name: Build unsigned device IPA
-        run: bash BuildTools/build-unsigned-ipa.sh
+        run: |
+          python3 -m unittest discover -s BuildTools -p test_verify_ipa.py
+          bash BuildTools/build-unsigned-ipa.sh
 
       - name: Upload IPA and installation instructions
         uses: actions/upload-artifact@v4
@@ -77,6 +81,8 @@ jobs:
             build/sideload/Amperfy-unsigned.ipa
             build/sideload/SHA256SUMS
             build/sideload/build-info.txt
+            build/sideload/ipa-integrity.log
+            BuildTools/verify_ipa.py
             docs/iphone-install-zh.md
           if-no-files-found: error
           retention-days: 7
