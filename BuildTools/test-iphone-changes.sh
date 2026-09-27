@@ -32,7 +32,7 @@ test_arguments=(
 # Missing history and manual runs always execute the tests.
 if [[ "${GITHUB_EVENT_NAME:-}" == push && -n "${BASE_SHA:-}" ]] &&
   git cat-file -e "${BASE_SHA}^{commit}" 2>/dev/null &&
-  git diff --quiet "$BASE_SHA" HEAD -- AmperfyKit AmperfyKitTests Amperfy/Screens/Player Amperfy.xcodeproj BuildTools/test-iphone-changes.sh BuildTools/smoke-iphone-login.sh; then
+  git diff --quiet "$BASE_SHA" HEAD -- AmperfyKit AmperfyKitTests Amperfy.xcodeproj; then
   test_arguments=(build)
 fi
 

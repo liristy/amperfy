@@ -47,7 +47,8 @@ class PopupPlayerVC: UIViewController, UIScrollViewDelegate, UIGestureRecognizer
   private var usesLandscapeLayout = false
   private var lyricsControlsTask: Task<Void, Never>?
   private(set) var areLyricsControlsHidden = false
-  private var hasAnimatedEntrance = false
+  let artworkTransition = PlayerArtworkTransitionDelegate()
+  private lazy var dismissPan = UIPanGestureRecognizer(target: self, action: #selector(dragToDismiss(_:)))
   override var preferredStatusBarStyle: UIStatusBarStyle { .lightContent }
 
   lazy var tableViewKeyCommandsController = TableViewKeyCommandsController(
@@ -113,6 +114,10 @@ class PopupPlayerVC: UIViewController, UIScrollViewDelegate, UIGestureRecognizer
     let restoreControls = UITapGestureRecognizer(target: self, action: #selector(restoreLyricsControls))
     restoreControls.delegate = self
     view.addGestureRecognizer(restoreControls)
+    dismissPan.delegate = self
+    dismissPan.maximumNumberOfTouches = 1
+    view.addGestureRecognizer(dismissPan)
+    tableView.panGestureRecognizer.require(toFail: dismissPan)
     if let createdLargeCurrentlyPlayingView = ViewCreator<LargeCurrentlyPlayingPlayerView>
       .createFromNib(withinFixedFrame: CGRect(
         x: 0,
@@ -239,26 +244,12 @@ class PopupPlayerVC: UIViewController, UIScrollViewDelegate, UIGestureRecognizer
 
   override func viewDidAppear(_ animated: Bool) {
     super.viewDidAppear(animated)
-    if !hasAnimatedEntrance, !UIAccessibility.isReduceMotionEnabled {
-      hasAnimatedEntrance = true
-      largePlayerPlaceholderView.transform = CGAffineTransform(translationX: 0, y: 28)
-        .scaledBy(x: 0.94, y: 0.94)
-      largePlayerPlaceholderView.alpha = 0.3
-      UIView.animate(withDuration: 0.55, delay: 0, usingSpringWithDamping: 0.88,
-                     initialSpringVelocity: 0, options: [.beginFromCurrentState]) {
-        self.largePlayerPlaceholderView.transform = .identity
-        self.largePlayerPlaceholderView.alpha = self.tableView.isHidden ? 1 : 0
-      }
-    }
     lyricsModeDidChange()
   }
 
   func lyricsModeDidChange() {
     lyricsControlsTask?.cancel()
     setLyricsControlsHidden(false)
-    // A downward gesture inside lyrics hides controls instead of dismissing the sheet.
-    isModalInPresentation = largeCurrentlyPlayingView?.isDisplayingLyrics == true &&
-      appDelegate.storage.settings.user.playerDisplayStyle == .large
     scheduleLyricsControlsHide()
   }
 
@@ -309,13 +300,80 @@ class PopupPlayerVC: UIViewController, UIScrollViewDelegate, UIGestureRecognizer
   }
 
   func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer, shouldReceive touch: UITouch) -> Bool {
-    guard areLyricsControlsHidden else { return false }
+    let isDismissPan = gestureRecognizer === dismissPan
+    guard isDismissPan || areLyricsControlsHidden else { return false }
     var touchedView = touch.view
     while let current = touchedView {
-      if current is UIControl { return false }
+      if isDismissPan ? (current is UISlider) : (current is UIControl) { return false }
       touchedView = current.superview
     }
     return true
+  }
+
+  func gestureRecognizerShouldBegin(_ gestureRecognizer: UIGestureRecognizer) -> Bool {
+    guard gestureRecognizer === dismissPan else { return true }
+    let velocity = dismissPan.velocity(in: view)
+    guard velocity.y > 0, velocity.y > abs(velocity.x), transitionCoordinator == nil,
+          presentedViewController == nil else { return false }
+    var touchedView = view.hitTest(dismissPan.location(in: view), with: nil)
+    while let current = touchedView {
+      // Keep downward scrolling available when reading earlier lyrics or queue items.
+      if let scrollView = current as? UIScrollView,
+         scrollView.contentOffset.y > -scrollView.adjustedContentInset.top + 1 { return false }
+      touchedView = current.superview
+    }
+    return true
+  }
+
+  func registerLyricsScrollView(_ lyricsView: LyricsView) {
+    lyricsView.panGestureRecognizer.require(toFail: dismissPan)
+  }
+
+  func configurePresentation(sourceArtwork: UIImageView?) {
+    artworkTransition.sourceArtwork = sourceArtwork
+    modalPresentationStyle = .fullScreen
+    transitioningDelegate = artworkTransition
+  }
+
+  var transitionArtwork: UIImageView? {
+    if appDelegate.storage.settings.user.playerDisplayStyle == .compact {
+      return currentlyPlayingTableCell?.artworkImage
+    }
+    return largeCurrentlyPlayingView?.transitionArtwork
+  }
+
+  @objc private func dragToDismiss(_ pan: UIPanGestureRecognizer) {
+    switch pan.state {
+    case .began: beginInteractiveDismissal()
+    case .changed: updateInteractiveDismissal(translation: pan.translation(in: view.window).y)
+    case .ended:
+      endInteractiveDismissal(translation: pan.translation(in: view.window).y,
+                              velocity: pan.velocity(in: view.window).y)
+    case .cancelled, .failed: endInteractiveDismissal(translation: 0, velocity: 0, cancelled: true)
+    default: break
+    }
+  }
+
+  func beginInteractiveDismissal() {
+    guard artworkTransition.interaction == nil, !isBeingDismissed else { return }
+    lyricsControlsTask?.cancel()
+    let interaction = UIPercentDrivenInteractiveTransition()
+    interaction.completionCurve = .easeOut
+    artworkTransition.interaction = interaction
+    dismiss(animated: true) { [weak self] in self?.artworkTransition.interaction = nil }
+  }
+
+  func updateInteractiveDismissal(translation: CGFloat) {
+    artworkTransition.interaction?.update(min(0.99, max(0, translation / max(view.bounds.height, 1))))
+  }
+
+  func endInteractiveDismissal(translation: CGFloat, velocity: CGFloat, cancelled: Bool = false) {
+    guard let interaction = artworkTransition.interaction else { return }
+    let shouldFinish = !cancelled && velocity > -100 &&
+      (translation > 90 || (translation > 12 && velocity > 650))
+    if shouldFinish { interaction.finish() } else { interaction.cancel() }
+    artworkTransition.interaction = nil
+    if !shouldFinish { scheduleLyricsControlsHide() }
   }
 
   override func viewWillLayoutSubviews() {

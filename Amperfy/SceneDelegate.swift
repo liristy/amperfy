@@ -158,11 +158,42 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
               try await Task.sleep(for: .seconds(3))
               guard self.appDelegate.player.elapsedTime > 0 else { return }
               vc.dismiss(animated: false)
-              let popup = PopupPlayerVC()
-              popup.modalPresentationStyle = .fullScreen
-              popup.modalTransitionStyle = .coverVertical
-              vc.present(popup, animated: true)
-              try await Task.sleep(for: .seconds(2))
+              guard let miniPlayer = (vc as? MainSceneHostingViewController)?.miniPlayer else { return }
+              miniPlayer.openPlayerView()
+              guard let popup = vc.presentedViewController as? PopupPlayerVC else { return }
+              func descendants(of view: UIView) -> [UIView] {
+                view.subviews + view.subviews.flatMap { descendants(of: $0) }
+              }
+              // Sample the real presentation halfway through: the cover must be travelling,
+              // rather than jumping after viewDidAppear.
+              try await Task.sleep(for: .milliseconds(180))
+              guard let window = popup.view.window,
+                    let movingCover = descendants(of: window).first(where: {
+                      $0.accessibilityIdentifier == "player-transition-artwork"
+                    }), let animatedFrame = movingCover.layer.presentation()?.frame,
+                    let finalCover = popup.transitionArtwork,
+                    animatedFrame.width > 60, animatedFrame.width < finalCover.bounds.width - 1 else {
+                print("Cover zoom did not interpolate from the mini player")
+                return
+              }
+              let openingImage = UIGraphicsImageRenderer(bounds: window.bounds).image { _ in
+                window.drawHierarchy(in: window.bounds, afterScreenUpdates: false)
+              }
+              try openingImage.pngData()?.write(to: URL.documentsDirectory.appendingPathComponent("player-opening.png"))
+              try await Task.sleep(for: .seconds(1))
+              guard popup.largePlayerPlaceholderView.transform == .identity,
+                    popup.transitionArtwork?.isHidden == false else { return }
+              popup.beginInteractiveDismissal()
+              try await Task.sleep(for: .milliseconds(80))
+              popup.updateInteractiveDismissal(translation: 70)
+              try await Task.sleep(for: .milliseconds(80))
+              popup.endInteractiveDismissal(translation: 70, velocity: -150, cancelled: true)
+              try await Task.sleep(for: .seconds(1))
+              guard vc.presentedViewController === popup, popup.view.transform == .identity,
+                    popup.transitionArtwork?.isHidden == false else {
+                print("Cancelled player dismissal did not restore the player")
+                return
+              }
               func screenshot(_ name: String) throws {
                 let image = UIGraphicsImageRenderer(bounds: popup.view.bounds).image { _ in
                   popup.view.drawHierarchy(in: popup.view.bounds, afterScreenUpdates: true)
@@ -202,7 +233,27 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
               guard !popup.areLyricsControlsHidden,
                     abs(popup.largePlayerPlaceholderView.bounds.height - heightWithControls) < 1 else { return }
               try screenshot("player-lyrics-restored.png")
-              print("Lyrics auto hide, expansion and tap restoration passed")
+              guard let lyricsView = descendants(of: popup.view).compactMap({ $0 as? LyricsView }).first else { return }
+              lyricsView.handleDrag(velocity: CGPoint(x: 0, y: 300))
+              guard !popup.areLyricsControlsHidden else { return }
+              lyricsView.handleDrag(velocity: CGPoint(x: 0, y: -300))
+              try await Task.sleep(for: .milliseconds(500))
+              guard popup.areLyricsControlsHidden else { return }
+              try screenshot("player-lyrics-upward.png")
+              // A short, quick downward drag should finish instead of requiring a long swipe.
+              popup.beginInteractiveDismissal()
+              try await Task.sleep(for: .milliseconds(80))
+              popup.updateInteractiveDismissal(translation: 28)
+              popup.endInteractiveDismissal(translation: 28, velocity: 900)
+              try await Task.sleep(for: .seconds(1))
+              guard vc.presentedViewController == nil else {
+                print("Quick downward drag did not dismiss the player")
+                return
+              }
+              miniPlayer.openPlayerView()
+              try await Task.sleep(for: .seconds(1))
+              guard vc.presentedViewController is PopupPlayerVC else { return }
+              print("Cover zoom, cancelled dismissal, upward lyrics gesture and quick dismissal passed")
               let marker = URL.documentsDirectory.appendingPathComponent("player-smoke-ready")
               try "ready".write(to: marker, atomically: true, encoding: .utf8)
             } catch { print("Player smoke failed: \(error)") }

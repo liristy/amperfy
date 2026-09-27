@@ -137,6 +137,7 @@ class LargeCurrentlyPlayingPlayerView: UIView {
   private let lyricsOptions = UIButton(type: .system)
   private var displayAnimator: UIViewPropertyAnimator?
   var isDisplayingLyrics: Bool { displayElement == .lyrics }
+  var transitionArtwork: UIImageView { displayElement == .lyrics ? lyricsArtwork : artworkImage }
 
   @IBOutlet
   weak var upperContainerView: UIView!
@@ -208,11 +209,12 @@ class LargeCurrentlyPlayingPlayerView: UIView {
     optionsButton.accessibilityLabel = "Song options".localized
 
     lyricsView = LyricsView()
+    rootView?.registerLyricsScrollView(lyricsView!)
     lyricsView!.frame = upperContainerView.bounds
     lyricsView!.onLyricSelected = { [weak self] lyric in
       self?.appDelegate.player.seek(toSecond: lyric.startTime.seconds)
     }
-    lyricsView!.onDownwardDrag = { [weak self] in
+    lyricsView!.onUpwardDrag = { [weak self] in
       self?.rootView?.setLyricsControlsHidden(true)
     }
     addSubview(lyricsView!)
@@ -269,9 +271,6 @@ class LargeCurrentlyPlayingPlayerView: UIView {
     artworkImage.isUserInteractionEnabled = true
     artworkImage.addGestureRecognizer(createLeftSwipe())
     artworkImage.addGestureRecognizer(createRightSwipe())
-    let swipeDown = UISwipeGestureRecognizer(target: self, action: #selector(handleSwipe(_:)))
-    swipeDown.direction = .down
-    artworkImage.addGestureRecognizer(swipeDown)
     visualizerHostingView?.hostingController?.view.isUserInteractionEnabled = true
     visualizerHostingView?.hostingController?.view.addGestureRecognizer(createRightSwipe())
     visualizerHostingView?.hostingController?.view.addGestureRecognizer(createLeftSwipe())
@@ -284,8 +283,6 @@ class LargeCurrentlyPlayingPlayerView: UIView {
       rootView?.controlView?.nextButtonPushed(self)
     case .right:
       rootView?.controlView?.previousButtonPushed(self)
-    case .down:
-      rootView?.closePopupPlayer()
     default:
       break
     }

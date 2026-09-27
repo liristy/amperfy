@@ -22,6 +22,111 @@
 import AmperfyKit
 import UIKit
 
+// The same artwork travels between the mini player and the full-screen player.
+// The destination is laid out once at its final size before measuring the cover.
+@MainActor
+final class PlayerArtworkTransitionDelegate: NSObject, UIViewControllerTransitioningDelegate {
+  weak var sourceArtwork: UIImageView?
+  var interaction: UIPercentDrivenInteractiveTransition?
+
+  func animationController(forPresented presented: UIViewController,
+                           presenting: UIViewController, source: UIViewController)
+    -> UIViewControllerAnimatedTransitioning? {
+    PlayerArtworkAnimator(isPresenting: true, sourceArtwork: sourceArtwork)
+  }
+
+  func animationController(forDismissed dismissed: UIViewController) -> UIViewControllerAnimatedTransitioning? {
+    PlayerArtworkAnimator(isPresenting: false, sourceArtwork: sourceArtwork)
+  }
+
+  func interactionControllerForDismissal(using animator: UIViewControllerAnimatedTransitioning)
+    -> UIViewControllerInteractiveTransitioning? { interaction }
+}
+
+@MainActor
+final class PlayerArtworkAnimator: NSObject, UIViewControllerAnimatedTransitioning {
+  private let isPresenting: Bool
+  private weak var sourceArtwork: UIImageView?
+
+  init(isPresenting: Bool, sourceArtwork: UIImageView?) {
+    self.isPresenting = isPresenting
+    self.sourceArtwork = sourceArtwork
+  }
+
+  func transitionDuration(using transitionContext: UIViewControllerContextTransitioning?) -> TimeInterval {
+    UIAccessibility.isReduceMotionEnabled ? 0.2 : 0.5
+  }
+
+  func animateTransition(using context: UIViewControllerContextTransitioning) {
+    let container = context.containerView
+    guard let fromVC = context.viewController(forKey: .from),
+          let toVC = context.viewController(forKey: .to),
+          let popup = (isPresenting ? toVC : fromVC) as? PopupPlayerVC,
+          let fromView = context.view(forKey: .from),
+          let toView = context.view(forKey: .to) else {
+      context.completeTransition(false)
+      return
+    }
+    if isPresenting {
+      toView.frame = context.finalFrame(for: toVC)
+      container.addSubview(toView)
+      popup.changeDisplayStyleVisually(to: popup.appDelegate.storage.settings.user.playerDisplayStyle,
+                                       animated: false)
+    } else {
+      toView.frame = context.finalFrame(for: toVC)
+      container.insertSubview(toView, belowSubview: fromView)
+    }
+    toView.layoutIfNeeded()
+    popup.view.layoutIfNeeded()
+    popup.largeCurrentlyPlayingView?.layoutIfNeeded()
+    let fullArtwork = popup.transitionArtwork
+    let smallFrame = sourceArtwork.map { $0.convert($0.bounds, to: container) }
+    let largeFrame = fullArtwork.map { $0.convert($0.bounds, to: container) }
+    let reducedMotion = UIAccessibility.isReduceMotionEnabled
+    var movingArtwork: UIImageView?
+    let sourceWasHidden = sourceArtwork?.isHidden ?? false
+    let fullWasHidden = fullArtwork?.isHidden ?? false
+    if !reducedMotion, let smallFrame, let largeFrame,
+       smallFrame.width > 0, largeFrame.width > 0 {
+      let image = UIImageView(image: fullArtwork?.image ?? sourceArtwork?.image)
+      image.accessibilityIdentifier = "player-transition-artwork"
+      image.contentMode = .scaleAspectFit
+      image.clipsToBounds = true
+      image.layer.cornerCurve = .continuous
+      image.layer.cornerRadius = isPresenting ? 5 : 12
+      image.frame = isPresenting ? smallFrame : largeFrame
+      container.addSubview(image)
+      movingArtwork = image
+      sourceArtwork?.isHidden = true
+      fullArtwork?.isHidden = true
+    }
+    let playerView = popup.view!
+    if isPresenting {
+      playerView.alpha = 0
+      playerView.transform = reducedMotion ? .identity : CGAffineTransform(translationX: 0, y: 60)
+    }
+    UIView.animate(withDuration: transitionDuration(using: context), delay: 0,
+                   options: [.curveEaseInOut, .allowUserInteraction]) {
+      playerView.alpha = self.isPresenting ? 1 : 0
+      playerView.transform = self.isPresenting || reducedMotion ? .identity :
+        CGAffineTransform(translationX: 0, y: container.bounds.height)
+      if let smallFrame, let largeFrame {
+        movingArtwork?.frame = self.isPresenting ? largeFrame : smallFrame
+        movingArtwork?.layer.cornerRadius = self.isPresenting ? 12 : 5
+      }
+    } completion: { _ in
+      let completed = !context.transitionWasCancelled
+      movingArtwork?.removeFromSuperview()
+      self.sourceArtwork?.isHidden = sourceWasHidden
+      fullArtwork?.isHidden = fullWasHidden
+      if !self.isPresenting, completed { playerView.removeFromSuperview() }
+      playerView.alpha = 1
+      playerView.transform = .identity
+      context.completeTransition(completed)
+    }
+  }
+}
+
 extension PopupPlayerVC {
   static let displaStyleAnimationDuration = TimeInterval(0.2)
 

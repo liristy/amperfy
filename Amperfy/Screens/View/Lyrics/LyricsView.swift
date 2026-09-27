@@ -34,7 +34,7 @@ class LyricsView: UITableView, UITableViewDataSource, UITableViewDelegate {
   private let edgeMask = CAGradientLayer()
   private var previousSize: CGSize = .zero
   public var onLyricSelected: ((LyricsLine) -> ())?
-  public var onDownwardDrag: (() -> ())?
+  public var onUpwardDrag: (() -> ())?
 
   override init(frame: CGRect, style: UITableView.Style) {
     super.init(frame: frame, style: style)
@@ -137,9 +137,13 @@ class LyricsView: UITableView, UITableViewDataSource, UITableViewDelegate {
   }
 
   public func scrollViewWillBeginDragging(_ scrollView: UIScrollView) {
-    if scrollView.panGestureRecognizer.velocity(in: scrollView).y > 0 { onDownwardDrag?() }
+    handleDrag(velocity: scrollView.panGestureRecognizer.velocity(in: scrollView))
     lastScrolledIndex = nil
     suppressAutoScrollUntil = Date().addingTimeInterval(5)
+  }
+
+  func handleDrag(velocity: CGPoint) {
+    if velocity.y < 0, abs(velocity.y) > abs(velocity.x) { onUpwardDrag?() }
   }
 
   public func scrollViewDidEndDragging(_ scrollView: UIScrollView, willDecelerate decelerate: Bool) {
