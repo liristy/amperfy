@@ -14,8 +14,10 @@
 	<string>$(PRODUCT_BUNDLE_IDENTIFIER)</string>
 	<key>CFBundleInfoDictionaryVersion</key>
 	<string>6.0</string>
+	<key>CFBundleDisplayName</key>
+	<string>qMusic</string>
 	<key>CFBundleName</key>
-	<string>$(PRODUCT_NAME)</string>
+	<string>qMusic</string>
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
 	<key>CFBundleShortVersionString</key>
@@ -39,9 +41,9 @@
 	<array>
 		<dict>
 			<key>INAlternativeAppName</key>
-			<string>Amperfy Music</string>
+			<string>qMusic</string>
 			<key>INAlternativeAppNamePronunciationHint</key>
-			<string>amperfy music</string>
+			<string>Q Music</string>
 		</dict>
 	</array>
 	<key>INIntentsSupported</key>

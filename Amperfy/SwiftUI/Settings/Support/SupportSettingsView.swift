@@ -55,7 +55,7 @@ struct SupportSettingsView: View {
               appDelegate.eventLogger.info(
                 topic: "Email Info".localized,
                 statusCode: .emailError,
-                message: "Email is not configured in settings app or Amperfy is not able to send an email.".localized,
+                message: "Email is not configured in settings app or qMusic is not able to send an email.".localized,
                 displayPopup: true
               )
             }
@@ -71,7 +71,7 @@ struct SupportSettingsView: View {
       .sheet(isPresented: $isShowingMailView) {
         MailView(
           result: $result,
-          subject: "Amperfy support".localized,
+          subject: "qMusic support".localized,
           messageBody: """
           \nPlease describe your issue.
           \nFeedback is always welcome too.

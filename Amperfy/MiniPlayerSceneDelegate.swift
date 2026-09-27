@@ -25,7 +25,7 @@ import SwiftUI
 import UIKit
 
 class MiniPlayerSceneDelegate: UIResponder, UIWindowSceneDelegate {
-  static let sceneTitle = "Amperfy Mini Player"
+  static let sceneTitle = "qMusic Mini Player"
 
   public lazy var log = {
     AmperKit.shared.log

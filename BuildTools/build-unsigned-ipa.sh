@@ -55,7 +55,7 @@ with path.open("rb") as handle:
     info = plistlib.load(handle)
 assert info.get("CFBundleSupportedPlatforms") == ["iPhoneOS"], "Not a device build"
 info["CFBundleIdentifier"] += ".sideload"
-info["CFBundleDisplayName"] = "Amperfy Test"
+info["CFBundleDisplayName"] = "qMusic"
 with path.open("wb") as handle:
     plistlib.dump(info, handle, fmt=plistlib.FMT_BINARY)
 PY

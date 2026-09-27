@@ -309,24 +309,24 @@
         }
       }
     },
-    "Amperfy can inform you about the latest podcast episodes. If you want to, please authorize Amperfy to send you notifications.": {
+    "qMusic can inform you about the latest podcast episodes. If you want to, please authorize qMusic to send you notifications.": {
       "extractionState": "manual",
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "允许 Amperfy 发送通知，以便及时获知最新播客单集。"
+            "value": "允许 qMusic 发送通知，以便及时获知最新播客单集。"
           }
         }
       }
     },
-    "Amperfy support": {
+    "qMusic support": {
       "extractionState": "manual",
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "Amperfy 支持"
+            "value": "qMusic 支持"
           }
         }
       }
@@ -1343,13 +1343,13 @@
         }
       }
     },
-    "Email is not configured in settings app or Amperfy is not able to send an email.": {
+    "Email is not configured in settings app or qMusic is not able to send an email.": {
       "extractionState": "manual",
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "尚未配置邮件账号，或 Amperfy 无法发送邮件。"
+            "value": "尚未配置邮件账号，或 qMusic 无法发送邮件。"
           }
         }
       }
