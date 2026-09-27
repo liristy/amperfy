@@ -67,11 +67,13 @@ class LyricsView: UITableView, UITableViewDataSource, UITableViewDelegate {
     edgeMask.frame = bounds
     CATransaction.commit()
     guard bounds.size != previousSize else { return }
+    let widthChanged = bounds.width != previousSize.width
     previousSize = bounds.size
     contentInset = UIEdgeInsets(top: bounds.height * 0.26, left: 0,
                                bottom: bounds.height * 0.65, right: 0)
-    // Recalculate wrapping after rotation without fighting normal scrolling.
-    reloadData()
+    // Only a width change affects line wrapping. Hiding the controls animates
+    // height every frame; rebuilding all cells there interrupts highlighting.
+    if widthChanged { reloadData() }
     lastScrolledIndex = nil
     if lastIndex == nil { setContentOffset(CGPoint(x: 0, y: -contentInset.top), animated: false) }
   }
