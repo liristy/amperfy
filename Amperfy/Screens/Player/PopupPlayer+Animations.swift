@@ -34,7 +34,7 @@ extension PopupPlayerVC {
   }
 
   func changeDisplayStyleVisually(to displayStyle: PlayerDisplayStyle, animated: Bool = true) {
-    if displayStyle == .compact { setLyricsControlsHidden(false, animated: animated) }
+    lyricsModeDidChange()
     var viewToDisapper: UIView?
     var artworkToDisapper: UIView?
     var detailsContainerToDisapper: UIView?

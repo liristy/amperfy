@@ -269,6 +269,9 @@ class LargeCurrentlyPlayingPlayerView: UIView {
     artworkImage.isUserInteractionEnabled = true
     artworkImage.addGestureRecognizer(createLeftSwipe())
     artworkImage.addGestureRecognizer(createRightSwipe())
+    let swipeDown = UISwipeGestureRecognizer(target: self, action: #selector(handleSwipe(_:)))
+    swipeDown.direction = .down
+    artworkImage.addGestureRecognizer(swipeDown)
     visualizerHostingView?.hostingController?.view.isUserInteractionEnabled = true
     visualizerHostingView?.hostingController?.view.addGestureRecognizer(createRightSwipe())
     visualizerHostingView?.hostingController?.view.addGestureRecognizer(createLeftSwipe())
@@ -281,6 +284,8 @@ class LargeCurrentlyPlayingPlayerView: UIView {
       rootView?.controlView?.nextButtonPushed(self)
     case .right:
       rootView?.controlView?.previousButtonPushed(self)
+    case .down:
+      rootView?.closePopupPlayer()
     default:
       break
     }

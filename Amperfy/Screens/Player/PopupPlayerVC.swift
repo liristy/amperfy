@@ -257,7 +257,8 @@ class PopupPlayerVC: UIViewController, UIScrollViewDelegate, UIGestureRecognizer
     lyricsControlsTask?.cancel()
     setLyricsControlsHidden(false)
     // A downward gesture inside lyrics hides controls instead of dismissing the sheet.
-    isModalInPresentation = largeCurrentlyPlayingView?.isDisplayingLyrics == true
+    isModalInPresentation = largeCurrentlyPlayingView?.isDisplayingLyrics == true &&
+      appDelegate.storage.settings.user.playerDisplayStyle == .large
     scheduleLyricsControlsHide()
   }
 
