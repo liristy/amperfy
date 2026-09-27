@@ -385,7 +385,7 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
               try screenshot("player-lyrics-restored.png")
               // Both compact headers must share one artwork size throughout the
               // queue/lyrics transition, including its intermediate frames.
-              func compactArtworkStayedSmall() async throws -> Bool {
+              @MainActor func compactArtworkStayedSmall() async throws -> Bool {
                 var sampled = false
                 for _ in 0..<22 {
                   try await Task.sleep(for: .milliseconds(16))
