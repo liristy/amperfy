@@ -140,7 +140,11 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
                 self.appDelegate.storage.settings.accounts.getSetting(activeAccount).read
                   .initialSyncCompletionStatus == .completed else { return }
           if ProcessInfo.processInfo.arguments.contains("--smoke-player") {
+            func smokeLog(_ message: String) {
+              FileHandle.standardOutput.write(Data((message + "\n").utf8))
+            }
             do {
+              smokeLog("Player smoke: preparing playback")
               let library = self.appDelegate.storage.main.library
               let account = library.getAccount(info: activeAccount)
               guard let album = library.getAlbum(for: account, id: "album-1", isDetailFaultResolution: false) else { return }
@@ -160,26 +164,36 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
               vc.dismiss(animated: false)
               guard let miniPlayer = (vc as? MainSceneHostingViewController)?.miniPlayer else { return }
               miniPlayer.openPlayerView()
-              guard let popup = vc.presentedViewController as? PopupPlayerVC else { return }
               func descendants(of view: UIView) -> [UIView] {
                 view.subviews + view.subviews.flatMap { descendants(of: $0) }
               }
-              // Sample the real presentation halfway through: the cover must be travelling,
-              // rather than jumping after viewDidAppear.
-              try await Task.sleep(for: .milliseconds(180))
-              guard let window = popup.view.window,
-                    let movingCover = descendants(of: window).first(where: {
-                      $0.accessibilityIdentifier == "player-transition-artwork"
-                    }), let animatedFrame = movingCover.layer.presentation()?.frame,
-                    let finalCover = popup.transitionArtwork,
-                    animatedFrame.width > 60, animatedFrame.width < finalCover.bounds.width - 1 else {
-                print("Cover zoom did not interpolate from the mini player")
+              // UIKit may defer presentation until the next run-loop turn. Sample frames
+              // throughout the transition instead of assuming one fixed scheduling delay.
+              var sampledZoom = false
+              var lastSample = "no transition view"
+              for _ in 0..<60 {
+                try await Task.sleep(for: .milliseconds(16))
+                guard let popup = vc.presentedViewController as? PopupPlayerVC,
+                      let window = popup.view.window,
+                      let movingCover = descendants(of: window).first(where: {
+                        $0.accessibilityIdentifier == "player-transition-artwork"
+                      }), let animatedFrame = movingCover.layer.presentation()?.frame,
+                      let finalCover = popup.transitionArtwork else { continue }
+                lastSample = "width \(animatedFrame.width), destination \(finalCover.bounds.width)"
+                guard animatedFrame.width > 60,
+                      animatedFrame.width < finalCover.bounds.width - 1 else { continue }
+                let image = UIGraphicsImageRenderer(bounds: window.bounds).image { _ in
+                  window.drawHierarchy(in: window.bounds, afterScreenUpdates: false)
+                }
+                try image.pngData()?.write(to: URL.documentsDirectory.appendingPathComponent("player-opening.png"))
+                sampledZoom = true
+                break
+              }
+              guard sampledZoom, let popup = vc.presentedViewController as? PopupPlayerVC else {
+                smokeLog("Cover zoom did not interpolate: \(lastSample)")
                 return
               }
-              let openingImage = UIGraphicsImageRenderer(bounds: window.bounds).image { _ in
-                window.drawHierarchy(in: window.bounds, afterScreenUpdates: false)
-              }
-              try openingImage.pngData()?.write(to: URL.documentsDirectory.appendingPathComponent("player-opening.png"))
+              smokeLog("Cover zoom interpolated: \(lastSample)")
               try await Task.sleep(for: .seconds(1))
               guard popup.largePlayerPlaceholderView.transform == .identity,
                     popup.transitionArtwork?.isHidden == false else { return }
@@ -191,9 +205,10 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
               try await Task.sleep(for: .seconds(1))
               guard vc.presentedViewController === popup, popup.view.transform == .identity,
                     popup.transitionArtwork?.isHidden == false else {
-                print("Cancelled player dismissal did not restore the player")
+                smokeLog("Cancelled player dismissal did not restore the player")
                 return
               }
+              smokeLog("Cancelled dismissal restored the player")
               func screenshot(_ name: String) throws {
                 let image = UIGraphicsImageRenderer(bounds: popup.view.bounds).image { _ in
                   popup.view.drawHierarchy(in: popup.view.bounds, afterScreenUpdates: true)
@@ -206,10 +221,10 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
               try await Task.sleep(for: .seconds(9))
               guard self.appDelegate.player.currentlyPlaying == nextSong,
                     popup.largeCurrentlyPlayingView?.titleLabel.text == nextSong.title else {
-                print("Gapless smoke: next audio and displayed song disagree")
+                smokeLog("Gapless smoke: next audio and displayed song disagree")
                 return
               }
-              print("Gapless playback updated song and player title")
+              smokeLog("Gapless playback updated song and player title")
               try screenshot("player-next-song.png")
               self.appDelegate.player.seek(toSecond: 42)
               try await Task.sleep(for: .seconds(1))
@@ -224,7 +239,7 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
               try await Task.sleep(for: .seconds(5))
               guard popup.areLyricsControlsHidden,
                     popup.largePlayerPlaceholderView.bounds.height > heightWithControls + 200 else {
-                print("Lyrics controls did not hide and expand lyrics")
+                smokeLog("Lyrics controls did not hide and expand lyrics")
                 return
               }
               try screenshot("player-lyrics-immersive.png")
@@ -247,16 +262,16 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
               popup.endInteractiveDismissal(translation: 28, velocity: 900)
               try await Task.sleep(for: .seconds(1))
               guard vc.presentedViewController == nil else {
-                print("Quick downward drag did not dismiss the player")
+                smokeLog("Quick downward drag did not dismiss the player")
                 return
               }
               miniPlayer.openPlayerView()
               try await Task.sleep(for: .seconds(1))
               guard vc.presentedViewController is PopupPlayerVC else { return }
-              print("Cover zoom, cancelled dismissal, upward lyrics gesture and quick dismissal passed")
+              smokeLog("Cover zoom, cancelled dismissal, upward lyrics gesture and quick dismissal passed")
               let marker = URL.documentsDirectory.appendingPathComponent("player-smoke-ready")
               try "ready".write(to: marker, atomically: true, encoding: .utf8)
-            } catch { print("Player smoke failed: \(error)") }
+            } catch { smokeLog("Player smoke failed: \(error)") }
             return
           }
           let marker = URL.documentsDirectory.appendingPathComponent("login-smoke-ready")
