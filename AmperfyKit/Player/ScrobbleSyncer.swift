@@ -48,7 +48,10 @@ public class ScrobbleSyncer {
   private var currentSongThreshold: TimeInterval = 0
 
   private var songToBeScrobbled: Song?
-  private var songHasBeenListendEnough = false
+  private var hasSubmittedCurrentPlay = false
+  private var currentPlayWasCached = false
+  private var currentPlayDate: Date?
+  private let now: () -> Date
 
   init(
     player: PlayerFacade,
@@ -56,7 +59,8 @@ public class ScrobbleSyncer {
     account: Account,
     storage: PersistentStorage,
     librarySyncer: LibrarySyncer,
-    eventLogger: EventLogger
+    eventLogger: EventLogger,
+    now: @escaping () -> Date = Date.init
   ) {
     self.player = player
     self.networkMonitor = networkMonitor
@@ -65,6 +69,7 @@ public class ScrobbleSyncer {
     self.storage = storage
     self.librarySyncer = librarySyncer
     self.eventLogger = eventLogger
+    self.now = now
   }
 
   public func start() {
@@ -80,44 +85,13 @@ public class ScrobbleSyncer {
     isRunning = false
   }
 
-  private func scrobble(playedSong: Song, songPosition: NowPlayingSongPosition) async {
-    func nowPlayingToServerAsync(
-      playedSong: Song,
-      songPosition: NowPlayingSongPosition,
-      finallyCB: ((_: Song, _: Bool) -> ())? = nil
-    ) {
-      var success = false
-      Task { @MainActor in
-        do {
-          try await self.librarySyncer.syncNowPlaying(song: playedSong, songPosition: songPosition)
-          success = true
-        } catch {
-          os_log(
-            "Now Playing Sync Failed: %s",
-            log: self.log,
-            type: .info,
-            playedSong.displayString
-          )
-          self.eventLogger.report(topic: "Scrobble Sync", error: error, displayPopup: false)
-        }
-        finallyCB?(playedSong, success)
-      }
-    }
-
-    switch songPosition {
-    case .start:
-      if storage.settings.user.isOnlineMode, networkMonitor.isConnectedToNetwork {
-        nowPlayingToServerAsync(playedSong: playedSong, songPosition: .start)
-      }
-    case .end:
-      if storage.settings.user.isOnlineMode, networkMonitor.isConnectedToNetwork {
-        nowPlayingToServerAsync(playedSong: playedSong, songPosition: .end) { song, success in
-          self.cacheScrobbleRequest(playedSong: song, isUploaded: success)
-          guard success else { return }
-          self.start() // send cached request to server
-        }
-      } else {
-        cacheScrobbleRequest(playedSong: playedSong, isUploaded: false)
+  private func sendNowPlaying(_ song: Song) {
+    guard storage.settings.user.isOnlineMode, networkMonitor.isConnectedToNetwork else { return }
+    Task { @MainActor in
+      do {
+        try await librarySyncer.syncNowPlaying(song: song, songPosition: .start)
+      } catch {
+        eventLogger.report(topic: "Scrobble Sync", error: error, displayPopup: false)
       }
     }
   }
@@ -170,80 +144,68 @@ public class ScrobbleSyncer {
     )
   }
 
-  private func cacheScrobbleRequest(playedSong: Song, isUploaded: Bool) {
+  private func cacheScrobbleRequest(playedSong: Song, date: Date, isUploaded: Bool) {
     if !isUploaded {
       os_log("Scrobble cache: %s", log: self.log, type: .info, playedSong.displayString)
     }
     let scrobbleEntry = storage.main.library.createScrobbleEntry(account: account)
-    scrobbleEntry.date = Date()
+    scrobbleEntry.date = date
     scrobbleEntry.playable = playedSong
     scrobbleEntry.isUploaded = isUploaded
     storage.main.saveContext()
   }
 
-  private func startSongPlayed() async {
-    await syncSongStopped(clearCurPlaying: true)
-
-    guard let curPlaying = player.currentlyPlaying,
-          let curPlayingSong = curPlaying.asSong,
-          curPlayingSong.account == account
-    else { return }
-
-    songToBeScrobbled = curPlayingSong
-
-    // Reset tracking variables
-    accumulatedPlayTime = 0
-    playStartTimestamp = Date()
-
-    // Calculate threshold time (half of duration or maximum)
-    let waitDuration = TimeInterval(curPlayingSong.duration) / 2
-    if waitDuration > Self.maximumWaitDurationInSec {
-      currentSongThreshold = Self.maximumWaitDurationInSec
-    } else {
-      currentSongThreshold = waitDuration
-    }
-
-    startScrobbleTimer(forSong: curPlayingSong, withDuration: currentSongThreshold)
+  private func beginPlay(_ song: Song) {
+    finishCurrentPlay()
+    songToBeScrobbled = song
+    currentPlayDate = now()
+    currentPlayWasCached = player.playType == .cache
+    playStartTimestamp = now()
+    let duration = TimeInterval(song.duration)
+    currentSongThreshold = duration > 0 ? min(duration / 2, Self.maximumWaitDurationInSec) : Self.maximumWaitDurationInSec
+    scheduleSubmission()
   }
 
-  private func startScrobbleTimer(forSong song: Song, withDuration duration: TimeInterval) {
-    let curPlayingId = song.managedObject.objectID
-
+  private func scheduleSubmission() {
     scrobbleTimer?.invalidate()
-    scrobbleTimer = Timer.scheduledTimer(
-      withTimeInterval: duration,
-      repeats: false
-    ) { _ in
-      Task { @MainActor in
-        let curPlayingClosureMO = self.storage.main.context.object(with: curPlayingId) as! SongMO
-        let curPlayingClosure = Song(managedObject: curPlayingClosureMO)
-        guard curPlayingClosure == self.player.currentlyPlaying,
-              self.player.playType == .cache || self.storage.settings
-              .accounts.getSetting(self.account.info).read.isScrobbleStreamedItems
-        else { return }
-        self.songHasBeenListendEnough = true
-      }
+    guard !hasSubmittedCurrentPlay, playStartTimestamp != nil else { return }
+    let remaining = max(0.1, currentSongThreshold - listenedTime)
+    let timer = Timer(timeInterval: remaining, repeats: false) { [weak self] _ in
+      Task { @MainActor [weak self] in self?.submitIfEligible() }
     }
+    scrobbleTimer = timer
+    RunLoop.main.add(timer, forMode: .common)
   }
 
-  private func syncSongStopped(clearCurPlaying: Bool) async {
-    func clearingCurPlaying() {
-      songHasBeenListendEnough = false
-      scrobbleTimer?.invalidate()
-      scrobbleTimer = nil
-      songToBeScrobbled = nil
-      accumulatedPlayTime = 0
-      playStartTimestamp = nil
-      currentSongThreshold = 0
-    }
+  private var listenedTime: TimeInterval {
+    accumulatedPlayTime + (playStartTimestamp.map { max(0, now().timeIntervalSince($0)) } ?? 0)
+  }
 
-    if let oldSong = songToBeScrobbled,
-       songHasBeenListendEnough {
-      await scrobble(playedSong: oldSong, songPosition: .end)
-      clearingCurPlaying()
-    } else if clearCurPlaying {
-      clearingCurPlaying()
-    }
+  private func submitIfEligible() {
+    guard !hasSubmittedCurrentPlay, let song = songToBeScrobbled,
+          let date = currentPlayDate, listenedTime >= currentSongThreshold,
+          currentPlayWasCached || storage.settings.accounts.getSetting(account.info).read.isScrobbleStreamedItems
+    else { return }
+    // Mark and persist synchronously before starting network work. Pause/resume,
+    // delayed timer callbacks and gapless transitions cannot submit this play twice.
+    hasSubmittedCurrentPlay = true
+    scrobbleTimer?.invalidate()
+    scrobbleTimer = nil
+    cacheScrobbleRequest(playedSong: song, date: date, isUploaded: false)
+    start()
+  }
+
+  private func finishCurrentPlay() {
+    submitIfEligible()
+    scrobbleTimer?.invalidate()
+    scrobbleTimer = nil
+    songToBeScrobbled = nil
+    currentPlayDate = nil
+    hasSubmittedCurrentPlay = false
+    currentPlayWasCached = false
+    accumulatedPlayTime = 0
+    playStartTimestamp = nil
+    currentSongThreshold = 0
   }
 }
 
@@ -251,57 +213,39 @@ public class ScrobbleSyncer {
 
 extension ScrobbleSyncer: MusicPlayable {
   public func didStartPlayingFromBeginning() {
-    Task { await startSongPlayed() }
+    guard let song = player.currentlyPlaying?.asSong, song.account == account else {
+      finishCurrentPlay()
+      return
+    }
+    // Capture the song now, before an asynchronous task could observe a later track.
+    beginPlay(song)
   }
 
   public func didStartPlaying() {
-    guard let curPlaying = player.currentlyPlaying,
-          let curPlayingSong = curPlaying.asSong,
-          curPlayingSong.account == account
-    else { return }
-
-    // Check if it's still the same song after a pause
-    if let songToBeScrobbled = songToBeScrobbled, songToBeScrobbled == curPlayingSong {
-      // Record when we started playing again
-      playStartTimestamp = Date()
-
-      // Only restart the timer if we haven't already hit the threshold
-      if !songHasBeenListendEnough {
-        // Calculate remaining time needed
-        let remainingTime = currentSongThreshold - accumulatedPlayTime
-        if remainingTime > 0 {
-          // Start a new timer with just the remaining time needed
-          startScrobbleTimer(forSong: curPlayingSong, withDuration: remainingTime)
-        } else {
-          // Threshold met, mark it immediately
-          songHasBeenListendEnough = true
-        }
-      }
+    guard let song = player.currentlyPlaying?.asSong, song.account == account else { return }
+    if songToBeScrobbled != song {
+      beginPlay(song)
+    } else if playStartTimestamp == nil {
+      playStartTimestamp = now()
+      scheduleSubmission()
     }
-
-    Task { await scrobble(playedSong: curPlayingSong, songPosition: .start) }
+    sendNowPlaying(song)
+    start() // Retry persisted listens when playback resumes after a network failure.
   }
 
   public func didPause() {
-    // Update the accumulated play time when paused
-    if let startTime = playStartTimestamp {
-      let playedTime = Date().timeIntervalSince(startTime)
-      accumulatedPlayTime += playedTime
-      playStartTimestamp = nil
-    }
-
-    // Cancel the current timer
+    accumulatedPlayTime = listenedTime
+    playStartTimestamp = nil
+    submitIfEligible()
     scrobbleTimer?.invalidate()
     scrobbleTimer = nil
-
-    Task { await syncSongStopped(clearCurPlaying: false) }
   }
 
-  public func didStopPlaying() {
-    Task { await syncSongStopped(clearCurPlaying: true) }
-  }
+  public func didStopPlaying() { finishCurrentPlay() }
 
-  public func didElapsedTimeChange() {}
+  // The timer and playback updates cover background playback and delayed run-loop
+  // delivery. Seek position is deliberately not used as listening duration.
+  public func didElapsedTimeChange() { submitIfEligible() }
   public func didPlaylistChange() {}
   public func didArtworkChange() {}
   public func didShuffleChange() {}

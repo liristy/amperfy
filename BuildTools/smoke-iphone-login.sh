@@ -102,6 +102,15 @@ fi
 echo "Original audio streaming, seek and synchronized lyrics smoke test passed"
 cat build/validation/player.stdout.log
 
-for screenshot in player-library-defaults player-mini-spacing player-opening player-lyrics-upward player-artwork-landscape player-next-song player-lyrics-controls player-lyrics-immersive player-lyrics-restored; do
+for screenshot in player-library-defaults player-mini-drag player-mini-spacing player-opening player-lyrics-upward player-artwork-landscape player-next-song player-lyrics-controls player-lyrics-immersive player-lyrics-restored; do
   cp "$container/Documents/$screenshot.png" "build/validation/$screenshot.png"
 done
+
+python3 - <<'PY'
+import json
+from pathlib import Path
+records = [json.loads(line.split(' ', 1)[1]) for line in Path('build/validation/server.log').read_text().splitlines() if line.startswith('SCROBBLE ')]
+assert any(r['submission'] == ['false'] for r in records), 'Missing now-playing notification'
+assert any(r['id'] == ['song-1'] and r['submission'] == ['true'] and int(r['time'][0]) > 0 for r in records), 'Missing completed listen with play timestamp'
+print('Subsonic now-playing and timestamped listening-history submission passed')
+PY

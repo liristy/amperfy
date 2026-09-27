@@ -195,14 +195,37 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
               guard self.appDelegate.player.elapsedTime > 0 else { return }
               vc.dismiss(animated: false)
               guard let miniPlayer = (vc as? MainSceneHostingViewController)?.miniPlayer else { return }
-              miniPlayer.switchTrack(direction: .left)
+              miniPlayer.beginTrackDrag()
+              miniPlayer.updateTrackDrag(translation: -70)
+              guard self.appDelegate.player.currentlyPlaying == song,
+                    miniPlayer.trackDragTranslation == -70 else { return }
+              let dragImage = UIGraphicsImageRenderer(bounds: vc.view.bounds).image { _ in
+                vc.view.drawHierarchy(in: vc.view.bounds, afterScreenUpdates: true)
+              }
+              try dragImage.pngData()?.write(to: URL.documentsDirectory.appendingPathComponent("player-mini-drag.png"))
+              miniPlayer.updateTrackDrag(translation: -8)
+              miniPlayer.endTrackDrag(velocity: 0)
+              try await Task.sleep(for: .milliseconds(350))
+              guard self.appDelegate.player.currentlyPlaying == song,
+                    miniPlayer.trackDragTranslation == 0 else { return }
+              miniPlayer.beginTrackDrag()
+              miniPlayer.updateTrackDrag(translation: 120)
+              miniPlayer.endTrackDrag(velocity: 0, cancelled: true)
+              try await Task.sleep(for: .milliseconds(350))
+              guard self.appDelegate.player.currentlyPlaying == song else { return }
+              smokeLog("Mini player intermediate drag, pull-back and cancellation preserved the song")
+              miniPlayer.beginTrackDrag()
+              miniPlayer.updateTrackDrag(translation: -120)
+              miniPlayer.endTrackDrag(velocity: -300)
               try await Task.sleep(for: .seconds(2))
               guard self.appDelegate.player.currentlyPlaying == nextSong else {
                 smokeLog("Mini player left swipe did not play the next track")
                 return
               }
               self.appDelegate.player.seek(toSecond: 35)
-              miniPlayer.switchTrack(direction: .right)
+              miniPlayer.beginTrackDrag()
+              miniPlayer.updateTrackDrag(translation: 120)
+              miniPlayer.endTrackDrag(velocity: 300)
               try await Task.sleep(for: .seconds(2))
               guard self.appDelegate.player.currentlyPlaying == song else {
                 smokeLog("Mini player right swipe replayed the current track instead of switching back")
@@ -374,6 +397,11 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
                 }
                 try image.pngData()?.write(to: URL.documentsDirectory.appendingPathComponent("player-library-defaults.png"))
               }
+              // Exercise the real Subsonic request without waiting half a long fixture track.
+              song.duration = 2
+              library.saveContext()
+              self.appDelegate.player.play(context: PlayContext(name: "Scrobble smoke", playables: [song]))
+              try await Task.sleep(for: .seconds(3))
               let marker = URL.documentsDirectory.appendingPathComponent("player-smoke-ready")
               try "ready".write(to: marker, atomically: true, encoding: .utf8)
             } catch { smokeLog("Player smoke failed: \(error)") }

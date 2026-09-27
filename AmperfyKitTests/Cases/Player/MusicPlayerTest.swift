@@ -146,6 +146,9 @@ class MOCK_AlertDisplayable: AlertDisplayable {
 // MARK: - MOCK_LibrarySyncer
 
 final class MOCK_LibrarySyncer: LibrarySyncer {
+  @MainActor var submittedListens: [(id: String, date: Date?)] = []
+  @MainActor var submissionError: Error?
+  @MainActor var onScrobble: (() -> Void)?
   func syncInitial(statusNotifyier: SyncCallbacks?) async throws {}
   func sync(genre: Genre) async throws {}
   func sync(artist: Artist) async throws {}
@@ -175,7 +178,11 @@ final class MOCK_LibrarySyncer: LibrarySyncer {
   func requestSimilarSongs(song: Song, count: Int) async throws -> [Song] { [] }
   func requestPodcastEpisodeDelete(podcastEpisode: PodcastEpisode) async throws {}
   func syncNowPlaying(song: Song, songPosition: NowPlayingSongPosition) async throws {}
-  func scrobble(song: Song, date: Date?) async throws {}
+  func scrobble(song: Song, date: Date?) async throws {
+    if let submissionError { throw submissionError }
+    submittedListens.append((song.id, date))
+    onScrobble?()
+  }
   func setRating(song: Song, rating: Int) async throws {}
   func setRating(album: Album, rating: Int) async throws {}
   func setRating(artist: Artist, rating: Int) async throws {}
@@ -255,7 +262,7 @@ final class MOCK_BackendApi: BackendApi {
 
 final class MOCK_NetworkMonitor: NetworkMonitorFacade {
   var connectionTypeChangedCB: ConnectionTypeChangedCallack? { get { nil } set {} }
-  var isConnectedToNetwork: Bool { true }
+  var isConnectedToNetwork = true
   var isCellular: Bool { false }
   var isWifiOrEthernet: Bool { true }
 }
@@ -399,6 +406,128 @@ class MusicPlayerTest: XCTestCase {
   override func tearDown() async throws {
     backendPlayer.stop()
     mockAudioStreamingPlayer.delegate = nil
+  }
+
+  private func startScrobbleStream() async throws {
+    storage.settings.user.isOnlineMode = true
+    testPlayer.isAutoCachePlayedItems = false
+    songToDownload.duration = 100
+    testPlayer.play(context: PlayContext(name: "Scrobble", playables: [songToDownload]))
+    for _ in 0..<50 {
+      if testPlayer.playType == .stream, testPlayer.isPlaying { break }
+      try await Task.sleep(for: .milliseconds(10))
+    }
+    XCTAssertEqual(testPlayer.playType, .stream)
+    XCTAssertEqual(testPlayer.currentlyPlaying, songToDownload)
+  }
+
+  func testStreamScrobbleSubmitsAtThresholdOnlyOnceAcrossPauseAndResume() async throws {
+    try await startScrobbleStream()
+    storage.settings.accounts.updateSetting(account.info) { $0.isScrobbleStreamedItems = true }
+    let api = MOCK_LibrarySyncer()
+    var clock = Date(timeIntervalSince1970: 1_700_000_000)
+    let started = clock
+    let scrobbler = ScrobbleSyncer(player: testPlayer, networkMonitor: networkMonitor,
+      account: account, storage: storage, librarySyncer: api, eventLogger: eventLogger, now: { clock })
+    scrobbler.didStartPlayingFromBeginning()
+    scrobbler.didStartPlaying()
+    let submitted = expectation(description: "Stream submitted without pausing or changing tracks")
+    api.onScrobble = { submitted.fulfill() }
+    clock = clock.addingTimeInterval(50)
+    scrobbler.didElapsedTimeChange()
+    await fulfillment(of: [submitted], timeout: 3)
+    api.onScrobble = nil
+    XCTAssertEqual(api.submittedListens.first?.id, songToDownload.id)
+    XCTAssertEqual(api.submittedListens.first?.date, started)
+    scrobbler.didPause()
+    clock = clock.addingTimeInterval(100)
+    scrobbler.didStartPlaying()
+    scrobbler.didElapsedTimeChange()
+    scrobbler.didStopPlaying()
+    XCTAssertEqual(library.getScrobbleEntries(for: account).count, 1)
+    XCTAssertEqual(api.submittedListens.count, 1)
+  }
+
+  func testScrobbleCountsListeningTimeInsteadOfSeekPositionOrPauseTime() async throws {
+    try await startScrobbleStream()
+    networkMonitor.isConnectedToNetwork = false
+    storage.settings.accounts.updateSetting(account.info) { $0.isScrobbleStreamedItems = true }
+    var clock = Date()
+    let scrobbler = ScrobbleSyncer(player: testPlayer, networkMonitor: networkMonitor,
+      account: account, storage: storage, librarySyncer: MOCK_LibrarySyncer(), eventLogger: eventLogger, now: { clock })
+    scrobbler.didStartPlayingFromBeginning()
+    clock = clock.addingTimeInterval(20)
+    mockAudioStreamingPlayer.mockElapsedTime = 99
+    scrobbler.didElapsedTimeChange()
+    scrobbler.didPause()
+    clock = clock.addingTimeInterval(500)
+    scrobbler.didElapsedTimeChange()
+    XCTAssertTrue(library.getScrobbleEntries(for: account).isEmpty)
+    scrobbler.didStartPlaying()
+    clock = clock.addingTimeInterval(29)
+    scrobbler.didElapsedTimeChange()
+    XCTAssertTrue(library.getScrobbleEntries(for: account).isEmpty)
+    clock = clock.addingTimeInterval(1)
+    scrobbler.didElapsedTimeChange()
+    XCTAssertEqual(library.getUploadableScrobbleEntryCount(for: account), 1)
+    scrobbler.didStopPlaying()
+  }
+
+  func testOfflineScrobbleRetriesWithOriginalPlayTimestamp() async throws {
+    try await startScrobbleStream()
+    networkMonitor.isConnectedToNetwork = false
+    storage.settings.accounts.updateSetting(account.info) { $0.isScrobbleStreamedItems = true }
+    let api = MOCK_LibrarySyncer()
+    var clock = Date(timeIntervalSince1970: 1_700_000_000)
+    let started = clock
+    let scrobbler = ScrobbleSyncer(player: testPlayer, networkMonitor: networkMonitor,
+      account: account, storage: storage, librarySyncer: api, eventLogger: eventLogger, now: { clock })
+    scrobbler.didStartPlayingFromBeginning()
+    clock = clock.addingTimeInterval(50)
+    scrobbler.didElapsedTimeChange()
+    scrobbler.didStopPlaying()
+    for _ in 0..<5 { await Task.yield() }
+    XCTAssertEqual(library.getUploadableScrobbleEntryCount(for: account), 1)
+    XCTAssertTrue(api.submittedListens.isEmpty)
+    let submitted = expectation(description: "Offline listen uploaded")
+    api.onScrobble = { submitted.fulfill() }
+    networkMonitor.isConnectedToNetwork = true
+    scrobbler.start()
+    await fulfillment(of: [submitted], timeout: 3)
+    XCTAssertEqual(api.submittedListens.first?.date, started)
+    XCTAssertEqual(library.getUploadableScrobbleEntryCount(for: account), 0)
+  }
+
+  func testExplicitlyDisabledStreamingScrobblesStayDisabled() async throws {
+    try await startScrobbleStream()
+    storage.settings.accounts.updateSetting(account.info) { $0.isScrobbleStreamedItems = false }
+    var clock = Date()
+    let scrobbler = ScrobbleSyncer(player: testPlayer, networkMonitor: networkMonitor,
+      account: account, storage: storage, librarySyncer: MOCK_LibrarySyncer(), eventLogger: eventLogger, now: { clock })
+    scrobbler.didStartPlayingFromBeginning()
+    clock = clock.addingTimeInterval(100)
+    scrobbler.didElapsedTimeChange()
+    scrobbler.didPause()
+    scrobbler.didStartPlaying()
+    scrobbler.didStopPlaying()
+    XCTAssertTrue(library.getScrobbleEntries(for: account).isEmpty)
+  }
+
+  func testStreamingScrobbleDefaultAppliesOnce() {
+    let key = "player.scrobbleStreams.v1"
+    let original = UserDefaults.standard.object(forKey: key)
+    defer {
+      if let original { UserDefaults.standard.set(original, forKey: key) }
+      else { UserDefaults.standard.removeObject(forKey: key) }
+    }
+    UserDefaults.standard.removeObject(forKey: key)
+    storage.settings.accounts.updateSetting(account.info) { $0.isScrobbleStreamedItems = false }
+    storage.settings.applyStreamingScrobbleDefaultIfNeeded()
+    XCTAssertTrue(storage.settings.accounts.getSetting(account.info).read.isScrobbleStreamedItems)
+    XCTAssertTrue(AccountSetting().isScrobbleStreamedItems)
+    storage.settings.accounts.updateSetting(account.info) { $0.isScrobbleStreamedItems = false }
+    storage.settings.applyStreamingScrobbleDefaultIfNeeded()
+    XCTAssertFalse(storage.settings.accounts.getSetting(account.info).read.isScrobbleStreamedItems)
   }
 
   func testOrangeLibraryDefaultsApplyOnceAndPreserveLaterCustomization() {

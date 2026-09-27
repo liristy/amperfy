@@ -4,6 +4,7 @@ from pathlib import Path
 from urllib.parse import urlparse, parse_qs
 import io
 import wave
+import json
 import struct
 import zlib
 
@@ -75,6 +76,9 @@ class Handler(BaseHTTPRequestHandler):
             except (BrokenPipeError, ConnectionResetError):
                 pass
             return
+        if action == 'scrobble':
+            # Only fixture identifiers and protocol fields; never authentication data.
+            print('SCROBBLE ' + json.dumps({key: query.get(key, []) for key in ('id', 'submission', 'time')}), flush=True)
         if action == 'getCoverArt':
             body = COVERS[1 if query.get('id') == ['al-2'] else 0]
             mime = 'image/png'

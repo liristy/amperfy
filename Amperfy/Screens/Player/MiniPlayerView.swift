@@ -26,11 +26,17 @@ import UIKit
 
 // MARK: - MiniPlayerView
 
-class MiniPlayerView: UIView {
+class MiniPlayerView: UIView, UIGestureRecognizerDelegate {
   private var player: PlayerFacade
   private var playerHandler: PlayerUIHandler?
 
   private var hoverOverlayView: UIView?
+  private var trackPan: UIPanGestureRecognizer?
+  private var trackDragOverlay: UIView?
+  private var trackDragContent: UIView?
+  private var trackDragSong: AbstractPlayable?
+  private var trackDragAnimator: UIViewPropertyAnimator?
+  private(set) var trackDragTranslation: CGFloat = 0
 
   static let mediumButtonSize: CGFloat = 20.0
 
@@ -653,12 +659,12 @@ class MiniPlayerView: UIView {
     timeSlider.maximumTrackTintColor = .clear
     let miniPlayerGotTouchedView = UIView()
     let tapGesture = UITapGestureRecognizer(target: self, action: #selector(miniPlayerGotTouched))
-    for direction in [UISwipeGestureRecognizer.Direction.left, .right] {
-      let swipe = UISwipeGestureRecognizer(target: self, action: #selector(handleTrackSwipe(_:)))
-      swipe.direction = direction
-      miniPlayerGotTouchedView.addGestureRecognizer(swipe)
-      tapGesture.require(toFail: swipe)
-    }
+    let pan = UIPanGestureRecognizer(target: self, action: #selector(handleTrackPan(_:)))
+    pan.maximumNumberOfTouches = 1
+    pan.delegate = self
+    trackPan = pan
+    miniPlayerGotTouchedView.addGestureRecognizer(pan)
+    tapGesture.require(toFail: pan)
     miniPlayerGotTouchedView.addGestureRecognizer(tapGesture)
     miniPlayerGotTouchedView.isAccessibilityElement = true
     miniPlayerGotTouchedView.accessibilityLabel = "Open Now Playing".localized
@@ -732,28 +738,88 @@ class MiniPlayerView: UIView {
   }
 
   @objc
-  private func handleTrackSwipe(_ gesture: UISwipeGestureRecognizer) {
-    guard gesture.state == .ended else { return }
-    switchTrack(direction: gesture.direction)
+  private func handleTrackPan(_ gesture: UIPanGestureRecognizer) {
+    switch gesture.state {
+    case .began: beginTrackDrag()
+    case .changed: updateTrackDrag(translation: gesture.translation(in: self).x)
+    case .ended:
+      updateTrackDrag(translation: gesture.translation(in: self).x)
+      endTrackDrag(velocity: gesture.velocity(in: self).x)
+    case .cancelled, .failed: endTrackDrag(velocity: 0, cancelled: true)
+    default: break
+    }
   }
 
-  func switchTrack(direction: UISwipeGestureRecognizer.Direction) {
-    guard player.currentlyPlaying != nil else { return }
-    switch direction {
-    case .left: player.playNext()
-    case .right: player.playPrevious()
-    default: return
+  func gestureRecognizerShouldBegin(_ gestureRecognizer: UIGestureRecognizer) -> Bool {
+    guard gestureRecognizer === trackPan, let pan = gestureRecognizer as? UIPanGestureRecognizer else { return true }
+    let velocity = pan.velocity(in: self)
+    return player.currentlyPlaying != nil && trackDragAnimator == nil && abs(velocity.x) > abs(velocity.y)
+  }
+
+  func beginTrackDrag() {
+    resetTrackDrag()
+    guard let song = player.currentlyPlaying else { return }
+    layoutIfNeeded()
+    let overlay = UIView(frame: CGRect(x: 0, y: 0, width: max(1, playButton.frame.minX - 8), height: bounds.height - 4))
+    overlay.clipsToBounds = true
+    overlay.isUserInteractionEnabled = false
+    let content = UIView(frame: overlay.bounds)
+    for view in [artworkImage, titleLabel, subtitleLabel] {
+      if let snapshot = view.snapshotView(afterScreenUpdates: false) {
+        snapshot.frame = view.frame
+        content.addSubview(snapshot)
+      }
+      view.alpha = 0
     }
-    refreshPlayer()
-    if !UIAccessibility.isReduceMotionEnabled {
-      let transition = CATransition()
-      transition.type = .push
-      transition.subtype = direction == .left ? .fromRight : .fromLeft
-      transition.duration = 0.2
-      [artworkImage, titleLabel, subtitleLabel].forEach {
-        $0.layer.add(transition, forKey: "trackSwipe")
+    overlay.addSubview(content)
+    addSubview(overlay)
+    trackDragOverlay = overlay
+    trackDragContent = content
+    trackDragSong = song
+  }
+
+  func updateTrackDrag(translation: CGFloat) {
+    guard let overlay = trackDragOverlay else { return }
+    trackDragTranslation = min(overlay.bounds.width, max(-overlay.bounds.width, translation))
+    trackDragContent?.transform = CGAffineTransform(translationX: trackDragTranslation, y: 0)
+  }
+
+  func endTrackDrag(velocity: CGFloat, cancelled: Bool = false) {
+    guard let overlay = trackDragOverlay, let content = trackDragContent else { return }
+    let distance = trackDragTranslation
+    let threshold = min(92, overlay.bounds.width * 0.30)
+    let pullingBack = distance * velocity < 0 && abs(velocity) > 150
+    let commit = !cancelled && !pullingBack && abs(distance) >= threshold && trackDragSong == player.currentlyPlaying
+    let animator = UIViewPropertyAnimator(duration: UIAccessibility.isReduceMotionEnabled ? 0 : 0.18, curve: .easeOut) {
+      content.transform = commit ? CGAffineTransform(translationX: distance < 0 ? -overlay.bounds.width : overlay.bounds.width, y: 0) : .identity
+    }
+    trackDragAnimator = animator
+    animator.addCompletion { [weak self] position in
+      guard let self else { return }
+      let shouldSwitch = position == .end && commit && self.trackDragSong == self.player.currentlyPlaying
+      self.trackDragAnimator = nil
+      self.resetTrackDrag()
+      guard shouldSwitch else { return }
+      if distance < 0 { self.player.playNext() } else { self.player.playPrevious() }
+      self.refreshPlayer()
+      if !UIAccessibility.isReduceMotionEnabled {
+        let views = [self.artworkImage, self.titleLabel, self.subtitleLabel]
+        views.forEach { $0.alpha = 0 }
+        UIView.animate(withDuration: 0.16) { views.forEach { $0.alpha = 1 } }
       }
     }
+    animator.startAnimation()
+  }
+
+  private func resetTrackDrag() {
+    trackDragAnimator?.stopAnimation(true)
+    trackDragAnimator = nil
+    trackDragOverlay?.removeFromSuperview()
+    trackDragOverlay = nil
+    trackDragContent = nil
+    trackDragSong = nil
+    trackDragTranslation = 0
+    [artworkImage, titleLabel, subtitleLabel].forEach { $0.alpha = 1 }
   }
 
   public func refreshForTraitChange(horizontalSizeClass: UIUserInterfaceSizeClass) {
@@ -875,6 +941,7 @@ class MiniPlayerView: UIView {
   }
 
   func refreshPlayer() {
+    if let trackDragSong, trackDragSong != player.currentlyPlaying { resetTrackDrag() }
     titleLabel.textColor = .label
     subtitleLabel.textColor = .secondaryLabel
     playerHandler?.refreshCurrentlyPlayingInfo(

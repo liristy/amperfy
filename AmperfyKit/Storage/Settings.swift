@@ -352,7 +352,7 @@ public struct AccountSetting: Sendable, Codable {
     set { _isAutoDownloadLatestSongsActive = newValue }
   }
 
-  private var _isScrobbleStreamedItems: Bool = false
+  private var _isScrobbleStreamedItems: Bool = true
   public var isScrobbleStreamedItems: Bool {
     get { _isScrobbleStreamedItems }
     set { _isScrobbleStreamedItems = newValue }
@@ -465,6 +465,18 @@ public struct AccountSettings: Sendable, Codable {
 // MARK: - AmperfySettings
 
 public struct AmperfySettings: Sendable, Codable {
+  @MainActor
+  public mutating func applyStreamingScrobbleDefaultIfNeeded() {
+    let key = "player.scrobbleStreams.v1"
+    guard !UserDefaults.standard.bool(forKey: key) else { return }
+    var updatedAccounts = accounts
+    for info in updatedAccounts.allAccounts {
+      updatedAccounts.updateSetting(info) { $0.isScrobbleStreamedItems = true }
+    }
+    accounts = updatedAccounts
+    UserDefaults.standard.set(true, forKey: key)
+  }
+
   @MainActor
   public mutating func applyPlayerAppearanceDefaultsIfNeeded() {
     let key = "playerAppearance.orangeSixLibraryItems.v1"

@@ -4939,6 +4939,26 @@
           }
         }
       }
+    },
+    "Report streamed listening history": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "上报在线播放记录"
+          }
+        }
+      }
+    },
+    "Send listening history to your music server. Navidrome forwards it to your linked ListenBrainz or Last.fm account.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "将听歌记录上报至音乐服务器，由 Navidrome 转发到你已关联的 ListenBrainz 或 Last.fm 账户。"
+          }
+        }
+      }
     }
   },
   "version": "1.0"

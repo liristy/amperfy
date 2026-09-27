@@ -192,11 +192,11 @@ struct AccountSettingsView: View {
           SettingsSection(
             content: {
               SettingsCheckBoxRow(
-                title: "Scrobble streamed Songs".localized,
+                title: "Report streamed listening history".localized,
                 isOn: $settings.isScrobbleStreamedItems
               )
             },
-            footer: "Enable to scrobble all streamed songs, even if the server already marks them as played.".localized
+            footer: "Send listening history to your music server. Navidrome forwards it to your linked ListenBrainz or Last.fm account.".localized
           )
 
           SettingsSection {
