@@ -415,7 +415,7 @@ class MusicPlayerTest: XCTestCase {
   }
 
   private func startScrobbleStream() async throws {
-    storage.settings.user.isOnlineMode = true
+    storage.settings.user.isOfflineMode = false
     testPlayer.isAutoCachePlayedItems = false
     songToDownload.playDuration = 100
     testPlayer.play(context: PlayContext(name: "Scrobble", playables: [songToDownload]))
