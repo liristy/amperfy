@@ -32,14 +32,8 @@ test_arguments=(
   -only-testing:AmperfyKitTests/MusicPlayerTest
   -only-testing:AmperfyKitTests/SsLyricsBySongId2ParserTest
 )
-# UI-only pushes need a simulator build and screenshots. The library regression
-# suite runs whenever library code, tests, or project configuration change.
-# Missing history and manual runs always execute the tests.
-if [[ "${GITHUB_EVENT_NAME:-}" == push && -n "${BASE_SHA:-}" ]] &&
-  git cat-file -e "${BASE_SHA}^{commit}" 2>/dev/null &&
-  git diff --quiet "$BASE_SHA" HEAD -- AmperfyKit AmperfyKitTests Amperfy.xcodeproj; then
-  test_arguments=(build)
-fi
+# Run the regression suite for every deliverable. A preceding library-changing
+# push may have been cancelled by workflow concurrency before its tests ran.
 
 xcodebuild "${test_arguments[@]}" \
   -project Amperfy.xcodeproj \
