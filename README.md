@@ -1,4 +1,4 @@
-# qMusic
+# qMusic for iOS
 
 面向 iPhone 的自托管音乐播放器，连接 **Navidrome / Subsonic / Ampache** 音乐服务器。基于 [Amperfy](https://github.com/BLeeEZ/amperfy) 开发，采用接近 Apple Music 的播放器交互，支持简体中文与英语。
 
