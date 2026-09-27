@@ -23,6 +23,7 @@
 @preconcurrency @testable import AudioStreaming
 import AVFoundation
 import CoreData
+import MediaPlayer
 import XCTest
 
 // MARK: - MOCK_AudioStreamingPlayer
@@ -398,6 +399,109 @@ class MusicPlayerTest: XCTestCase {
   override func tearDown() async throws {
     backendPlayer.stop()
     mockAudioStreamingPlayer.delegate = nil
+  }
+
+  func testLateLockScreenArtworkLoadsWithoutAnyPlayerViewAndSurvivesTimingUpdates() async throws {
+    storage.settings.accounts.updateSetting(account.info) { $0.artworkDisplayPreference = .serverArtworkOnly }
+    let artwork = library.createArtwork(account: account)
+    artwork.id = "late-lock-screen"
+    artwork.status = .NotChecked
+    songCached.artwork = artwork
+    library.saveContext()
+    let notifications = EventNotificationHandler()
+    let center = MPNowPlayingInfoCenter.default()
+    let handler = NowPlayingInfoCenterHandler(
+      musicPlayer: testMusicPlayer, backendAudioPlayer: backendPlayer,
+      nowPlayingInfoCenter: center, storage: storage, notificationHandler: notifications,
+      getArtworkDownloaderCB: { _ in self.songDownloader },
+      getPlayableDownloaderCB: { _ in self.songDownloader }
+    )
+    defer { handler.didStopPlaying() }
+    try await startCachedSong(at: 37)
+    handler.didStartPlaying()
+    let placeholder = center.nowPlayingInfo?[MPMediaItemPropertyArtwork] as? MPMediaItemArtwork
+
+    let format = UIGraphicsImageRendererFormat()
+    format.scale = 1
+    let image = UIGraphicsImageRenderer(size: CGSize(width: 312, height: 156), format: format).image { context in
+      UIColor.red.setFill()
+      context.fill(CGRect(x: 0, y: 0, width: 312, height: 156))
+    }
+    let relative = URL(string: "late-artwork-\(UUID().uuidString).png")!
+    let path = try XCTUnwrap(CacheFileManager.shared.getAbsoluteAmperfyPath(relFilePath: relative))
+    defer { try? CacheFileManager.shared.removeItem(at: path, accountInfo: account.info) }
+    try CacheFileManager.shared.writeDataExcludedFromBackup(
+      data: XCTUnwrap(image.pngData()), to: path, accountInfo: account.info
+    )
+    artwork.relFilePath = relative
+    artwork.status = .CustomImage
+    library.saveContext()
+    notifications.post(name: .downloadFinishedSuccess, object: songDownloader,
+                       userInfo: DownloadNotification(id: artwork.uniqueID).asNotificationUserInfo)
+    var loaded: MPMediaItemArtwork?
+    for _ in 0..<100 {
+      loaded = center.nowPlayingInfo?[MPMediaItemPropertyArtwork] as? MPMediaItemArtwork
+      if loaded?.bounds.size == image.size { break }
+      try await Task.sleep(for: .milliseconds(20))
+    }
+    XCTAssertEqual(loaded?.bounds.size, image.size)
+    XCTAssertFalse(loaded === placeholder)
+    mockAudioStreamingPlayer.mockElapsedTime = 64
+    handler.didElapsedTimeChange()
+    XCTAssertEqual(center.nowPlayingInfo?[MPNowPlayingInfoPropertyElapsedPlaybackTime] as? Double, 64)
+    XCTAssertTrue((center.nowPlayingInfo?[MPMediaItemPropertyArtwork] as? MPMediaItemArtwork) === loaded)
+    handler.didPause()
+    XCTAssertEqual((center.nowPlayingInfo?[MPMediaItemPropertyArtwork] as? MPMediaItemArtwork)?.bounds.size, image.size)
+
+    // A decode completing after stop must never resurrect the lock-screen item.
+    handler.didStopPlaying()
+    handler.didStartPlaying()
+    handler.didStopPlaying()
+    try await Task.sleep(for: .milliseconds(100))
+    XCTAssertNil(center.nowPlayingInfo)
+  }
+
+  func testCurrentCoverPromotesAnExistingDownloadWithoutDuplicates() async throws {
+    storage.settings.user.isOfflineMode = false
+    let asyncStorage = AsyncCoreDataAccessWrapper(persistentContainer: cdHelper.persistentContainer)
+    let requests = DownloadRequestManager(accountObjectId: account.managedObject.objectID, storage: asyncStorage,
+                                         getDownloadDelegateCB: { MOCK_DownloadManagerDelegate() })
+    let manager = DownloadManager(name: "Priority test", storage: asyncStorage, requestManager: requests,
+      getDownloadDelegateCB: { MOCK_DownloadManagerDelegate() }, eventLogger: eventLogger,
+      settings: storage.settings, networkMonitor: networkMonitor, notificationHandler: EventNotificationHandler(),
+      urlCleanser: backendApi, limitCacheSize: false, isFailWithPopupError: false)
+    let queue = await manager.taskQueue
+    queue.isSuspended = true
+    let session = URLSession(configuration: .ephemeral)
+    defer { manager.stop(); queue.cancelAllOperations(); session.invalidateAndCancel() }
+    manager.initialize(urlSession: session, isCheckForCachedNeeded: true, validationCB: nil)
+    let first = library.createArtwork(account: account)
+    let current = library.createArtwork(account: account)
+    first.status = .NotChecked
+    current.status = .NotChecked
+    library.saveContext()
+    let firstRequest = await requests.add(downloadInfo: try XCTUnwrap(first.threadSafeInfo))
+    let currentRequest = await requests.add(downloadInfo: try XCTUnwrap(current.threadSafeInfo))
+    let firstDownload = try XCTUnwrap(firstRequest)
+    let currentDownload = try XCTUnwrap(currentRequest)
+    await manager._start()
+    manager.downloadWithPriority(object: current)
+    manager.downloadWithPriority(object: current)
+    for _ in 0..<100 {
+      if await manager.networkPriority(for: currentDownload) == URLSessionTask.highPriority { break }
+      try await Task.sleep(for: .milliseconds(10))
+    }
+    // Allow both deduplicated requests to traverse the storage check.
+    try await Task.sleep(for: .milliseconds(100))
+    XCTAssertEqual(queue.operationCount, 2)
+    XCTAssertEqual(queue.operations.filter { $0.queuePriority == .veryHigh }.count, 1)
+    XCTAssertEqual(queue.maxConcurrentOperationCount, 3)
+    let currentPriority = await manager.networkPriority(for: currentDownload)
+    let otherPriority = await manager.networkPriority(for: firstDownload)
+    XCTAssertEqual(currentPriority, URLSessionTask.highPriority)
+    XCTAssertEqual(otherPriority, URLSessionTask.defaultPriority)
+    await manager.finishDownload(downloadRequest: currentDownload, task: nil, error: .alreadyDownloaded)
+    XCTAssertEqual(queue.maxConcurrentOperationCount, 2)
   }
 
   private func startCachedSong(at time: Double) async throws {

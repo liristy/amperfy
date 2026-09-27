@@ -306,6 +306,7 @@ class PopupPlayerVC: UIViewController, UIScrollViewDelegate, UIGestureRecognizer
     var touchedView = touch.view
     while let current = touchedView {
       if isDismissPan ? (current is UISlider) : (current is UIControl) { return false }
+      if !isDismissPan, current === largeCurrentlyPlayingView?.transitionArtwork { return false }
       touchedView = current.superview
     }
     return true

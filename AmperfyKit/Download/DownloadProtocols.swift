@@ -43,6 +43,8 @@ public protocol DownloadManageable {
   @MainActor
   func download(object: Downloadable)
   @MainActor
+  func downloadWithPriority(object: Downloadable)
+  @MainActor
   func download(objects: [Downloadable])
   @MainActor
   func removeFinishedDownload(for object: Downloadable)
@@ -53,6 +55,13 @@ public protocol DownloadManageable {
   func cancelDownloads()
   func start()
   func stop()
+}
+
+extension DownloadManageable {
+  @MainActor
+  public func downloadWithPriority(object: Downloadable) {
+    download(object: object)
+  }
 }
 
 // MARK: - DownloadManagerDelegate

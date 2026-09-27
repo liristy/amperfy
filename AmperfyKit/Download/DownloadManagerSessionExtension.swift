@@ -37,6 +37,7 @@ extension DownloadManager: URLSessionDelegate, URLSessionDownloadDelegate {
       task = urlSession.downloadTask(with: request)
     }
     tasks[task] = downloadTaskInfo
+    task.priority = networkPriority(for: downloadTaskInfo.request)
     task.resume()
   }
 

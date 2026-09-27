@@ -95,6 +95,8 @@ actor DownloadManager: NSObject, DownloadManageable {
 
   private var isRunning = false
   private var taskOperations = [DownloadRequest: DownloadOperation]()
+  private var priorityDownloadID: String?
+  private var normalDownloadLimit = 1
   private var backgroundFetchCompletionHandler: CompleteHandlerBlock?
   private var isFailWithPopupError: Bool = true
   private var preDownloadIsValidCheck: PreDownloadIsValidCB?
@@ -174,6 +176,7 @@ actor DownloadManager: NSObject, DownloadManageable {
     validationCB: PreDownloadIsValidCB?
   ) {
     self.urlSession = urlSession
+    normalDownloadLimit = taskQueue.maxConcurrentOperationCount
     let ident = self.urlSession?.configuration.identifier
     preDownloadIsValidCheck = validationCB
     Task { @MainActor in
@@ -200,11 +203,25 @@ actor DownloadManager: NSObject, DownloadManageable {
 
   @MainActor
   func download(object: Downloadable) {
+    download(object: object, prioritized: false)
+  }
+
+  @MainActor
+  func downloadWithPriority(object: Downloadable) {
+    download(object: object, prioritized: true)
+  }
+
+  @MainActor
+  private func download(object: Downloadable, prioritized: Bool) {
     guard !isCheckForCachedNeeded || !object.isCached,
           let downloadInfo = object.threadSafeInfo
     else { return }
 
     Task.detached {
+      // Promote an existing request too: add() deliberately deduplicates it.
+      if prioritized {
+        await self.prioritizeDownload(id: downloadInfo.objectId.uriRepresentation().absoluteString)
+      }
       let isStorageExceeded = await self.storageExceedsCacheLimit()
       guard await !self.isCacheSizeLimited || !isStorageExceeded
       else { return }
@@ -292,6 +309,8 @@ actor DownloadManager: NSObject, DownloadManageable {
     tasks.removeAll()
     taskQueue.cancelAllOperations()
     taskOperations.removeAll()
+    priorityDownloadID = nil
+    taskQueue.maxConcurrentOperationCount = normalDownloadLimit
     await requestManager.cancelDownloads()
     guard let urlSessionTasks = await urlSession?.allTasks else { return }
     for task in urlSessionTasks {
@@ -321,6 +340,8 @@ actor DownloadManager: NSObject, DownloadManageable {
     }
 
     taskOperations.removeAll()
+    priorityDownloadID = nil
+    taskQueue.maxConcurrentOperationCount = normalDownloadLimit
     taskQueue.cancelAllOperations()
     guard let urlSessionTasks = await urlSession?.allTasks else { return }
     for task in urlSessionTasks {
@@ -373,13 +394,47 @@ actor DownloadManager: NSObject, DownloadManageable {
       await self.manageDownload(downloadRequest: downloadRequest)
     }
     taskOperations[downloadRequest] = asyncOperation
+    asyncOperation.queuePriority = downloadRequest.id == priorityDownloadID ? .veryHigh : .normal
     taskQueue.addOperation(asyncOperation)
+    if downloadRequest.id == priorityDownloadID {
+      taskQueue.maxConcurrentOperationCount = normalDownloadLimit + 1
+    }
+  }
+
+  private func prioritizeDownload(id: String) {
+    guard priorityDownloadID != id else { return }
+    priorityDownloadID = id
+    updateDownloadPriorities()
+  }
+
+  private func updateDownloadPriorities() {
+    for (request, operation) in taskOperations {
+      operation.queuePriority = request.id == priorityDownloadID ? .veryHigh : .normal
+    }
+    for (task, info) in tasks {
+      task.priority = networkPriority(for: info.request)
+    }
+    // One bounded extra slot prevents the current cover waiting for four slow
+    // library covers. Restore the normal limit as soon as it finishes.
+    let hasPriorityRequest = taskOperations.keys.contains { $0.id == priorityDownloadID }
+    taskQueue.maxConcurrentOperationCount = normalDownloadLimit + (hasPriorityRequest ? 1 : 0)
+  }
+
+  private func finishPriorityDownload(_ request: DownloadRequest) {
+    guard request.id == priorityDownloadID else { return }
+    priorityDownloadID = nil
+    taskQueue.maxConcurrentOperationCount = normalDownloadLimit
+  }
+
+  func networkPriority(for request: DownloadRequest) -> Float {
+    request.id == priorityDownloadID ? URLSessionTask.highPriority : URLSessionTask.defaultPriority
   }
 
   private func manageDownload(downloadRequest: DownloadRequest) async {
     guard isAllowedToTriggerDownload else {
       taskOperations[downloadRequest]?.complete()
       taskOperations.removeValue(forKey: downloadRequest)
+      finishPriorityDownload(downloadRequest)
       return
     }
     try? await storage.perform { asyncCompanion in
@@ -462,6 +517,7 @@ actor DownloadManager: NSObject, DownloadManageable {
     if let task { tasks.removeValue(forKey: task) }
     taskOperations[downloadRequest]?.complete()
     taskOperations.removeValue(forKey: downloadRequest)
+    finishPriorityDownload(downloadRequest)
   }
 
   func finishDownload(
@@ -530,6 +586,7 @@ actor DownloadManager: NSObject, DownloadManageable {
     tasks.removeValue(forKey: task)
     taskOperations[downloadRequest]?.complete()
     taskOperations.removeValue(forKey: downloadRequest)
+    finishPriorityDownload(downloadRequest)
   }
 
   private var isAllowedToTriggerDownload: Bool {

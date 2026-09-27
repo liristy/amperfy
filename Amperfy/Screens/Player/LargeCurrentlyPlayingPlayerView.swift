@@ -221,6 +221,11 @@ class LargeCurrentlyPlayingPlayerView: UIView {
     lyricsArtwork.contentMode = .scaleAspectFit
     lyricsArtwork.layer.cornerRadius = 8
     lyricsArtwork.clipsToBounds = true
+    lyricsArtwork.isUserInteractionEnabled = true
+    lyricsArtwork.isAccessibilityElement = true
+    lyricsArtwork.accessibilityLabel = "Hide Lyrics".localized
+    lyricsArtwork.accessibilityTraits = .button
+    lyricsArtwork.addGestureRecognizer(UITapGestureRecognizer(target: self, action: #selector(lyricsArtworkPressed)))
     lyricsTitle.font = .systemFont(ofSize: 17, weight: .semibold)
     lyricsTitle.textColor = .white
     lyricsArtist.font = .systemFont(ofSize: 16)
@@ -489,6 +494,14 @@ class LargeCurrentlyPlayingPlayerView: UIView {
   @IBAction
   func artworkPressed(_ sender: Any) {
     rootView?.controlView?.displayPlaylistPressed()
+  }
+
+  @objc
+  func lyricsArtworkPressed() {
+    guard isDisplayingLyrics else { return }
+    appDelegate.storage.settings.user.isPlayerLyricsDisplayed = false
+    appDelegate.storage.settings.user.isPlayerVisualizerDisplayed = false
+    display(element: .artwork)
   }
 
   @IBAction

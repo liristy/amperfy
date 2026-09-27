@@ -181,12 +181,18 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
               guard let miniPlayer = (vc as? MainSceneHostingViewController)?.miniPlayer else { return }
               if let tabHost = vc as? UITabBarController {
                 tabHost.view.layoutIfNeeded()
-                let playerFrame = miniPlayer.glassContainer.convert(miniPlayer.glassContainer.bounds, to: tabHost.view)
-                let tabFrame = tabHost.tabBar.convert(tabHost.tabBar.bounds, to: tabHost.view)
-                guard tabFrame.minY - playerFrame.maxY >= 11 else {
-                  smokeLog("Mini player does not leave the requested gap above the tab bar")
+                guard tabHost.bottomAccessory != nil,
+                      tabHost.tabBarMinimizeBehavior == .onScrollDown,
+                      miniPlayer.glassContainer.superview !== tabHost.view else {
+                  smokeLog("Mini player is not using the system's collapsible tab accessory")
                   return
                 }
+                miniPlayer.glassContainer.traitOverrides.tabAccessoryEnvironment = .inline
+                tabHost.view.layoutIfNeeded()
+                guard miniPlayer.traitCollection.tabAccessoryEnvironment == .inline else { return }
+                miniPlayer.glassContainer.traitOverrides.remove(UITraitTabAccessoryEnvironment.self)
+                tabHost.view.layoutIfNeeded()
+                smokeLog("Native mini player accessory and inline environment restored")
                 let image = UIGraphicsImageRenderer(bounds: tabHost.view.bounds).image { _ in
                   tabHost.view.drawHierarchy(in: tabHost.view.bounds, afterScreenUpdates: true)
                 }
@@ -286,6 +292,19 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
               try await Task.sleep(for: .milliseconds(500))
               guard popup.areLyricsControlsHidden else { return }
               try screenshot("player-lyrics-upward.png")
+              popup.largeCurrentlyPlayingView?.lyricsArtworkPressed()
+              try await Task.sleep(for: .seconds(1))
+              guard popup.largeCurrentlyPlayingView?.isDisplayingLyrics == false,
+                    !self.appDelegate.storage.settings.user.isPlayerLyricsDisplayed,
+                    !popup.areLyricsControlsHidden,
+                    vc.presentedViewController === popup else {
+                smokeLog("Lyrics artwork tap did not return to the cover and restore controls")
+                return
+              }
+              smokeLog("Lyrics artwork tap returned to the full cover")
+              self.appDelegate.storage.settings.user.isPlayerLyricsDisplayed = true
+              popup.largeCurrentlyPlayingView?.display(element: .lyrics)
+              try await Task.sleep(for: .seconds(1))
               // A short, quick downward drag should finish instead of requiring a long swipe.
               popup.beginInteractiveDismissal()
               try await Task.sleep(for: .milliseconds(80))

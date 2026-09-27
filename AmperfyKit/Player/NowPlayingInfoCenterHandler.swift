@@ -32,6 +32,10 @@ public class NowPlayingInfoCenterHandler {
   private var nowPlayingInfoCenter: MPNowPlayingInfoCenter
   private let getArtworkDownloaderCB: GetArtworkDownloadManagerCallback
   private var accountNotificationHandler: AccountNotificationHandler?
+  private var currentPlayableID: String?
+  private var artworkPath: String?
+  private var artworkImage: UIImage?
+  private var artworkTask: Task<Void, Never>?
 
   init(
     musicPlayer: AudioPlayer,
@@ -75,21 +79,29 @@ public class NowPlayingInfoCenterHandler {
     let albumTitle = playable.asSong?.album?.name ?? ""
     let nowPlaying = displayNowPlayingInfo(for: playable)
 
-    var artworkImage = UIImage()
+    if currentPlayableID != playable.uniqueID {
+      artworkTask?.cancel()
+      artworkTask = nil
+      artworkPath = nil
+      artworkImage = nil
+      currentPlayableID = playable.uniqueID
+    }
     if let accountInfo = playable.account?.info {
-      artworkImage = LibraryEntityImage.getImageToDisplayImmediately(
-        libraryEntity: playable,
-        themePreference: storage.settings.accounts.getSetting(accountInfo).read.themePreference,
-        artworkDisplayPreference: storage.settings.accounts.getSetting(accountInfo).read
-          .artworkDisplayPreference,
-        useCache: true
-      )
+      if artworkImage == nil {
+        let preferences = storage.settings.accounts.getSetting(accountInfo).read
+        artworkImage = LibraryEntityImage.getImageToDisplayImmediately(
+          libraryEntity: playable,
+          themePreference: preferences.themePreference,
+          artworkDisplayPreference: preferences.artworkDisplayPreference,
+          useCache: true
+        )
+      }
       if let artwork = playable.artwork {
-        getArtworkDownloaderCB(accountInfo).download(object: artwork)
+        getArtworkDownloaderCB(accountInfo).downloadWithPriority(object: artwork)
       }
     }
 
-    let concurrentSafeArtworkImage = artworkImage
+    let concurrentSafeArtworkImage = artworkImage ?? UIImage()
     nowPlayingInfoCenter.nowPlayingInfo = [
       MPNowPlayingInfoPropertyMediaType: NSNumber(value: MPNowPlayingInfoMediaType.audio.rawValue),
       MPNowPlayingInfoPropertyServiceIdentifier: AmperKit.name,
@@ -105,8 +117,7 @@ public class NowPlayingInfoCenterHandler {
 
       MPNowPlayingInfoPropertyDefaultPlaybackRate: NSNumber(value: 1.0),
       MPNowPlayingInfoPropertyPlaybackRate: NSNumber(
-        value: backendAudioPlayer.playbackRate
-          .asDouble
+        value: musicPlayer.isPlaying ? backendAudioPlayer.playbackRate.asDouble : 0
       ),
 
       MPMediaItemPropertyArtwork: MPMediaItemArtwork(
@@ -117,6 +128,45 @@ public class NowPlayingInfoCenterHandler {
         }
       ),
     ]
+    loadArtwork(for: playable)
+  }
+
+  // This handler lives independently of the player UI, including while locked.
+  private func loadArtwork(for playable: AbstractPlayable) {
+    guard let accountInfo = playable.account?.info else { return }
+    let preference = storage.settings.accounts.getSetting(accountInfo).read.artworkDisplayPreference
+    let path = playable.imagePath(setting: preference)
+    guard path != artworkPath else { return }
+    artworkTask?.cancel()
+    artworkPath = path
+    guard let path else { return }
+    let playableID = playable.uniqueID
+    artworkTask = Task { @MainActor [weak self] in
+      let image = await LibraryEntityImage.loadPreparedImage(at: path)
+      guard !Task.isCancelled, let self,
+            self.currentPlayableID == playableID,
+            self.musicPlayer.currentlyPlaying?.uniqueID == playableID,
+            self.artworkPath == path else { return }
+      self.artworkTask = nil
+      guard let image else {
+        self.artworkPath = nil
+        return
+      }
+      self.artworkImage = image
+      // Merge just artwork so a late decode cannot reset the elapsed time or
+      // overwrite metadata belonging to a newly started song.
+      guard var info = self.nowPlayingInfoCenter.nowPlayingInfo else { return }
+      info[MPMediaItemPropertyArtwork] = MPMediaItemArtwork(boundsSize: image.size) { @Sendable _ in image }
+      self.nowPlayingInfoCenter.nowPlayingInfo = info
+    }
+  }
+
+  private func updatePlaybackTiming() {
+    guard var info = nowPlayingInfoCenter.nowPlayingInfo else { return }
+    info[MPMediaItemPropertyPlaybackDuration] = backendAudioPlayer.duration
+    info[MPNowPlayingInfoPropertyElapsedPlaybackTime] = backendAudioPlayer.elapsedTime
+    info[MPNowPlayingInfoPropertyPlaybackRate] = musicPlayer.isPlaying ? backendAudioPlayer.playbackRate.asDouble : 0
+    nowPlayingInfoCenter.nowPlayingInfo = info
   }
 
   private func displayNowPlayingInfo(for playable: AbstractPlayable) -> RadioNowPlayingInfo {
@@ -133,16 +183,9 @@ public class NowPlayingInfoCenterHandler {
     guard let downloadNotification = DownloadNotification.fromNotification(notification),
           let curPlayable = musicPlayer.currentlyPlaying
     else { return }
-    if curPlayable.uniqueID == downloadNotification.id {
-      Task { @MainActor in
-        updateNowPlayingInfo(playable: curPlayable)
-      }
-    }
-    if let artwork = curPlayable.artwork,
-       artwork.uniqueID == downloadNotification.id {
-      Task { @MainActor in
-        updateNowPlayingInfo(playable: curPlayable)
-      }
+    if curPlayable.uniqueID == downloadNotification.id ||
+       curPlayable.artwork?.uniqueID == downloadNotification.id {
+      updateNowPlayingInfo(playable: curPlayable)
     }
   }
 }
@@ -167,19 +210,28 @@ extension NowPlayingInfoCenterHandler: MusicPlayable {
   }
 
   public func didStopPlaying() {
+    artworkTask?.cancel()
+    artworkTask = nil
+    artworkPath = nil
+    artworkImage = nil
+    currentPlayableID = nil
     nowPlayingInfoCenter.nowPlayingInfo = nil
     nowPlayingInfoCenter.playbackState = .stopped
   }
 
   public func didElapsedTimeChange() {
-    if let curPlayable = musicPlayer.currentlyPlaying {
-      updateNowPlayingInfo(playable: curPlayable)
+    if let playable = musicPlayer.currentlyPlaying, playable.uniqueID != currentPlayableID {
+      updateNowPlayingInfo(playable: playable)
+    } else {
+      updatePlaybackTiming()
     }
   }
 
   public func didPlaylistChange() {}
 
-  public func didArtworkChange() {}
+  public func didArtworkChange() {
+    if let playable = musicPlayer.currentlyPlaying { updateNowPlayingInfo(playable: playable) }
+  }
 
   public func didNowPlayingInfoChange() {
     if let curPlayable = musicPlayer.currentlyPlaying {
@@ -191,5 +243,5 @@ extension NowPlayingInfoCenterHandler: MusicPlayable {
 
   public func didRepeatChange() {}
 
-  public func didPlaybackRateChange() {}
+  public func didPlaybackRateChange() { updatePlaybackTiming() }
 }
