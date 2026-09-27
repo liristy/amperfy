@@ -510,6 +510,9 @@ class MusicPlayerTest: XCTestCase {
 
   func testGaplessFinishUpdatesCurrentSongAndNotifiesUIOnce() async throws {
     let songs = playlistAllCached.playables
+    for (index, song) in songs.enumerated() {
+      markAsCached(playable: song, cacheName: "gapless-test-\(index)")
+    }
     testPlayer.play(context: PlayContext(name: "Gapless", playables: songs))
     let url = try XCTUnwrap(library.getFileURL(forPlayable: songs[0]))
     backendPlayer.didStartPlaying(url: url.absoluteString)
@@ -601,8 +604,8 @@ class MusicPlayerTest: XCTestCase {
     }
   }
 
-  func markAsCached(playable: AbstractPlayable) {
-    let relFilePath = URL(string: "testSong")!
+  func markAsCached(playable: AbstractPlayable, cacheName: String = "testSong") {
+    let relFilePath = URL(string: cacheName)!
     let absFilePath = CacheFileManager.shared.getAbsoluteAmperfyPath(relFilePath: relFilePath)!
     try! CacheFileManager.shared.writeDataExcludedFromBackup(
       data: Data(base64Encoded: "Test", options: .ignoreUnknownCharacters)!,
