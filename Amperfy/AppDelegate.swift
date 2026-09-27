@@ -127,6 +127,7 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
   var miniPlayerSceneSession: UISceneSession?
 
   var sleepTimer: Timer?
+  var sleepTimerGeneration = UUID()
 
   var isKeepScreenAlive: Bool {
     get { UIApplication.shared.isIdleTimerDisabled }

@@ -29,6 +29,12 @@ import UIKit
 
 struct AmperfyAppShortcuts: AppShortcutsProvider {
   static var appShortcuts: [AppShortcut] {
+    AppShortcut(
+      intent: SetSleepTimerIntent(),
+      phrases: ["Set a sleep timer in \(.applicationName)"],
+      shortTitle: "Stop Playback After a Delay",
+      systemImageName: "moon.zzz"
+    )
     //
     // Quick Actions
     //

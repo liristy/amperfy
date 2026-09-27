@@ -107,9 +107,15 @@ enum AmperfyAppIntentError: Error, LocalizedError {
   case changesOnlyInOnlineMode
   case noItemIsPlaying
   case serverSyncFailed
+  case invalidSleepTimerDuration
+  case noPlayableFavorites
 
   var errorDescription: String? {
     switch self {
+    case .invalidSleepTimerDuration:
+      return "Enter a duration from 0 to 1440 minutes.".localized
+    case .noPlayableFavorites:
+      return "No playable favorite songs. Download favorites first when offline.".localized
     case .notFound:
       return "I couldn’t find an element with the provided information."
     case .accountNotValid:

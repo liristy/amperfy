@@ -145,10 +145,11 @@ class MOCK_AlertDisplayable: AlertDisplayable {
 
 // MARK: - MOCK_LibrarySyncer
 
+@MainActor
 final class MOCK_LibrarySyncer: LibrarySyncer {
-  @MainActor var submittedListens: [(id: String, date: Date?)] = []
-  @MainActor var submissionError: Error?
-  @MainActor var onScrobble: (() -> Void)?
+  var submittedListens: [(id: String, date: Date?)] = []
+  var submissionError: Error?
+  var onScrobble: (() -> Void)?
   func syncInitial(statusNotifyier: SyncCallbacks?) async throws {}
   func sync(genre: Genre) async throws {}
   func sync(artist: Artist) async throws {}
@@ -262,7 +263,12 @@ final class MOCK_BackendApi: BackendApi {
 
 final class MOCK_NetworkMonitor: NetworkMonitorFacade {
   var connectionTypeChangedCB: ConnectionTypeChangedCallack? { get { nil } set {} }
-  var isConnectedToNetwork = true
+  nonisolated(unsafe) private var connected = true
+  private let connectionLock = NSLock()
+  var isConnectedToNetwork: Bool {
+    get { connectionLock.withLock { connected } }
+    set { connectionLock.withLock { connected = newValue } }
+  }
   var isCellular: Bool { false }
   var isWifiOrEthernet: Bool { true }
 }

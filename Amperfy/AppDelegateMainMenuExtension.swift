@@ -438,20 +438,24 @@ extension AppDelegate {
     }
   }
 
-  private func activateSleepTimer(timeInterval: TimeInterval) {
-    appDelegate.sleepTimer?.invalidate()
-    appDelegate.sleepTimer = Timer
-      .scheduledTimer(withTimeInterval: timeInterval, repeats: false) { _ in
-        Task { @MainActor in
-          self.appDelegate.player.pause()
-          self.appDelegate.eventLogger.info(
-            topic: "Sleep Timer",
-            message: "Sleep Timer paused playback."
-          )
-          self.appDelegate.sleepTimer?.invalidate()
-          self.appDelegate.sleepTimer = nil
-        }
+  func activateSleepTimer(timeInterval: TimeInterval) {
+    sleepTimer?.invalidate()
+    sleepTimer = nil
+    player.isShouldPauseAfterFinishedPlaying = false
+    let generation = UUID()
+    sleepTimerGeneration = generation
+    guard timeInterval.isFinite, timeInterval > 0 else { return }
+    let timer = Timer(timeInterval: timeInterval, repeats: false) { [weak self] _ in
+      Task { @MainActor [weak self] in
+        guard let self, self.sleepTimerGeneration == generation, self.sleepTimer != nil else { return }
+        self.player.pause()
+        self.eventLogger.info(topic: "Sleep Timer", message: "Sleep Timer paused playback.")
+        self.sleepTimer?.invalidate()
+        self.sleepTimer = nil
       }
+    }
+    sleepTimer = timer
+    RunLoop.main.add(timer, forMode: .common)
   }
 
   var isMainOrMiniPlayerPlayerOpen: Bool {

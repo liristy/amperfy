@@ -402,6 +402,38 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
               library.saveContext()
               self.appDelegate.player.play(context: PlayContext(name: "Scrobble smoke", playables: [song]))
               try await Task.sleep(for: .seconds(3))
+              song.isFavorite = true
+              nextSong.isFavorite = false
+              library.saveContext()
+              _ = try await ShuffleFavoritesIntent().perform()
+              try await Task.sleep(for: .seconds(1))
+              guard self.appDelegate.player.currentlyPlaying == song,
+                    self.appDelegate.player.isShuffle else {
+                smokeLog("Favorites shortcut did not shuffle only favorite songs")
+                return
+              }
+              var timerIntent = SetSleepTimerIntent()
+              timerIntent.minutes = 3
+              _ = try await timerIntent.perform()
+              guard let sleepTimer = self.appDelegate.sleepTimer,
+                    abs(sleepTimer.fireDate.timeIntervalSinceNow - 180) < 2 else { return }
+              timerIntent.minutes = 0
+              _ = try await timerIntent.perform()
+              guard self.appDelegate.sleepTimer == nil, self.appDelegate.player.isPlaying else { return }
+              timerIntent.minutes = -1
+              do {
+                _ = try await timerIntent.perform()
+                smokeLog("Sleep timer accepted a negative duration")
+                return
+              } catch AmperfyAppIntentError.invalidSleepTimerDuration {}
+              self.appDelegate.activateSleepTimer(timeInterval: 0.15)
+              self.appDelegate.activateSleepTimer(timeInterval: 5)
+              try await Task.sleep(for: .milliseconds(350))
+              guard self.appDelegate.player.isPlaying else { return }
+              self.appDelegate.activateSleepTimer(timeInterval: 0.15)
+              try await Task.sleep(for: .milliseconds(350))
+              guard !self.appDelegate.player.isPlaying, self.appDelegate.sleepTimer == nil else { return }
+              smokeLog("Favorites shuffle and sleep timer shortcuts passed; cancellation and replacement preserved playback")
               let marker = URL.documentsDirectory.appendingPathComponent("player-smoke-ready")
               try "ready".write(to: marker, atomically: true, encoding: .utf8)
             } catch { smokeLog("Player smoke failed: \(error)") }

@@ -4959,6 +4959,126 @@
           }
         }
       }
+    },
+    "Stop Playback After a Delay": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "定时停止播放"
+          }
+        }
+      }
+    },
+    "Pause playback after the specified number of minutes. Set 0 to cancel the timer.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "在指定分钟数后停止播放，设为 0 可取消定时。"
+          }
+        }
+      }
+    },
+    "Minutes": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "分钟"
+          }
+        }
+      }
+    },
+    "Stop playback after ${minutes} minutes": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "${minutes} 分钟后停止播放"
+          }
+        }
+      }
+    },
+    "Sleep timer cancelled.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已取消定时停止播放。"
+          }
+        }
+      }
+    },
+    "Playback will stop in %d minutes.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "将在 %d 分钟后停止播放。"
+          }
+        }
+      }
+    },
+    "Shuffle Favorites": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "随机播放收藏"
+          }
+        }
+      }
+    },
+    "Shuffle your favorite songs. In offline mode, only downloaded favorites are played.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "随机播放收藏的歌曲；离线时只播放已下载的收藏。"
+          }
+        }
+      }
+    },
+    "Shuffle favorite songs": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "随机播放收藏歌曲"
+          }
+        }
+      }
+    },
+    "Playing your favorite songs in random order.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "正在随机播放收藏的歌曲。"
+          }
+        }
+      }
+    },
+    "Enter a duration from 0 to 1440 minutes.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "请输入 0 到 1440 分钟，0 表示取消定时。"
+          }
+        }
+      }
+    },
+    "No playable favorite songs. Download favorites first when offline.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "没有可播放的收藏歌曲；离线时请先下载收藏。"
+          }
+        }
+      }
     }
   },
   "version": "1.0"

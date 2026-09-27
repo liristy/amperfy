@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		2558959D1CFB4493B316F190 /* ListeningActionsIntent.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6D1FE124A5464C27BB6B8D1A /* ListeningActionsIntent.swift */; };
 		09EB5F102F93B96E00B1C71C /* ShareSongAction.swift in Sources */ = {isa = PBXBuildFile; fileRef = 09EB5F0D2F93B65400B1C71C /* ShareSongAction.swift */; };
 		43FBE27F250D4DFD00D5F9B3 /* LaunchScreen.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = 43FBE27E250D4DFD00D5F9B3 /* LaunchScreen.storyboard */; };
 		5003D8FB267B3390006946BF /* LibrarySyncPopupVC.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5003D8FA267B3390006946BF /* LibrarySyncPopupVC.swift */; };
@@ -594,6 +595,7 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
+		6D1FE124A5464C27BB6B8D1A /* ListeningActionsIntent.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ListeningActionsIntent.swift; sourceTree = "<group>"; };
 		09EB5F0D2F93B65400B1C71C /* ShareSongAction.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShareSongAction.swift; sourceTree = "<group>"; };
 		43FBE27E250D4DFD00D5F9B3 /* LaunchScreen.storyboard */ = {isa = PBXFileReference; lastKnownFileType = file.storyboard; path = LaunchScreen.storyboard; sourceTree = "<group>"; };
 		5002565625E69DC700674CE1 /* SpinnerViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpinnerViewController.swift; sourceTree = "<group>"; };
@@ -2110,6 +2112,7 @@
 				50B136F42EFC36D500738475 /* PlayIDIntent.swift */,
 				50B136F82EFC36D500738475 /* SearchAndPlayIntent.swift */,
 				50B136F52EFC36D500738475 /* PlayRandomSongsIntent.swift */,
+				6D1FE124A5464C27BB6B8D1A /* ListeningActionsIntent.swift */,
 				50B137032EFC8A4800738475 /* SwitchAccountIntent.swift */,
 				5074149A2EFFC6D9007AEC5D /* ContinuePlaybackIntent.swift */,
 				507414982EFFC62E007AEC5D /* PlayPausePlaybackIntent.swift */,
@@ -2457,6 +2460,7 @@
 				50B136FA2EFC36D500738475 /* PlayableContainerTypeAppEnum.swift in Sources */,
 				50B136FB2EFC36D500738475 /* PlayIDIntent.swift in Sources */,
 				50B136FC2EFC36D500738475 /* PlayRandomSongsIntent.swift in Sources */,
+				2558959D1CFB4493B316F190 /* ListeningActionsIntent.swift in Sources */,
 				50B136FD2EFC36D500738475 /* PlayRandomSongsFilterTypeAppEnum.swift in Sources */,
 				507414992EFFC62E007AEC5D /* PlayPausePlaybackIntent.swift in Sources */,
 				50B136FE2EFC36D500738475 /* RepeatTypeAppEnum.swift in Sources */,
