@@ -1,24 +1,13 @@
-name: Build iPhone IPA
+name: qMusic Build & Release
 
 on:
   workflow_dispatch:
   push:
+    tags:
+      - 'v*'
+  pull_request:
     branches:
       - master
-      - codex/apple-music-sideload
-    paths:
-      - 'Amperfy/**'
-      - 'AmperfyKit/**'
-      - 'AmperfyKitTests/**'
-      - 'Amperfy.xcodeproj/**'
-      - 'BuildTools/build-unsigned-ipa.sh'
-      - 'BuildTools/verify_ipa.py'
-      - 'BuildTools/test_verify_ipa.py'
-      - 'BuildTools/test-iphone-changes.sh'
-      - 'BuildTools/smoke-iphone-login.sh'
-      - 'BuildTools/subsonic-smoke-server.py'
-      - 'docs/iphone-install-zh.md'
-      - '.github/workflows/ios-sideload.yml'
 
 permissions:
   contents: read
@@ -71,6 +60,7 @@ jobs:
       - name: Build unsigned device IPA
         run: |
           python3 -m unittest discover -s BuildTools -p test_verify_ipa.py
+          python3 -m unittest discover -s BuildTools -p test_prepare_release.py
           bash BuildTools/build-unsigned-ipa.sh
 
       - name: Upload IPA and installation instructions
@@ -109,3 +99,40 @@ jobs:
 
           安装步骤见压缩包内的 `iphone-install-zh.md`；具体构建版本见 `build-info.txt`。
           EOF
+
+  release:
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+    needs: [tests, build]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - name: Require release commit on master
+        run: git merge-base --is-ancestor HEAD origin/master
+      - uses: actions/download-artifact@v4
+        with:
+          name: Amperfy-iPhone-unsigned-${{ github.run_number }}
+          path: build/release-input
+      - name: Verify release version, source and IPA
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          python3 BuildTools/prepare-release.py build/release-input build/release "$RELEASE_TAG" "$(git rev-parse HEAD)"
+          python3 BuildTools/verify_ipa.py --require-signature "build/release/qMusic-${RELEASE_TAG#v}.ipa"
+      - name: Publish GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          notes="docs/releases/$RELEASE_TAG.md"
+          title="$(head -n 1 "$notes" | sed 's/^# //')"
+          flags=()
+          if [[ "$RELEASE_TAG" == *-* ]]; then flags+=(--prerelease); fi
+          gh release create "$RELEASE_TAG" build/release/* \
+            --verify-tag --title "$title" --notes-file "$notes" "${flags[@]}"

@@ -1,68 +1,81 @@
-# ![Logo](.github/Icon-40.png) Amperfy
+# qMusic
 
-## Basics
+面向 iPhone 的自托管音乐播放器，连接 **Navidrome / Subsonic / Ampache** 音乐服务器。基于 [Amperfy](https://github.com/BLeeEZ/amperfy) 开发，采用接近 Apple Music 的播放器交互，支持简体中文与英语。
 
-Amperfy is an iOS/iPadOS/macOS app written in Swift to interact with an [Ampache](http://ampache.github.io) or [Subsonic](http://www.subsonic.org) server.
+**当前版本：3.0 Beta 1** · **iOS 26 或更新版本**
 
-### iOS
+[下载 3.0 Beta 1](https://github.com/liristy/amperfy/releases/tag/v3.0.0-beta.1) · [安装说明](docs/iphone-install-zh.md) · [更新记录](docs/releases/v3.0.0-beta.1.md)
 
-<a href="https://apps.apple.com/app/amperfy-music/id1530145038#?platform=iphone">
-  <img src=".github/AppStore/Download_on_the_App_Store_Badge_US-UK_RGB_blk_092917.svg" height="45" />
-</a>
+## 播放器
 
-<img src=".github/Screenshots/Player.jpg" width="250" alt="Screenshot of the Amperfy player" /> &nbsp;
-<img src=".github/Screenshots/AlbumDetail.jpg" width="250" alt="Screenshot of the Amperfy artist detail view" /> &nbsp;
-<img src=".github/Screenshots/Library.jpg" width="250" alt="Screenshot of the Amperfy library view" />
+<img src=".github/Screenshots/qMusic-player.png" width="240" alt="qMusic 全屏播放器" /> &nbsp;
+<img src=".github/Screenshots/qMusic-lyrics.png" width="240" alt="qMusic 歌词" /> &nbsp;
+<img src=".github/Screenshots/qMusic-queue.png" width="240" alt="qMusic 播放队列" />
 
-### macOS
+以上为 iOS 模拟器截图，使用自动化验证的演示曲目与封面。
 
-<a href="https://apps.apple.com/app/amperfy-music/id1530145038#?platform=mac">
-  <img src=".github/AppStore/Download_on_the_Mac_App_Store_Badge_US-UK_RGB_blk_092917.svg" height="45" />
-</a>
+- 全屏播放器支持封面缩放打开、下滑退出，以及非正方形封面的完整显示。
+- 歌词与播放列表共用固定的顶部信息区：封面、歌名、歌手和按钮在切换时保持原位，只切换下方内容。
+- 歌词自动高亮；上滑或等待后隐藏底部控制区，轻点恢复，点击顶部封面返回大封面。
+- 迷你播放条跟随手指展示上一首／下一首，滑到一半可以退回取消；保留系统底部栏收起效果。
+- 五角星收藏、记住随机播放选择、自动切歌同步更新曲目信息，以及封面加载完成后的锁屏信息更新。
 
-<img src=".github/Screenshots/macOS-Playlist.png" width="750" alt="Screenshot of the Amperfy playlist view in macOS" />
+## 音乐库与服务
 
-## Features
+- 默认资料库入口：艺人、专辑、歌曲、收藏、歌单、下载；默认主题色为橙色。
+- Navidrome 歌单采用服务器提供的封面，支持封面缓存与离线显示。
+- 多账号、离线下载、播放队列、均衡器、ReplayGain，以及适用格式的无缝播放。
+- 向服务器提交正在播放与已听记录；ListenBrainz 等下游服务需在 Navidrome 服务端配置。
+- 快捷指令动作：**定时停止播放**（0 分钟取消）和 **随机播放收藏**。
+- 已移除评分与转码设置。
 
-- Multi account
-- Offline mode
-- CarPlay
-- Gapless playback for appropriate media file formats
-- Music, Podcast and Radio support
-- Siri play media command, Siri Shortcuts and App Intents
-- Equalizer
-- Replay gain
-- Sleep timer
-- 5 star song rating
-- Favorite song
-- Sleep Timer
-- Scrobbling
+## 安装
 
-## Requirements
+1. 从 [Releases](https://github.com/liristy/amperfy/releases) 下载 `qMusic-3.0.0-beta.1.ipa`。
+2. 在 Windows 爱思助手中使用自己的 Apple ID 签名，再安装到 iPhone；细节见[安装说明](docs/iphone-install-zh.md)。
+3. 打开 qMusic，登录自己的音乐服务器。
 
-* Xcode 26, Swift 6
+Release 中的 IPA 尚未使用个人证书签名。包内预建 Apple ad-hoc 签名结构，以兼容重签名工具；安装前仍需个人签名。更新时保持原 Apple ID 和应用标识，覆盖安装即可。App 内版本显示为 **3.0.0（1）**。
 
-## Getting Started
+本仓库发布的 qMusic 是独立修改版，不是上游 Amperfy 的 App Store 版本。当前发布包不包含 Siri / CarPlay 的专用签名授权；快捷指令 App Intents 与 Siri 媒体授权是不同功能。
 
-1. Check out the latest version of the project:
-  ```
-  git clone https://github.com/BLeeEZ/amperfy.git
-  cd amperfy
-  ```
+## 开发与验证
 
-3. Open the `Amperfy.xcodeproj` file.
+需要 macOS、Xcode 26（工作流使用 26.3）和 Swift 6；Windows 用户可使用 GitHub Actions 构建。
 
-4. Build and run the "Amperfy" scheme
+```sh
+git clone https://github.com/liristy/amperfy.git
+cd amperfy
+open Amperfy.xcodeproj
+```
 
-  >Real device testing: Amperfy has Apple CarPlay and Siri support. To test it on a real device a developer certificate with granted access to `com.apple.developer.playable-content` and `com.apple.developer.siri` is required. To test Amperfy without Apple CarPlay and Siri clear all entries in `Amperfy/Amperfy.entitlements`.
+选择 `Amperfy` scheme 构建。工程和 bundle identifier 保留原有名称，安装显示名称为 qMusic，以便现有侧载用户覆盖更新。
 
-## Beta test releases
+```sh
+# iPhone 模拟器回归及界面检查（macOS）
+bash BuildTools/test-iphone-changes.sh
+# 生成待个人签名的真机 IPA（macOS）
+bash BuildTools/build-unsigned-ipa.sh
+# 检查重签名后的 IPA（Windows / macOS）
+python BuildTools/verify_ipa.py --require-signature path/to/signed.ipa
+```
 
-For more information, and to participate in the public beta releases, please visit [Amperfy Beta](https://github.com/BLeeEZ/amperfy/issues/25).
+播放器布局遵守[统一布局约定](docs/player-layout.md)。验证包括播放、封面、歌词、切歌、Scrobble 和快捷指令回归，以及固定顶部信息区的逐帧位置检查。模拟器验证不替代不同设备、服务器和个人签名环境的实际测试。
 
-## Contribution
+## 发布工作流
 
-Pull requests are always welcome. Please execute `AmperfyKitTests` to ensure code quality. Running tests will trigger [SwiftFormat](https://github.com/nicklockwood/SwiftFormat) to apply the [Google Swift Style Guide](https://google.github.io/swift), as configured by [Google-SwiftFormat-Config](https://github.com/NoemiRozpara/Google-SwiftFormat-Config). You can also apply the code style manually by executing `./BuildTools/applyFormat.sh`.
+工作流 **qMusic Build & Release** 支持手动构建、提交到 `master` 的 PR 验证，以及 `v*` 标签发布。普通主线推送不重复构建；发布标签会从该标签重新构建并运行完整验证。
+
+1. 更新 App 版本号及 `docs/releases/<标签>.md`，将改动合入 `master`。
+2. 创建并推送版本标签，例如 `v3.0.0-beta.1`。
+3. 工作流完成测试、真机打包和完整性校验后，自动创建 GitHub Release，附带 IPA、SHA-256、构建来源和安装说明。含预发行后缀的标签标记为 Pre-release。
+
+临时 Actions artifacts 保留 7 天；已发布的文件可从对应 Release 下载。构建不需要上传 Apple ID、密码或个人签名证书。
+
+## 开源来源
+
+- qMusic 基于 [Amperfy](https://github.com/BLeeEZ/amperfy)，保留原作者版权声明并继续遵循 [GPL-3.0](LICENSE)。
+- 应用图标与启动音符来自 [Feishin](https://github.com/jeffvli/feishin)，遵循其 GPL-3.0 许可；感谢两个上游项目及其贡献者。
 
 ## Attributions
 

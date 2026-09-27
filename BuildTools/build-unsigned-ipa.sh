@@ -2,7 +2,7 @@
 set -euo pipefail
 
 if [[ "$(uname -s)" != Darwin ]]; then
-  echo "This build requires macOS and Xcode 26. Use the Build iPhone IPA GitHub workflow on Windows." >&2
+  echo "This build requires macOS and Xcode 26. Use the qMusic Build & Release GitHub workflow on Windows." >&2
   exit 1
 fi
 

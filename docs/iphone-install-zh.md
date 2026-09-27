@@ -1,4 +1,4 @@
-# 在 Windows 上安装 Amperfy 测试版
+# 在 Windows 上安装 qMusic 测试版
 
 需要 iOS 26 或更新版本的 iPhone、Windows 电脑、数据线和普通 Apple ID。
 无需购买 Mac 或 Apple 开发者会员。
@@ -16,25 +16,18 @@
 
 ## 获取测试包
 
-1. 打开本仓库的 **Actions → Build iPhone IPA**。
-2. 等待对应提交的运行显示绿色成功标记。
-3. 下载 **Amperfy-iPhone-unsigned-数字** artifact 并解压。
-4. 找到 `Amperfy-unsigned.ipa`，不要把外层 artifact ZIP 当成 IPA。
+推荐从 [qMusic Releases](https://github.com/liristy/amperfy/releases) 下载对应版本的 IPA。3.0 Beta 1 的文件名为 `qMusic-3.0.0-beta.1.ipa`，App 内显示 3.0.0（1）。同页提供 `SHA256SUMS` 和 `build-info.txt`，用于核对文件完整性与源码版本。
 
-首次推送 `codex/apple-music-sideload` 分支会自动构建。如果 fork 的 Actions 被暂停，
-先在 Actions 页面启用，再推送一次提交。工作流合入默认分支后，也可以通过
-**Run workflow** 手动打包。只有成功的云端构建才会生成可用 IPA。
+也可在 **Actions → qMusic Build & Release → Run workflow** 手动打包。等待测试与构建成功后，下载 **Amperfy-iPhone-unsigned-数字** artifact 并解压，找到 `Amperfy-unsigned.ipa`；不要把外层 ZIP 当作 IPA。
 
-此工作流使用公开仓库免费的标准 macOS runner，并在私有仓库中跳过执行。
-下载文件保留 7 天，过期后可重新构建。`build-info.txt` 记录源码提交和 Xcode 版本，
-`SHA256SUMS` 可用于核对 IPA 下载完整性。
+`v*` 标签会触发构建、测试和 Release 发布。工作流仅在公开仓库使用标准托管 runner，私有仓库会跳过。临时 artifacts 保留 7 天，Release 附件可从对应发布页下载。
 
 ## 爱思助手免费签名安装
 
 1. 从 [爱思助手官网](https://www.i4.cn/) 安装或更新 Windows 客户端。
 2. 用数据线连接 iPhone，解锁手机，按提示选择“信任此电脑”。
 3. 进入爱思助手的 **工具箱 → IPA 签名**（具体名称可能随版本变化）。
-4. 添加 `Amperfy-unsigned.ipa`，选择 **使用 Apple ID 签名**，选择连接的设备。
+4. 添加下载的 `qMusic-3.0.0-beta.1.ipa`（或手动构建的 `Amperfy-unsigned.ipa`），选择 **使用 Apple ID 签名**，选择连接的设备。
 5. 在你本机填写 Apple ID 并完成验证，等待签名成功。
 6. 打开签名文件保存目录，将**签名后的 IPA**安装到 iPhone。
 7. 按系统提示在“设置 → 通用 → VPN 与设备管理”中信任开发者。
@@ -54,7 +47,7 @@
 - 安装名称为 **qMusic**，应用标识带 `.sideload`，与 App Store 版分开存储数据。
 - 包含当前分支的播放器和界面修改，支持在手机上测试音乐播放、歌词和播放队列。
 - 不包含需要相应授权的 Siri / CarPlay 签名权限。
-- 文件名保留 `unsigned`，表示尚未使用个人账号签名。包内已用 Apple 的无证书 ad-hoc 签名预建签名结构，仍须通过爱思使用自己的 Apple ID 重签名，才能安装到真机。它不提供 Xcode 远程断点调试。
+- Release 与手动构建的 IPA 均尚未使用个人账号签名。包内已用 Apple 的无证书 ad-hoc 签名预建签名结构，仍须通过爱思使用自己的 Apple ID 重签名，才能安装到真机。它不提供 Xcode 远程断点调试。
 
 ## 显示 Logo 后立即退出：检查签名包
 
