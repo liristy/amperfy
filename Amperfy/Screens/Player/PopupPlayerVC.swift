@@ -25,7 +25,7 @@ import UIKit
 
 // MARK: - PopupPlayerVC
 
-class PopupPlayerVC: UIViewController, UIScrollViewDelegate {
+class PopupPlayerVC: UIViewController, UIScrollViewDelegate, UIGestureRecognizerDelegate {
   @IBOutlet
   weak var tableView: UITableView!
   @IBOutlet
@@ -45,6 +45,9 @@ class PopupPlayerVC: UIViewController, UIScrollViewDelegate {
   private var portraitLayoutConstraints = [NSLayoutConstraint]()
   private var landscapeLayoutConstraints = [NSLayoutConstraint]()
   private var usesLandscapeLayout = false
+  private var lyricsControlsTask: Task<Void, Never>?
+  private(set) var areLyricsControlsHidden = false
+  private var hasAnimatedEntrance = false
 
   lazy var tableViewKeyCommandsController = TableViewKeyCommandsController(
     tableView: tableView,
@@ -100,9 +103,15 @@ class PopupPlayerVC: UIViewController, UIScrollViewDelegate {
         height: controlPlaceholderView.bounds.size.height
       )) {
       controlView = createdPlayerControlView
+      createdPlayerControlView.autoresizingMask = [.flexibleWidth]
+      createdPlayerControlView.frame.size.height = PlayerControlView.frameHeight
       createdPlayerControlView.prepare(toWorkOnRootView: self)
       controlPlaceholderView.addSubview(createdPlayerControlView)
     }
+    controlPlaceholderView.clipsToBounds = true
+    let restoreControls = UITapGestureRecognizer(target: self, action: #selector(restoreLyricsControls))
+    restoreControls.delegate = self
+    view.addGestureRecognizer(restoreControls)
     if let createdLargeCurrentlyPlayingView = ViewCreator<LargeCurrentlyPlayingPlayerView>
       .createFromNib(withinFixedFrame: CGRect(
         x: 0,
@@ -202,7 +211,88 @@ class PopupPlayerVC: UIViewController, UIScrollViewDelegate {
 
   override func viewWillDisappear(_ animated: Bool) {
     super.viewWillDisappear(animated)
+    lyricsControlsTask?.cancel()
     resignFirstResponder()
+  }
+
+  override func viewDidAppear(_ animated: Bool) {
+    super.viewDidAppear(animated)
+    if !hasAnimatedEntrance, !UIAccessibility.isReduceMotionEnabled {
+      hasAnimatedEntrance = true
+      largePlayerPlaceholderView.transform = CGAffineTransform(translationX: 0, y: 28)
+        .scaledBy(x: 0.94, y: 0.94)
+      largePlayerPlaceholderView.alpha = 0.3
+      UIView.animate(withDuration: 0.55, delay: 0, usingSpringWithDamping: 0.88,
+                     initialSpringVelocity: 0, options: [.beginFromCurrentState]) {
+        self.largePlayerPlaceholderView.transform = .identity
+        self.largePlayerPlaceholderView.alpha = self.tableView.isHidden ? 1 : 0
+      }
+    }
+    lyricsModeDidChange()
+  }
+
+  func lyricsModeDidChange() {
+    lyricsControlsTask?.cancel()
+    setLyricsControlsHidden(false)
+    // A downward gesture inside lyrics hides controls instead of dismissing the sheet.
+    isModalInPresentation = largeCurrentlyPlayingView?.isDisplayingLyrics == true
+    scheduleLyricsControlsHide()
+  }
+
+  private func scheduleLyricsControlsHide() {
+    lyricsControlsTask?.cancel()
+    guard largeCurrentlyPlayingView?.isDisplayingLyrics == true,
+          appDelegate.storage.settings.user.playerDisplayStyle == .large,
+          viewIfLoaded?.window != nil else { return }
+    lyricsControlsTask = Task { @MainActor [weak self] in
+      do { try await Task.sleep(for: .seconds(5)) } catch { return }
+      guard let self, !Task.isCancelled else { return }
+      if self.presentedViewController != nil || self.isTrackingControl(in: self.controlPlaceholderView) ||
+        UIAccessibility.isVoiceOverRunning {
+        self.scheduleLyricsControlsHide()
+      } else {
+        self.setLyricsControlsHidden(true)
+      }
+    }
+  }
+
+  private func isTrackingControl(in view: UIView) -> Bool {
+    (view as? UIControl)?.isTracking == true || view.subviews.contains { isTrackingControl(in: $0) }
+  }
+
+  func setLyricsControlsHidden(_ hidden: Bool, animated: Bool = true) {
+    guard !hidden || (largeCurrentlyPlayingView?.isDisplayingLyrics == true &&
+      appDelegate.storage.settings.user.playerDisplayStyle == .large) else { return }
+    guard hidden != areLyricsControlsHidden else { return }
+    areLyricsControlsHidden = hidden
+    view.layoutIfNeeded()
+    controlPlaceholderView.isUserInteractionEnabled = !hidden
+    controlPlaceholderView.accessibilityElementsHidden = hidden
+    controlPlaceholderHeightConstraint.constant = hidden && !usesLandscapeLayout ? 0 :
+      PlayerControlView.frameHeight + safetyMarginOnBottom
+    let changes = {
+      self.controlPlaceholderView.alpha = hidden ? 0 : 1
+      self.view.layoutIfNeeded()
+    }
+    if animated, !UIAccessibility.isReduceMotionEnabled {
+      UIView.animate(withDuration: 0.4, delay: 0, options: [.beginFromCurrentState, .curveEaseInOut],
+                     animations: changes)
+    } else { changes() }
+  }
+
+  @objc func restoreLyricsControls() {
+    setLyricsControlsHidden(false)
+    scheduleLyricsControlsHide()
+  }
+
+  func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer, shouldReceive touch: UITouch) -> Bool {
+    guard areLyricsControlsHidden else { return false }
+    var touchedView = touch.view
+    while let current = touchedView {
+      if current is UIControl { return false }
+      touchedView = current.superview
+    }
+    return true
   }
 
   override func viewWillLayoutSubviews() {
@@ -217,6 +307,8 @@ class PopupPlayerVC: UIViewController, UIScrollViewDelegate {
         landscape ? landscapeLayoutConstraints : portraitLayoutConstraints
       )
       usesLandscapeLayout = landscape
+      controlPlaceholderHeightConstraint.constant = areLyricsControlsHidden && !landscape ? 0 :
+        PlayerControlView.frameHeight + safetyMarginOnBottom
     }
   }
 

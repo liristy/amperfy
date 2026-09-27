@@ -605,12 +605,17 @@ class PlayerFacadeImpl: PlayerFacade {
   }
 
   func play(context: PlayContext) {
+    guard !context.playables.isEmpty else { return }
     setPlayerModeForContextPlay(context.type)
-    if playerMode == .music, playerStatus.isShuffle {
-      playerStatus.setShuffle(false)
+    let preserveShuffle = playerMode == .music && playerStatus.isShuffle
+    // Build the new context in its original order, keeping the selected song first
+    // when restoring shuffle. Merely leaving the flag on would not shuffle it.
+    if preserveShuffle { playerStatus.setShuffle(false) }
+    musicPlayer.play(context: context)
+    if preserveShuffle {
+      playerStatus.setShuffle(true)
       musicPlayer.notifyShuffleUpdated()
     }
-    musicPlayer.play(context: context)
     musicPlayer.notifyPlaylistUpdated()
   }
 

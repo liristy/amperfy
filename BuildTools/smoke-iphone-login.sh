@@ -86,3 +86,7 @@ if [[ "$ready" != true ]]; then
   exit 1
 fi
 echo "Original audio streaming, seek and synchronized lyrics smoke test passed"
+
+for screenshot in player-artwork-landscape player-next-song player-lyrics-controls player-lyrics-immersive player-lyrics-restored; do
+  cp "$container/Documents/$screenshot.png" "build/validation/$screenshot.png"
+done

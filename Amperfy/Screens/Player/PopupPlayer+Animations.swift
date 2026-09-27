@@ -34,6 +34,7 @@ extension PopupPlayerVC {
   }
 
   func changeDisplayStyleVisually(to displayStyle: PlayerDisplayStyle, animated: Bool = true) {
+    if displayStyle == .compact { setLyricsControlsHidden(false, animated: animated) }
     var viewToDisapper: UIView?
     var artworkToDisapper: UIView?
     var detailsContainerToDisapper: UIView?
@@ -221,7 +222,7 @@ extension PopupPlayerVC {
     let fakeImageView = RoundedImage(frame: sourceFrame)
     fakeImageView.backgroundColor = .clear
     fakeImageView.image = image
-    fakeImageView.contentMode = .scaleAspectFill
+    fakeImageView.contentMode = .scaleAspectFit
     fakeImageView.clipsToBounds = true
     fakeImageView.alpha = sourceView.alpha
 

@@ -847,7 +847,9 @@ extension BackendAudioPlayer: AudioStreaming.AudioPlayerDelegate {
     progress: Double,
     duration: Double
   ) {
-    guard stopReason == .eof else { return }
+    // Gapless queue transitions leave the engine running, so the library reports
+    // .none. Only an empty queue produces .eof; explicit stops must not advance it.
+    guard stopReason == .eof || stopReason == .none else { return }
     let entryID = entryId.id
     let identity = ObjectIdentifier(player)
     Task { @MainActor in

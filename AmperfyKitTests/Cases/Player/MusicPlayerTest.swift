@@ -508,6 +508,45 @@ class MusicPlayerTest: XCTestCase {
     XCTAssertTrue(backendPlayer.canBeContinued)
   }
 
+  func testGaplessFinishUpdatesCurrentSongAndNotifiesUIOnce() async throws {
+    let songs = playlistAllCached.playables
+    testPlayer.play(context: PlayContext(name: "Gapless", playables: songs))
+    let url = try XCTUnwrap(library.getFileURL(forPlayable: songs[0]))
+    backendPlayer.didStartPlaying(url: url.absoluteString)
+    for _ in 0..<5 { await Task.yield() }
+    let started = expectation(description: "Next song notifies player UI")
+    started.assertForOverFulfill = true
+    mockMusicPlayable.expectationDidStartPlaying = started
+    backendPlayer.audioPlayerDidFinishPlaying(player: mockAudioStreamingPlayer,
+      entryId: AudioEntryId(id: url.absoluteString), stopReason: .none, progress: 180, duration: 180)
+    await fulfillment(of: [started], timeout: 3)
+    XCTAssertEqual(testPlayer.currentlyPlaying, songs[1])
+    // A duplicate finish for the old entry must not skip another song.
+    backendPlayer.audioPlayerDidFinishPlaying(player: mockAudioStreamingPlayer,
+      entryId: AudioEntryId(id: url.absoluteString), stopReason: .eof, progress: 180, duration: 180)
+    for _ in 0..<5 { await Task.yield() }
+    XCTAssertEqual(testPlayer.currentlyPlaying, songs[1])
+    mockMusicPlayable.expectationDidStartPlaying = nil
+  }
+
+  func testShuffleSurvivesNewContextAndPlayerRecreation() {
+    let songs = playlistAllCached.playables
+    testPlayer.playShuffled(context: PlayContext(name: "First", playables: songs))
+    testPlayer.play(context: PlayContext(name: "Second", index: 2, playables: songs))
+    XCTAssertTrue(testPlayer.isShuffle)
+    XCTAssertEqual(testPlayer.currentlyPlaying, songs[2])
+    XCTAssertEqual(testQueueHandler.getAllNextQueueItems().count, songs.count - 1)
+    XCTAssertEqual(Set(testQueueHandler.getAllNextQueueItems().map(\.id)), Set(songs.filter { $0 != songs[2] }.map(\.id)))
+    let restoredData = library.getPlayerData()
+    XCTAssertTrue(restoredData.isShuffle)
+    XCTAssertEqual(restoredData.currentItem, songs[2])
+    testPlayer.toggleShuffle()
+    testPlayer.play(context: PlayContext(name: "Ordered", playables: songs))
+    XCTAssertFalse(testPlayer.isShuffle)
+    XCTAssertEqual(testQueueHandler.getAllNextQueueItems(), Array(songs.dropFirst()))
+    XCTAssertFalse(library.getPlayerData().isShuffle)
+  }
+
   func testRemovedFeaturesIgnoreLegacyPreferences() {
     storage.settings.user.isShowRating = true
     storage.settings.user.streamingFormatWifiPreference = .mp3

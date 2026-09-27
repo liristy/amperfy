@@ -135,6 +135,8 @@ class LargeCurrentlyPlayingPlayerView: UIView {
   private let lyricsTitle = UILabel()
   private let lyricsArtist = UILabel()
   private let lyricsOptions = UIButton(type: .system)
+  private var displayAnimator: UIViewPropertyAnimator?
+  var isDisplayingLyrics: Bool { displayElement == .lyrics }
 
   @IBOutlet
   weak var upperContainerView: UIView!
@@ -192,7 +194,7 @@ class LargeCurrentlyPlayingPlayerView: UIView {
     titleLabel.textColor = .white
     artistLabel.textColor = .white.withAlphaComponent(0.72)
     albumLabel.textColor = .white.withAlphaComponent(0.65)
-    artworkImage.contentMode = .scaleAspectFill
+    artworkImage.contentMode = .scaleAspectFit
     artworkImage.layer.cornerRadius = 12
     artworkImage.layer.cornerCurve = .continuous
     artworkImage.clipsToBounds = true
@@ -210,8 +212,11 @@ class LargeCurrentlyPlayingPlayerView: UIView {
     lyricsView!.onLyricSelected = { [weak self] lyric in
       self?.appDelegate.player.seek(toSecond: lyric.startTime.seconds)
     }
+    lyricsView!.onDownwardDrag = { [weak self] in
+      self?.rootView?.setLyricsControlsHidden(true)
+    }
     addSubview(lyricsView!)
-    lyricsArtwork.contentMode = .scaleAspectFill
+    lyricsArtwork.contentMode = .scaleAspectFit
     lyricsArtwork.layer.cornerRadius = 8
     lyricsArtwork.clipsToBounds = true
     lyricsTitle.font = .systemFont(ofSize: 17, weight: .semibold)
@@ -308,13 +313,14 @@ class LargeCurrentlyPlayingPlayerView: UIView {
         return
       }
 
-      if song == self.appDelegate.player.currentlyPlaying?.asSong,
-         let structuredLyrics = lyricsList.getFirstSyncedLyricsOrUnsyncedAsDefault() {
+      guard song == self.appDelegate.player.currentlyPlaying?.asSong else { return }
+      if let structuredLyrics = lyricsList.getFirstSyncedLyricsOrUnsyncedAsDefault() {
         self.showLyrics(structuredLyrics: structuredLyrics)
       } else {
         self.showLyricsAreNotAvailable()
       }
     } catch {
+      guard song == self.appDelegate.player.currentlyPlaying?.asSong else { return }
       guard self.isLyricsViewAllowedToDisplay else {
         self.hideLyrics()
         return
@@ -344,7 +350,19 @@ class LargeCurrentlyPlayingPlayerView: UIView {
     }
   }
 
-  public func display(element: LargeDisplayElement) {
+  public func display(element: LargeDisplayElement, animated: Bool = true) {
+    displayAnimator?.stopAnimation(false)
+    displayAnimator?.finishAnimation(at: .end)
+    displayAnimator = nil
+    let changed = element != displayElement
+    let animate = changed && animated && window != nil && !UIAccessibility.isReduceMotionEnabled
+    layoutIfNeeded()
+    let sourceArtwork = displayElement == .lyrics ? lyricsArtwork : artworkImage!
+    let sourceFrame = sourceArtwork.convert(sourceArtwork.bounds, to: self)
+    let transitionImage = sourceArtwork.image
+    sourceArtwork.alpha = animate ? 0 : sourceArtwork.alpha
+    let previousContent = animate ? snapshotView(afterScreenUpdates: true) : nil
+    sourceArtwork.alpha = 1
     displayElement = element
     artworkShadowView.isHidden = element != .artwork
     // Hide the original stack as a whole; hiding its fixed-height arranged views
@@ -368,6 +386,31 @@ class LargeCurrentlyPlayingPlayerView: UIView {
       showVisualizer()
     }
     rootView?.controlView?.refreshLyricsButton()
+    if changed { rootView?.lyricsModeDidChange() }
+    guard animate, let previousContent else { return }
+    layoutIfNeeded()
+    let targetArtwork = element == .lyrics ? lyricsArtwork : artworkImage!
+    let movingArtwork = UIImageView(image: transitionImage)
+    movingArtwork.contentMode = .scaleAspectFit
+    movingArtwork.clipsToBounds = true
+    movingArtwork.layer.cornerRadius = 10
+    movingArtwork.frame = sourceFrame
+    previousContent.frame = bounds
+    addSubview(previousContent)
+    addSubview(movingArtwork)
+    targetArtwork.alpha = 0
+    let targetFrame = targetArtwork.convert(targetArtwork.bounds, to: self)
+    let animator = UIViewPropertyAnimator(duration: 0.55, dampingRatio: 0.88) {
+      previousContent.alpha = 0
+      movingArtwork.frame = targetFrame
+    }
+    animator.addCompletion { _ in
+      targetArtwork.alpha = 1
+      previousContent.removeFromSuperview()
+      movingArtwork.removeFromSuperview()
+    }
+    displayAnimator = animator
+    animator.startAnimation()
   }
 
   public func almostHideArtwork() {
@@ -431,7 +474,7 @@ class LargeCurrentlyPlayingPlayerView: UIView {
     rootView?.refreshOptionButton(button: lyricsOptions, rootView: rootView)
     rootView?.refreshFavoriteButton(button: favoriteButton)
     rootView?.refreshOptionButton(button: optionsButton, rootView: rootView)
-    display(element: displayElement)
+    display(element: displayElement, animated: false)
   }
 
   func refreshArtwork() {

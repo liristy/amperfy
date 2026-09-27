@@ -4,6 +4,27 @@ from pathlib import Path
 from urllib.parse import urlparse, parse_qs
 import io
 import wave
+import struct
+import zlib
+
+
+def rectangular_cover(second=False):
+    width, height = (320, 480) if second else (480, 320)
+    def chunk(kind, data):
+        return struct.pack('>I', len(data)) + kind + data + struct.pack('>I', zlib.crc32(kind + data))
+    pixels = bytearray()
+    for y in range(height):
+        pixels.append(0)
+        for x in range(width):
+            border = x < 12 or y < 12 or x >= width - 12 or y >= height - 12
+            pixels.extend((255, 240, 210) if border else
+                          (40 + x * 100 // width, 55 + y * 80 // height, 180) if not second else
+                          (30 + x * 50 // width, 90 + y * 100 // height, 135))
+    return (b'\x89PNG\r\n\x1a\n' + chunk(b'IHDR', struct.pack('>IIBBBBB', width, height, 8, 2, 0, 0, 0)) +
+            chunk(b'IDAT', zlib.compress(bytes(pixels))) + chunk(b'IEND', b''))
+
+
+COVERS = [rectangular_cover(), rectangular_cover(True)]
 
 audio_buffer = io.BytesIO()
 with wave.open(audio_buffer, 'wb') as audio:
@@ -23,6 +44,7 @@ ARTIST = '<artist id="artist-1" name="测试歌手" albumCount="1" coverArt="ar-
 ALBUM = '<album id="album-1" name="测试专辑" artist="测试歌手" artistId="artist-1" songCount="1" duration="180" coverArt="al-1" created="2026-01-01T00:00:00"/>'
 SONG = '<song id="song-1" title="测试歌曲" album="测试专辑" albumId="album-1" artist="测试歌手" artistId="artist-1" duration="180" size="1000000" suffix="mp3" contentType="audio/mpeg" isDir="false" coverArt="al-1"/>'
 SONG = SONG.replace('suffix="mp3"', 'suffix="wav"').replace('audio/mpeg', 'audio/wav')
+SECOND_SONG = SONG.replace('song-1', 'song-2').replace('测试歌曲', '下一首歌曲').replace('al-1', 'al-2')
 PLAYLIST = '<playlist id="playlist-1" name="测试歌单" songCount="1" duration="180" coverArt="pl-1_hash" owner="smoke" public="false"/>'
 
 
@@ -54,21 +76,21 @@ class Handler(BaseHTTPRequestHandler):
                 pass
             return
         if action == 'getCoverArt':
-            body = Path('AmperfyKit/Assets/Assets.xcassets/Icon-1024.imageset/Icon-1024.png').read_bytes()
+            body = COVERS[1 if query.get('id') == ['al-2'] else 0]
             mime = 'image/png'
         else:
             album_list = ALBUM if query.get('offset', ['0'])[0] == '0' else ''
             responses = {
                 'ping': '',
                 'getOpenSubsonicExtensions': '<openSubsonicExtensions name="songLyrics"><versions>1</versions></openSubsonicExtensions>',
-                'getSong': SONG,
+                'getSong': SECOND_SONG if query.get('id') == ['song-2'] else SONG,
                 'getLyricsBySongId': LYRICS,
                 'getGenres': '<genres><genre songCount="1" albumCount="1">Pop</genre></genres>',
                 'getArtists': f'<artists><index name="T">{ARTIST}</index></artists>',
                 'getArtist': f'<artist id="artist-1" name="测试歌手" albumCount="1">{ALBUM}</artist>',
                 'getAlbumList2': f'<albumList2>{album_list}</albumList2>',
                 'getAlbumList': f'<albumList>{album_list}</albumList>',
-                'getAlbum': f'<album id="album-1" name="测试专辑" artist="测试歌手" artistId="artist-1" songCount="1" coverArt="al-1">{SONG}</album>',
+                'getAlbum': f'<album id="album-1" name="测试专辑" artist="测试歌手" artistId="artist-1" songCount="2" coverArt="al-1">{SONG}{SECOND_SONG}</album>',
                 'getPlaylists': f'<playlists>{PLAYLIST}</playlists>',
                 'getPlaylist': PLAYLIST.replace('/>', '>') + SONG.replace('<song ', '<entry ') + '</playlist>',
                 'getPodcasts': '<podcasts/>',

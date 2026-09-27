@@ -149,24 +149,61 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
               guard let song = library.getSong(for: account, id: "song-1") else { return }
               try await syncer.sync(song: song)
               guard song.lyricsRelFilePath != nil else { return }
+              guard let nextSong = library.getSong(for: account, id: "song-2") else { return }
+              try await syncer.sync(song: nextSong)
               self.appDelegate.storage.settings.user.playerDisplayStyle = .large
-              self.appDelegate.storage.settings.user.isPlayerLyricsDisplayed = true
+              self.appDelegate.storage.settings.user.isPlayerLyricsDisplayed = false
               self.appDelegate.player.isAutoCachePlayedItems = false
-              self.appDelegate.player.play(context: PlayContext(name: "Lyrics smoke", playables: [song]))
+              self.appDelegate.player.play(context: PlayContext(name: "Gapless smoke", playables: [song, nextSong]))
               try await Task.sleep(for: .seconds(3))
               guard self.appDelegate.player.elapsedTime > 0 else { return }
-              self.appDelegate.player.seek(toSecond: 42)
-              try await Task.sleep(for: .seconds(1))
-              self.appDelegate.player.pause()
-              guard self.appDelegate.player.elapsedTime >= 41 else { return }
               vc.dismiss(animated: false)
               let popup = PopupPlayerVC()
               popup.modalPresentationStyle = .pageSheet
               popup.sheetPresentationController?.detents = [.large()]
               popup.sheetPresentationController?.prefersGrabberVisible = true
-              vc.present(popup, animated: false)
-              try await Task.sleep(for: .seconds(3))
+              vc.present(popup, animated: true)
+              try await Task.sleep(for: .seconds(2))
+              func screenshot(_ name: String) throws {
+                let image = UIGraphicsImageRenderer(bounds: popup.view.bounds).image { _ in
+                  popup.view.drawHierarchy(in: popup.view.bounds, afterScreenUpdates: true)
+                }
+                try image.pngData()?.write(to: URL.documentsDirectory.appendingPathComponent(name))
+              }
+              try screenshot("player-artwork-landscape.png")
+              // Leave enough time for the real engine to preload the second stream.
+              self.appDelegate.player.seek(toSecond: 174)
+              try await Task.sleep(for: .seconds(9))
+              guard self.appDelegate.player.currentlyPlaying == nextSong,
+                    popup.largeCurrentlyPlayingView?.titleLabel.text == nextSong.title else {
+                print("Gapless smoke: next audio and displayed song disagree")
+                return
+              }
+              print("Gapless playback updated song and player title")
+              try screenshot("player-next-song.png")
+              self.appDelegate.player.seek(toSecond: 42)
+              try await Task.sleep(for: .seconds(1))
+              self.appDelegate.player.pause()
+              guard self.appDelegate.player.elapsedTime >= 41 else { return }
+              self.appDelegate.storage.settings.user.isPlayerLyricsDisplayed = true
+              popup.largeCurrentlyPlayingView?.display(element: .lyrics)
+              try await Task.sleep(for: .seconds(1))
               popup.largeCurrentlyPlayingView?.refreshLyricsTime(time: CMTime(seconds: 42, preferredTimescale: 1000))
+              let heightWithControls = popup.largePlayerPlaceholderView.bounds.height
+              try screenshot("player-lyrics-controls.png")
+              try await Task.sleep(for: .seconds(5))
+              guard popup.areLyricsControlsHidden,
+                    popup.largePlayerPlaceholderView.bounds.height > heightWithControls + 200 else {
+                print("Lyrics controls did not hide and expand lyrics")
+                return
+              }
+              try screenshot("player-lyrics-immersive.png")
+              popup.restoreLyricsControls()
+              try await Task.sleep(for: .seconds(1))
+              guard !popup.areLyricsControlsHidden,
+                    abs(popup.largePlayerPlaceholderView.bounds.height - heightWithControls) < 1 else { return }
+              try screenshot("player-lyrics-restored.png")
+              print("Lyrics auto hide, expansion and tap restoration passed")
               let marker = URL.documentsDirectory.appendingPathComponent("player-smoke-ready")
               try "ready".write(to: marker, atomically: true, encoding: .utf8)
             } catch { print("Player smoke failed: \(error)") }

@@ -170,6 +170,8 @@ public class LibraryEntityImage: RoundedImage {
   }
 
   private func refresh() {
+    // Albums and playlist covers may be portrait or landscape images.
+    if !(entity is Artist) { contentMode = .scaleAspectFit }
     let imagePathToDisplay = entityImagePathToDisplay
 
     if let imagePathToDisplay,
