@@ -261,13 +261,12 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
               popup.updateInteractiveDismissal(translation: 28)
               popup.endInteractiveDismissal(translation: 28, velocity: 900)
               try await Task.sleep(for: .seconds(1))
-              guard vc.presentedViewController == nil else {
+              // Returning home can present the first-run welcome message. Check the
+              // player's own presentation relationship, not whether every modal is gone.
+              guard vc.presentedViewController !== popup, popup.presentingViewController == nil else {
                 smokeLog("Quick downward drag did not dismiss the player")
                 return
               }
-              miniPlayer.openPlayerView()
-              try await Task.sleep(for: .seconds(1))
-              guard vc.presentedViewController is PopupPlayerVC else { return }
               smokeLog("Cover zoom, cancelled dismissal, upward lyrics gesture and quick dismissal passed")
               let marker = URL.documentsDirectory.appendingPathComponent("player-smoke-ready")
               try "ready".write(to: marker, atomically: true, encoding: .utf8)

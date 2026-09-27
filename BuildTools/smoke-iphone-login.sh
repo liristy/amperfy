@@ -83,7 +83,7 @@ for attempt in {1..45}; do
   fi
   sleep 2
 done
-xcrun simctl io "$device_id" screenshot build/validation/player-lyrics-zh-Hans.png
+xcrun simctl io "$device_id" screenshot build/validation/player-dismissed-zh-Hans.png
 if [[ "$ready" != true ]]; then
   echo "Streaming/seek/lyrics smoke test failed"
   cat build/validation/player.stdout.log
@@ -91,6 +91,7 @@ if [[ "$ready" != true ]]; then
   exit 1
 fi
 echo "Original audio streaming, seek and synchronized lyrics smoke test passed"
+cat build/validation/player.stdout.log
 
 for screenshot in player-opening player-lyrics-upward player-artwork-landscape player-next-song player-lyrics-controls player-lyrics-immersive player-lyrics-restored; do
   cp "$container/Documents/$screenshot.png" "build/validation/$screenshot.png"
