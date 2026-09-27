@@ -32,6 +32,8 @@ class MiniPlayerView: UIView, UIGestureRecognizerDelegate {
 
   private var hoverOverlayView: UIView?
   private var trackPan: UIPanGestureRecognizer?
+  private var trackViewport: UIView?
+  private var trackContent: UIView?
   private var trackDragOverlay: UIView?
   private var trackDragContent: UIView?
   private var trackDragSong: AbstractPlayable?
@@ -658,6 +660,13 @@ class MiniPlayerView: UIView, UIGestureRecognizerDelegate {
     timeSlider.minimumTrackTintColor = .secondaryLabel
     timeSlider.maximumTrackTintColor = .clear
     let miniPlayerGotTouchedView = UIView()
+    miniPlayerGotTouchedView.clipsToBounds = true
+    let content = UIView()
+    content.isUserInteractionEnabled = false
+    content.translatesAutoresizingMaskIntoConstraints = false
+    miniPlayerGotTouchedView.addSubview(content)
+    trackViewport = miniPlayerGotTouchedView
+    trackContent = content
     let tapGesture = UITapGestureRecognizer(target: self, action: #selector(miniPlayerGotTouched))
     let pan = UIPanGestureRecognizer(target: self, action: #selector(handleTrackPan(_:)))
     pan.maximumNumberOfTouches = 1
@@ -680,15 +689,19 @@ class MiniPlayerView: UIView, UIGestureRecognizerDelegate {
     nextButton.translatesAutoresizingMaskIntoConstraints = false
 
     addSubview(miniPlayerGotTouchedView)
-    addSubview(artworkImage)
-    addSubview(titleLabel)
-    addSubview(subtitleLabel)
+    content.addSubview(artworkImage)
+    content.addSubview(titleLabel)
+    content.addSubview(subtitleLabel)
     addSubview(timeSlider)
     addSubview(liveLabel)
     addSubview(playButton)
     addSubview(nextButton)
 
     NSLayoutConstraint.activate([
+      content.leadingAnchor.constraint(equalTo: miniPlayerGotTouchedView.leadingAnchor),
+      content.trailingAnchor.constraint(equalTo: miniPlayerGotTouchedView.trailingAnchor),
+      content.topAnchor.constraint(equalTo: miniPlayerGotTouchedView.topAnchor),
+      content.bottomAnchor.constraint(equalTo: miniPlayerGotTouchedView.bottomAnchor),
       miniPlayerGotTouchedView.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 0),
       miniPlayerGotTouchedView.heightAnchor.constraint(equalTo: heightAnchor),
       miniPlayerGotTouchedView.bottomAnchor.constraint(equalTo: bottomAnchor),
@@ -758,27 +771,11 @@ class MiniPlayerView: UIView, UIGestureRecognizerDelegate {
 
   func beginTrackDrag() {
     resetTrackDrag()
-    guard let song = player.currentlyPlaying else { return }
+    guard let song = player.currentlyPlaying,
+          let overlay = trackViewport, let content = trackContent else { return }
     layoutIfNeeded()
-    let overlay = UIView(frame: CGRect(x: 0, y: 0, width: max(1, playButton.frame.minX - 8), height: bounds.height - 4))
-    overlay.clipsToBounds = true
-    overlay.isUserInteractionEnabled = false
-    let content = UIView(frame: overlay.bounds)
-    for view in [artworkImage, titleLabel, subtitleLabel] {
-      if !view.bounds.isEmpty {
-        // Material-backed tab accessories can return an empty snapshot view.
-        // Capture these small, ordinary content layers once at gesture start.
-        let image = UIGraphicsImageRenderer(bounds: view.bounds).image { context in
-          view.layer.render(in: context.cgContext)
-        }
-        let snapshot = UIImageView(image: image)
-        snapshot.frame = view.convert(view.bounds, to: self)
-        content.addSubview(snapshot)
-      }
-      view.alpha = 0
-    }
-    overlay.addSubview(content)
-    addSubview(overlay)
+    // Move the live content inside its viewport. Snapshot substitutes do not
+    // reliably retain the system tab accessory's material/vibrancy rendering.
     trackDragOverlay = overlay
     trackDragContent = content
     trackDragSong = song
@@ -820,7 +817,7 @@ class MiniPlayerView: UIView, UIGestureRecognizerDelegate {
   private func resetTrackDrag() {
     trackDragAnimator?.stopAnimation(true)
     trackDragAnimator = nil
-    trackDragOverlay?.removeFromSuperview()
+    trackContent?.transform = .identity
     trackDragOverlay = nil
     trackDragContent = nil
     trackDragSong = nil
