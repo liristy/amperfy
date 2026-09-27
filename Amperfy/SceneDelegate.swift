@@ -398,7 +398,7 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
                 try image.pngData()?.write(to: URL.documentsDirectory.appendingPathComponent("player-library-defaults.png"))
               }
               // Exercise the real Subsonic request without waiting half a long fixture track.
-              song.duration = 2
+              song.playDuration = 2
               library.saveContext()
               self.appDelegate.player.play(context: PlayContext(name: "Scrobble smoke", playables: [song]))
               try await Task.sleep(for: .seconds(3))

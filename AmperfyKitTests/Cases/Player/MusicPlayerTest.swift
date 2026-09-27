@@ -411,7 +411,7 @@ class MusicPlayerTest: XCTestCase {
   private func startScrobbleStream() async throws {
     storage.settings.user.isOnlineMode = true
     testPlayer.isAutoCachePlayedItems = false
-    songToDownload.duration = 100
+    songToDownload.playDuration = 100
     testPlayer.play(context: PlayContext(name: "Scrobble", playables: [songToDownload]))
     for _ in 0..<50 {
       if testPlayer.playType == .stream, testPlayer.isPlaying { break }
