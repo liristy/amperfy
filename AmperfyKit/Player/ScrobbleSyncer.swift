@@ -160,7 +160,7 @@ public class ScrobbleSyncer {
     songToBeScrobbled = song
     currentPlayDate = now()
     currentPlayWasCached = player.playType == .cache
-    playStartTimestamp = now()
+    playStartTimestamp = player.isPlaying ? now() : nil
     let duration = TimeInterval(song.duration)
     currentSongThreshold = duration > 0 ? min(duration / 2, Self.maximumWaitDurationInSec) : Self.maximumWaitDurationInSec
     scheduleSubmission()
@@ -222,7 +222,7 @@ extension ScrobbleSyncer: MusicPlayable {
   }
 
   public func didStartPlaying() {
-    guard let song = player.currentlyPlaying?.asSong, song.account == account else { return }
+    guard player.isPlaying, let song = player.currentlyPlaying?.asSong, song.account == account else { return }
     if songToBeScrobbled != song {
       beginPlay(song)
     } else if playStartTimestamp == nil {

@@ -498,6 +498,20 @@ class MusicPlayerTest: XCTestCase {
     XCTAssertEqual(library.getUploadableScrobbleEntryCount(for: account), 0)
   }
 
+  func testPreparedButPausedSongDoesNotCreateAListen() async throws {
+    try await startScrobbleStream()
+    testPlayer.pause()
+    var clock = Date()
+    let scrobbler = ScrobbleSyncer(player: testPlayer, networkMonitor: networkMonitor,
+      account: account, storage: storage, librarySyncer: MOCK_LibrarySyncer(), eventLogger: eventLogger, now: { clock })
+    scrobbler.didStartPlayingFromBeginning()
+    scrobbler.didStartPlaying()
+    clock = clock.addingTimeInterval(300)
+    scrobbler.didElapsedTimeChange()
+    scrobbler.didStopPlaying()
+    XCTAssertTrue(library.getScrobbleEntries(for: account).isEmpty)
+  }
+
   func testExplicitlyDisabledStreamingScrobblesStayDisabled() async throws {
     try await startScrobbleStream()
     storage.settings.accounts.updateSetting(account.info) { $0.isScrobbleStreamedItems = false }
