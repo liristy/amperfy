@@ -159,9 +159,8 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
               guard self.appDelegate.player.elapsedTime > 0 else { return }
               vc.dismiss(animated: false)
               let popup = PopupPlayerVC()
-              popup.modalPresentationStyle = .pageSheet
-              popup.sheetPresentationController?.detents = [.large()]
-              popup.sheetPresentationController?.prefersGrabberVisible = true
+              popup.modalPresentationStyle = .fullScreen
+              popup.modalTransitionStyle = .coverVertical
               vc.present(popup, animated: true)
               try await Task.sleep(for: .seconds(2))
               func screenshot(_ name: String) throws {

@@ -740,12 +740,8 @@ class MiniPlayerView: UIView {
   public func openPlayerView(completion: (() -> ())? = nil) {
     guard let hostVC = AppDelegate.mainWindowHostVC as? UIViewController else { return }
     let popupPlayer = PopupPlayerVC()
-    popupPlayer.modalPresentationStyle = .pageSheet
-    if let sheet = popupPlayer.sheetPresentationController {
-      sheet.detents = [.large()]
-      sheet.prefersGrabberVisible = true
-      sheet.preferredCornerRadius = 32
-    }
+    popupPlayer.modalPresentationStyle = .fullScreen
+    popupPlayer.modalTransitionStyle = .coverVertical
     hostVC.present(popupPlayer, animated: true, completion: completion)
   }
 

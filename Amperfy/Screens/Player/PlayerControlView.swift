@@ -212,7 +212,11 @@ class PlayerControlView: UIView {
   @IBAction
   func swipeHandler(_ gestureRecognizer: UISwipeGestureRecognizer) {
     if gestureRecognizer.state == .ended {
-      rootView?.closePopupPlayer()
+      if rootView?.largeCurrentlyPlayingView?.isDisplayingLyrics == true {
+        rootView?.setLyricsControlsHidden(true)
+      } else {
+        rootView?.closePopupPlayer()
+      }
     }
   }
 

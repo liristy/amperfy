@@ -48,6 +48,7 @@ class PopupPlayerVC: UIViewController, UIScrollViewDelegate, UIGestureRecognizer
   private var lyricsControlsTask: Task<Void, Never>?
   private(set) var areLyricsControlsHidden = false
   private var hasAnimatedEntrance = false
+  override var preferredStatusBarStyle: UIStatusBarStyle { .lightContent }
 
   lazy var tableViewKeyCommandsController = TableViewKeyCommandsController(
     tableView: tableView,
@@ -125,6 +126,27 @@ class PopupPlayerVC: UIViewController, UIScrollViewDelegate, UIGestureRecognizer
     }
 
     closeButtonPlaceholderView.isHidden = true
+    let closePlayer = UIButton(type: .system)
+    closePlayer.translatesAutoresizingMaskIntoConstraints = false
+    closePlayer.accessibilityLabel = "Close".localized
+    closePlayer.addTarget(self, action: #selector(dismissFullScreenPlayer), for: .touchUpInside)
+    let handle = UIView()
+    handle.translatesAutoresizingMaskIntoConstraints = false
+    handle.isUserInteractionEnabled = false
+    handle.backgroundColor = .white.withAlphaComponent(0.45)
+    handle.layer.cornerRadius = 2.5
+    closePlayer.addSubview(handle)
+    view.addSubview(closePlayer)
+    NSLayoutConstraint.activate([
+      closePlayer.centerXAnchor.constraint(equalTo: view.centerXAnchor),
+      closePlayer.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor, constant: -20),
+      closePlayer.widthAnchor.constraint(equalToConstant: 64),
+      closePlayer.heightAnchor.constraint(equalToConstant: 40),
+      handle.centerXAnchor.constraint(equalTo: closePlayer.centerXAnchor),
+      handle.centerYAnchor.constraint(equalTo: closePlayer.centerYAnchor),
+      handle.widthAnchor.constraint(equalToConstant: 36),
+      handle.heightAnchor.constraint(equalToConstant: 5),
+    ])
     configureAdaptiveLayout()
 
     setupTableView()
@@ -443,9 +465,10 @@ class PopupPlayerVC: UIViewController, UIScrollViewDelegate, UIGestureRecognizer
   }
 
   func closePopupPlayer() {
-    guard let hostingSplitVC = AppDelegate.mainWindowHostVC else { return }
-    hostingSplitVC.visualizePopupPlayer(direction: .close, animated: true)
+    dismiss(animated: true)
   }
+
+  @objc private func dismissFullScreenPlayer() { closePopupPlayer() }
 
   func closePopupPlayerAndDisplayInLibraryTab(vc: UIViewController) {
     guard let hostingSplitVC = AppDelegate.mainWindowHostVC else { return }
