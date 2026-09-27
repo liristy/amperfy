@@ -138,8 +138,7 @@ extension PopupPlayerVC: UITableViewDataSource, UITableViewDelegate {
     case .contextPrev: return 30.0 // bottom padding of prev section (space above currently playing cell)
     case .currentlyPlaying, .none, .userQueue: return 0.0
     case .contextNext: // calculate footer height to keep currently playing row on top of table view
-      let heightOfContextNextRows = tableView.frame.height - CurrentlyPlayingTableCell
-        .rowHeight - ContextQueueNextSectionHeader.frameHeight
+      let heightOfContextNextRows = tableView.frame.height - ContextQueueNextSectionHeader.frameHeight
       let contextNextRowOccupiedHeight = CGFloat(player.nextQueueCount) * PlayableTableCell
         .rowHeight
       let offset = heightOfContextNextRows - contextNextRowOccupiedHeight
@@ -163,7 +162,7 @@ extension PopupPlayerVC: UITableViewDataSource, UITableViewDelegate {
     case .contextNext, .contextPrev, .none, .userQueue:
       return PlayableTableCell.rowHeight
     case .currentlyPlaying:
-      return CurrentlyPlayingTableCell.rowHeight
+      return CGFloat.leastNormalMagnitude
     }
   }
 
@@ -184,18 +183,11 @@ extension PopupPlayerVC: UITableViewDataSource, UITableViewDelegate {
       cell.maskCell(fromTop: 0.0)
       return cell
     case .currentlyPlaying:
-      if let currentlyPlayingTableCell = currentlyPlayingTableCell {
-        return currentlyPlayingTableCell
-      } else {
-        let cell: CurrentlyPlayingTableCell = self.tableView.dequeueCell(
-          for: tableView,
-          at: indexPath
-        )
-        cell.prepare(toWorkOnRootView: self)
-        cell.backgroundColor = UIColor.clear
-        currentlyPlayingTableCell = cell
-        return cell
-      }
+      // Preserve the queue index/scroll anchor without duplicating the fixed header.
+      let marker = UITableViewCell(style: .default, reuseIdentifier: nil)
+      marker.backgroundColor = .clear
+      marker.isHidden = true
+      return marker
     case .none:
       return UITableViewCell()
     }

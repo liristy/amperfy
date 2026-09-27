@@ -383,41 +383,69 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
               guard activeLyricIsVisible() else { smokeLog("Restoring controls lost the lyrics highlight"); return }
               smokeLog("Lyrics stayed highlighted across immersive layout changes")
               try screenshot("player-lyrics-restored.png")
-              // Both compact headers must share one artwork size throughout the
-              // queue/lyrics transition, including its intermediate frames.
-              @MainActor func compactArtworkStayedSmall() async throws -> Bool {
-                var sampled = false
-                for _ in 0..<22 {
+              // The same header instances and screen rectangles must survive
+              // every frame, including reversal, scrolling and immersive layout.
+              guard let largeView = popup.largeCurrentlyPlayingView else { return }
+              let fixedElements = [largeView.compactHeader] + largeView.compactHeaderElements
+              let fixedFrames = fixedElements.map { $0.convert($0.bounds, to: popup.view) }
+              @MainActor func compactHeaderStayedFixed(samples: Int = 22) async throws -> Bool {
+                for _ in 0..<samples {
                   try await Task.sleep(for: .milliseconds(16))
-                  if let moving = descendants(of: popup.view).first(where: {
-                    $0.accessibilityIdentifier == "player-layout-transition-artwork"
-                  }) {
-                    sampled = true
-                    let width = moving.layer.presentation()?.bounds.width ?? moving.bounds.width
-                    if abs(width - CurrentlyPlayingTableCell.artworkSide) > 1 { return false }
+                  let elements = [largeView.compactHeader] + largeView.compactHeaderElements
+                  guard elements.count == fixedElements.count,
+                        !largeView.compactHeader.isHidden,
+                        largeView.compactHeader.alpha == 1,
+                        !descendants(of: popup.view).contains(where: {
+                          $0.accessibilityIdentifier == "player-layout-transition-artwork"
+                        }) else { return false }
+                  for (index, element) in elements.enumerated() {
+                    guard element === fixedElements[index], !element.isHidden, element.alpha == 1 else { return false }
+                    let layer = element.layer.presentation() ?? element.layer
+                    let frame = layer.convert(layer.bounds, to: popup.view.layer.presentation() ?? popup.view.layer)
+                    let expected = fixedFrames[index]
+                    guard abs(frame.minX - expected.minX) < 0.5,
+                          abs(frame.minY - expected.minY) < 0.5,
+                          abs(frame.width - expected.width) < 0.5,
+                          abs(frame.height - expected.height) < 0.5 else {
+                      smokeLog("Compact header moved: element \(index), \(frame), expected \(expected)")
+                      return false
+                    }
                   }
                 }
-                return sampled
+                return true
               }
-              guard abs((popup.transitionArtwork?.bounds.width ?? 0) - CurrentlyPlayingTableCell.artworkSide) < 1 else { return }
               popup.controlView?.displayPlaylistPressed()
-              guard try await compactArtworkStayedSmall(),
-                    self.appDelegate.storage.settings.user.playerDisplayStyle == .compact,
-                    abs((popup.transitionArtwork?.bounds.width ?? 0) - CurrentlyPlayingTableCell.artworkSide) < 1 else {
-                smokeLog("Lyrics to queue enlarged the compact artwork")
+              guard try await compactHeaderStayedFixed(),
+                    self.appDelegate.storage.settings.user.playerDisplayStyle == .compact else {
+                smokeLog("Lyrics to queue moved the fixed header")
                 return
               }
               try screenshot("player-queue-from-lyrics.png")
+              let queueOffset = popup.tableView.contentOffset
+              popup.tableView.setContentOffset(CGPoint(x: 0, y: queueOffset.y + 60), animated: false)
+              guard try await compactHeaderStayedFixed(samples: 3) else { return }
+              popup.tableView.setContentOffset(queueOffset, animated: false)
               popup.controlView?.lyricsButton.sendActions(for: .touchUpInside)
-              guard try await compactArtworkStayedSmall(),
-                    popup.largeCurrentlyPlayingView?.isDisplayingLyrics == true,
-                    self.appDelegate.storage.settings.user.playerDisplayStyle == .large,
-                    abs((popup.transitionArtwork?.bounds.width ?? 0) - CurrentlyPlayingTableCell.artworkSide) < 1 else {
-                smokeLog("Queue to lyrics enlarged the compact artwork")
+              guard try await compactHeaderStayedFixed(),
+                    largeView.isDisplayingLyrics,
+                    self.appDelegate.storage.settings.user.playerDisplayStyle == .large else {
+                smokeLog("Queue to lyrics moved the fixed header")
                 return
               }
               try screenshot("player-lyrics-from-queue.png")
-              smokeLog("Lyrics and queue artwork stayed the same size throughout both transitions")
+              for _ in 0..<3 {
+                popup.controlView?.displayPlaylistPressed()
+                guard try await compactHeaderStayedFixed(samples: 3) else { return }
+                popup.controlView?.lyricsButton.sendActions(for: .touchUpInside)
+                guard try await compactHeaderStayedFixed(samples: 3) else { return }
+              }
+              popup.setLyricsControlsHidden(true)
+              guard try await compactHeaderStayedFixed() else { return }
+              popup.controlView?.displayPlaylistPressed()
+              guard try await compactHeaderStayedFixed() else { return }
+              popup.controlView?.lyricsButton.sendActions(for: .touchUpInside)
+              guard try await compactHeaderStayedFixed() else { return }
+              smokeLog("Shared header identity, position and size stayed fixed through switching, reversal, queue scrolling and immersive controls")
               guard let lyricsView = descendants(of: popup.view).compactMap({ $0 as? LyricsView }).first else { return }
               lyricsView.handleDrag(velocity: CGPoint(x: 0, y: 300))
               guard !popup.areLyricsControlsHidden else { return }

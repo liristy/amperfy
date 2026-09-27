@@ -67,7 +67,6 @@ class PopupPlayerVC: UIViewController, UIScrollViewDelegate, UIGestureRecognizer
   var largeCurrentlyPlayingView: LargeCurrentlyPlayingPlayerView?
   var accountNotificationHandler: AccountNotificationHandler?
 
-  var currentlyPlayingTableCell: CurrentlyPlayingTableCell?
   var contextPrevQueueSectionHeader: ContextQueuePrevSectionHeader?
   var userQueueSectionHeader: UserQueueSectionHeader?
   var contextNextQueueSectionHeader: ContextQueueNextSectionHeader?
@@ -219,6 +218,8 @@ class PopupPlayerVC: UIViewController, UIScrollViewDelegate, UIGestureRecognizer
 
   override func viewDidLayoutSubviews() {
     super.viewDidLayoutSubviews()
+    largeCurrentlyPlayingView?.setNeedsLayout()
+    largeCurrentlyPlayingView?.layoutIfNeeded()
     refreshCellMasks()
     applyGradientBackground()
   }
@@ -338,9 +339,6 @@ class PopupPlayerVC: UIViewController, UIScrollViewDelegate, UIGestureRecognizer
   }
 
   var transitionArtwork: UIImageView? {
-    if appDelegate.storage.settings.user.playerDisplayStyle == .compact {
-      return currentlyPlayingTableCell?.artworkImage
-    }
     return largeCurrentlyPlayingView?.transitionArtwork
   }
 
@@ -396,8 +394,16 @@ class PopupPlayerVC: UIViewController, UIScrollViewDelegate, UIGestureRecognizer
   }
 
   private func configureAdaptiveLayout() {
+    // The queue begins below the same fixed header used by lyrics.
+    for constraint in view.constraints where
+      (constraint.firstItem as? UIView) === tableView && constraint.firstAttribute == .top {
+      constraint.isActive = false
+    }
+    tableView.topAnchor.constraint(equalTo: largePlayerPlaceholderView.topAnchor,
+                                   constant: CurrentlyPlayingTableCell.rowHeight + 8).isActive = true
     let contentViews: [UIView] = [largePlayerPlaceholderView, tableView, controlPlaceholderView]
     portraitLayoutConstraints = view.constraints.filter { constraint in
+      (constraint.firstItem as? UIView) !== largeCurrentlyPlayingView?.compactHeader &&
       contentViews.contains { content in
         (constraint.firstItem as? UIView) === content ||
           (constraint.secondItem as? UIView) === content
@@ -430,7 +436,8 @@ class PopupPlayerVC: UIViewController, UIScrollViewDelegate, UIGestureRecognizer
       ),
       tableView.leadingAnchor.constraint(equalTo: largePlayerPlaceholderView.leadingAnchor),
       tableView.trailingAnchor.constraint(equalTo: largePlayerPlaceholderView.trailingAnchor),
-      tableView.topAnchor.constraint(equalTo: largePlayerPlaceholderView.topAnchor),
+      tableView.topAnchor.constraint(equalTo: largePlayerPlaceholderView.topAnchor,
+                                     constant: CurrentlyPlayingTableCell.rowHeight + 8),
       tableView.bottomAnchor.constraint(equalTo: largePlayerPlaceholderView.bottomAnchor),
     ]
   }

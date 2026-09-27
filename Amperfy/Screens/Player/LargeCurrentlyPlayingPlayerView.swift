@@ -135,9 +135,16 @@ class LargeCurrentlyPlayingPlayerView: UIView {
   private let lyricsTitle = UILabel()
   private let lyricsArtist = UILabel()
   private let lyricsOptions = UIButton(type: .system)
+  private let compactFavorite = UIButton(type: .system)
   private var displayAnimator: UIViewPropertyAnimator?
   var isDisplayingLyrics: Bool { displayElement == .lyrics }
-  var transitionArtwork: UIImageView { displayElement == .lyrics ? lyricsArtwork : artworkImage }
+  var transitionArtwork: UIImageView { lyricsHeader.isHidden ? artworkImage : lyricsArtwork }
+  var compactHeader: UIView { lyricsHeader }
+  var compactHeaderElements: [UIView] { [lyricsArtwork, lyricsTitle, lyricsArtist] }
+
+  func updateCompactHeaderVisibility() {
+    lyricsHeader.isHidden = appDelegate.storage.settings.user.playerDisplayStyle != .compact && !isDisplayingLyrics
+  }
 
   @IBOutlet
   weak var upperContainerView: UIView!
@@ -178,10 +185,10 @@ class LargeCurrentlyPlayingPlayerView: UIView {
     let headerHeight = CurrentlyPlayingTableCell.rowHeight
     let artworkSide = CurrentlyPlayingTableCell.artworkSide
     let textX = artworkSide + 14
-    lyricsHeader.frame = CGRect(x: 8, y: 0, width: bounds.width - 16, height: headerHeight)
     lyricsArtwork.frame = CGRect(x: 0, y: (headerHeight - artworkSide) / 2, width: artworkSide, height: artworkSide)
-    lyricsTitle.frame = CGRect(x: textX, y: 23, width: max(0, lyricsHeader.bounds.width - textX - 48), height: 24)
-    lyricsArtist.frame = CGRect(x: textX, y: 48, width: max(0, lyricsHeader.bounds.width - textX - 48), height: 22)
+    lyricsTitle.frame = CGRect(x: textX, y: 23, width: max(0, lyricsHeader.bounds.width - textX - 88), height: 24)
+    lyricsArtist.frame = CGRect(x: textX, y: 48, width: max(0, lyricsHeader.bounds.width - textX - 88), height: 22)
+    compactFavorite.frame = CGRect(x: lyricsHeader.bounds.width - 80, y: 27, width: 40, height: 40)
     lyricsOptions.frame = CGRect(x: lyricsHeader.bounds.width - 40, y: 27, width: 40, height: 40)
     lyricsView?.frame = CGRect(x: 0, y: headerHeight + 8, width: bounds.width, height: max(0, bounds.height - headerHeight - 8))
     visualizerHostingView?.hostingController?.view.frame = upperContainerView.bounds
@@ -238,8 +245,22 @@ class LargeCurrentlyPlayingPlayerView: UIView {
     lyricsOptions.tintColor = .white
     lyricsOptions.backgroundColor = .clear
     lyricsOptions.accessibilityLabel = "Song options".localized
-    [lyricsArtwork, lyricsTitle, lyricsArtist, lyricsOptions].forEach { lyricsHeader.addSubview($0) }
-    addSubview(lyricsHeader)
+    compactFavorite.accessibilityLabel = "Favorite".localized
+    compactFavorite.addTarget(self, action: #selector(compactFavoritePressed), for: .touchUpInside)
+    [lyricsArtwork, lyricsTitle, lyricsArtist, compactFavorite, lyricsOptions].forEach { lyricsHeader.addSubview($0) }
+    // One persistent header lives outside both switching/scrolling content views.
+    // Its parent, constraints, typography and image stay identical in queue and lyrics.
+    if let rootView {
+      lyricsHeader.translatesAutoresizingMaskIntoConstraints = false
+      rootView.view.addSubview(lyricsHeader)
+      NSLayoutConstraint.activate([
+        lyricsHeader.leadingAnchor.constraint(equalTo: rootView.largePlayerPlaceholderView.leadingAnchor, constant: 8),
+        lyricsHeader.trailingAnchor.constraint(equalTo: rootView.largePlayerPlaceholderView.trailingAnchor, constant: -8),
+        lyricsHeader.topAnchor.constraint(equalTo: rootView.largePlayerPlaceholderView.topAnchor),
+        lyricsHeader.heightAnchor.constraint(equalToConstant: CurrentlyPlayingTableCell.rowHeight),
+      ])
+    }
+    updateCompactHeaderVisibility()
 
     visualizerHostingView = SwiftUIContentView()
     visualizerHostingView!.hostingController?.view.frame = upperContainerView.bounds
@@ -384,7 +405,7 @@ class LargeCurrentlyPlayingPlayerView: UIView {
     // Hide the original stack as a whole; hiding its fixed-height arranged views
     // independently would introduce conflicting UIStackView height constraints.
     upperContainerView.superview?.isHidden = element == .lyrics
-    lyricsHeader.isHidden = element != .lyrics
+    updateCompactHeaderVisibility()
     setNeedsLayout()
 
     switch element {
@@ -488,6 +509,7 @@ class LargeCurrentlyPlayingPlayerView: UIView {
     lyricsArtist.text = artistLabel.text
     rootView?.playerHandler?.refreshArtwork(artworkImage: lyricsArtwork)
     rootView?.refreshOptionButton(button: lyricsOptions, rootView: rootView)
+    rootView?.refreshFavoriteButton(button: compactFavorite)
     rootView?.refreshFavoriteButton(button: favoriteButton)
     rootView?.refreshOptionButton(button: optionsButton, rootView: rootView)
     display(element: displayElement, animated: false)
@@ -505,10 +527,20 @@ class LargeCurrentlyPlayingPlayerView: UIView {
 
   @objc
   func lyricsArtworkPressed() {
+    if appDelegate.storage.settings.user.playerDisplayStyle == .compact {
+      appDelegate.storage.settings.user.isPlayerLyricsDisplayed = false
+      appDelegate.storage.settings.user.isPlayerVisualizerDisplayed = false
+      rootView?.controlView?.displayPlaylistPressed()
+      return
+    }
     guard isDisplayingLyrics else { return }
     appDelegate.storage.settings.user.isPlayerLyricsDisplayed = false
     appDelegate.storage.settings.user.isPlayerVisualizerDisplayed = false
     display(element: .artwork)
+  }
+
+  @objc private func compactFavoritePressed() {
+    rootView?.favoritePressed()
   }
 
   @IBAction

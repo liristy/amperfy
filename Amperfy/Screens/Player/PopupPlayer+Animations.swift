@@ -139,188 +139,52 @@ extension PopupPlayerVC {
   }
 
   func changeDisplayStyleVisually(to displayStyle: PlayerDisplayStyle, animated: Bool = true) {
-    largeCurrentlyPlayingView?.finishDisplayAnimation()
+    guard let largeView = largeCurrentlyPlayingView else { return }
+    largeView.finishDisplayAnimation()
+    let headerWasVisible = !largeView.compactHeader.isHidden
+    let sourceArtwork = largeView.transitionArtwork
+    let sourceFrame = sourceArtwork.convert(sourceArtwork.bounds, to: view)
     lyricsModeDidChange()
-    var viewToDisapper: UIView?
-    var artworkToDisapper: UIView?
-    var detailsContainerToDisapper: UIView?
-    var favoriteToDisapper: UIView?
-    var optionsToDisapper: UIView?
 
-    var viewToApper: UIView?
-    var artworkToApper: UIView?
-    var detailsContainerToApper: UIView?
-    var favoriteToApper: UIView?
-    var optionsToApper: UIView?
-
-    switch displayStyle {
-    case .compact:
-      viewToDisapper = largePlayerPlaceholderView
-      artworkToDisapper = largeCurrentlyPlayingView?.transitionArtwork
-      detailsContainerToDisapper = largeCurrentlyPlayingView?.detailsContainer
-      favoriteToDisapper = largeCurrentlyPlayingView?.favoriteButton
-      optionsToDisapper = largeCurrentlyPlayingView?.optionsButton
-      viewToApper = tableView
-      artworkToApper = currentlyPlayingTableCell?.artworkImage
-      detailsContainerToApper = currentlyPlayingTableCell
-      favoriteToApper = currentlyPlayingTableCell?.favoriteButton
-      optionsToApper = currentlyPlayingTableCell?.optionsButton
+    if displayStyle == .large {
+      largeView.display(element: largeView.getDisplayElementBasedOnConfig(), animated: false)
+    } else {
       scrollToCurrentlyPlayingRow()
-      currentlyPlayingTableCell?.refresh()
-    case .large:
-      if let largeView = largeCurrentlyPlayingView {
-        // Prepare the destination before measuring it: queue -> lyrics must
-        // travel directly to the lyrics header, not via the hidden large cover.
-        largeView.display(element: largeView.getDisplayElementBasedOnConfig(), animated: false)
-      }
-      viewToDisapper = tableView
-      artworkToDisapper = currentlyPlayingTableCell?.artworkImage
-      detailsContainerToDisapper = currentlyPlayingTableCell
-      favoriteToDisapper = currentlyPlayingTableCell?.favoriteButton
-      optionsToDisapper = currentlyPlayingTableCell?.optionsButton
-      viewToApper = largePlayerPlaceholderView
-      artworkToApper = largeCurrentlyPlayingView?.transitionArtwork
-      detailsContainerToApper = largeCurrentlyPlayingView?.detailsContainer
-      favoriteToApper = largeCurrentlyPlayingView?.favoriteButton
-      optionsToApper = largeCurrentlyPlayingView?.optionsButton
-      largeCurrentlyPlayingView?.refresh()
+    }
+    largeView.updateCompactHeaderVisibility()
+    view.layoutIfNeeded()
+    let targetArtwork = largeView.transitionArtwork
+    let headerIsVisible = !largeView.compactHeader.isHidden
+    let outgoing: UIView = displayStyle == .compact ? largePlayerPlaceholderView : tableView
+    let incoming: UIView = displayStyle == .compact ? tableView : largePlayerPlaceholderView
+    outgoing.layer.removeAllAnimations()
+    incoming.layer.removeAllAnimations()
+
+    guard animated, !UIAccessibility.isReduceMotionEnabled else {
+      outgoing.alpha = 0
+      outgoing.isHidden = true
+      incoming.alpha = 1
+      incoming.isHidden = false
+      return
     }
 
-    guard let viewToDisapper = viewToDisapper,
-          let viewToApper = viewToApper
-    else { return }
-
-    if animated, !UIAccessibility.isReduceMotionEnabled {
-      guard let artworkToDisapper = artworkToDisapper,
-            let artworkToApper = artworkToApper,
-            let detailsContainerToDisapper = detailsContainerToDisapper,
-            let detailsContainerToApper = detailsContainerToApper,
-            let favoriteToDisapper = favoriteToDisapper,
-            let favoriteToApper = favoriteToApper,
-            let optionsToDisapper = optionsToDisapper,
-            let optionsToApper = optionsToApper
-      else {
-        viewToDisapper.alpha = 0
-        viewToDisapper.isHidden = true
-        viewToApper.alpha = 1
-        viewToApper.isHidden = false
-        return
-      }
-
-      // 1. Force autolayout to layout
-      artworkToApper.layoutIfNeeded()
-      // 2. Calculate source and target frames
-      var artworkSourceFrame = view.convert(artworkToDisapper.bounds, from: artworkToDisapper)
-      artworkSourceFrame = limitSizeToInsideThePlaceholder(
-        targetFrame: artworkSourceFrame,
-        placeholderFrame: largePlayerPlaceholderView.frame
-      )
-      var artworkTargetFrame = view.convert(artworkToApper.bounds, from: artworkToApper)
-      artworkTargetFrame = limitSizeToInsideThePlaceholder(
-        targetFrame: artworkTargetFrame,
-        placeholderFrame: largePlayerPlaceholderView.frame
-      )
-      // 3. Create fake image and animate it
+    // Lyrics <-> queue keeps the exact same header views on screen, untouched.
+    // Only transitions to/from the large cover animate artwork geometry.
+    if !(headerWasVisible && headerIsVisible) {
       animateArtwork(
-        image: largeCurrentlyPlayingView?.artworkImage.image,
-        sourceView: artworkToDisapper,
-        targetView: artworkToApper,
-        sourceFrame: artworkSourceFrame,
-        targetFrame: artworkTargetFrame
+        image: sourceArtwork.image,
+        sourceView: sourceArtwork,
+        targetView: targetArtwork,
+        sourceFrame: sourceFrame,
+        targetFrame: targetArtwork.convert(targetArtwork.bounds, to: view)
       )
-
-      if largeCurrentlyPlayingView?.isDisplayingLyrics != true {
-        favoriteToApper.layoutIfNeeded()
-        var favoriteSourceFrame = view.convert(
-          favoriteToDisapper.frame,
-          from: detailsContainerToDisapper
-        )
-        favoriteSourceFrame = limitSizeToInsideThePlaceholder(
-          targetFrame: favoriteSourceFrame,
-          placeholderFrame: largePlayerPlaceholderView.frame
-        )
-        var favoriteTargetFrame = view.convert(favoriteToApper.frame, from: detailsContainerToApper)
-        favoriteTargetFrame = limitSizeToInsideThePlaceholder(
-          targetFrame: favoriteTargetFrame,
-          placeholderFrame: largePlayerPlaceholderView.frame
-        )
-        animateFavorite(
-          sourceView: favoriteToDisapper,
-          targetView: favoriteToApper,
-          sourceFrame: favoriteSourceFrame,
-          targetFrame: favoriteTargetFrame
-        )
-
-        optionsToApper.layoutIfNeeded()
-        var optionsSourceFrame = view.convert(
-          optionsToDisapper.frame,
-          from: detailsContainerToDisapper
-        )
-        optionsSourceFrame = limitSizeToInsideThePlaceholder(
-          targetFrame: optionsSourceFrame,
-          placeholderFrame: largePlayerPlaceholderView.frame
-        )
-        var optionsTargetFrame = view.convert(optionsToApper.frame, from: detailsContainerToApper)
-        optionsTargetFrame = limitSizeToInsideThePlaceholder(
-          targetFrame: optionsTargetFrame,
-          placeholderFrame: largePlayerPlaceholderView.frame
-        )
-        animateOptions(
-          sourceView: optionsToDisapper,
-          targetView: optionsToApper,
-          sourceFrame: optionsSourceFrame,
-          targetFrame: optionsTargetFrame
-        )
-      }
-
-      viewToDisapper.isHidden = false
-      viewToApper.isHidden = false
-      UIView.animate(
-        withDuration: Self.displaStyleAnimationDuration * 2 / 3,
-        delay: 0,
-        animations: ({
-          viewToDisapper.alpha = 0.0
-        }),
-        completion: nil
-      )
-      UIView.animate(
-        withDuration: Self.displaStyleAnimationDuration * 2 / 3,
-        delay: Self.displaStyleAnimationDuration / 3,
-        animations: ({
-          viewToApper.alpha = 1.0
-        }),
-        completion: nil
-      )
-
-    } else {
-      viewToDisapper.alpha = 0.0
-      viewToApper.alpha = 1.0
-      viewToDisapper.isHidden = true
-      viewToApper.isHidden = false
     }
-  }
-
-  private func limitSizeToInsideThePlaceholder(
-    targetFrame: CGRect,
-    placeholderFrame: CGRect
-  )
-    -> CGRect {
-    if targetFrame.origin.y < placeholderFrame.origin.y - targetFrame.height {
-      return CGRect(
-        x: targetFrame.origin.x,
-        y: placeholderFrame.origin.y - targetFrame.height,
-        width: targetFrame.width,
-        height: targetFrame.height
-      )
-    } else if targetFrame.origin.y > placeholderFrame.origin.y + placeholderFrame.height {
-      return CGRect(
-        x: targetFrame.origin.x,
-        y: placeholderFrame.origin.y + placeholderFrame.height,
-        width: targetFrame.width,
-        height: targetFrame.height
-      )
-    } else {
-      return targetFrame
+    outgoing.isHidden = false
+    incoming.isHidden = false
+    UIView.animate(withDuration: Self.displaStyleAnimationDuration, delay: 0,
+                   options: [.beginFromCurrentState, .allowUserInteraction, .curveEaseInOut]) {
+      outgoing.alpha = 0
+      incoming.alpha = 1
     }
   }
 
@@ -349,40 +213,6 @@ extension PopupPlayerVC {
 
     animatePlayStyleObject(
       object: fakeImageView,
-      sourceView: sourceView,
-      targetView: targetView,
-      sourceFrame: sourceFrame,
-      targetFrame: targetFrame
-    )
-  }
-
-  private func animateFavorite(
-    sourceView: UIView,
-    targetView: UIView,
-    sourceFrame: CGRect,
-    targetFrame: CGRect
-  ) {
-    let fakeButton = UIButton(frame: sourceFrame)
-    refreshFavoriteButton(button: fakeButton)
-    animatePlayStyleObject(
-      object: fakeButton,
-      sourceView: sourceView,
-      targetView: targetView,
-      sourceFrame: sourceFrame,
-      targetFrame: targetFrame
-    )
-  }
-
-  private func animateOptions(
-    sourceView: UIView,
-    targetView: UIView,
-    sourceFrame: CGRect,
-    targetFrame: CGRect
-  ) {
-    let fakeButton = UIButton(frame: sourceFrame)
-    refreshOptionButton(button: fakeButton, rootView: self)
-    animatePlayStyleObject(
-      object: fakeButton,
       sourceView: sourceView,
       targetView: targetView,
       sourceFrame: sourceFrame,
