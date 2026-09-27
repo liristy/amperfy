@@ -109,7 +109,10 @@ done
 python3 - <<'PY'
 import json
 from pathlib import Path
-records = [json.loads(line.split(' ', 1)[1]) for line in Path('build/validation/server.log').read_text().splitlines() if line.startswith('SCROBBLE ')]
+# Concurrent HTTP request logs may follow the JSON before its newline. Decode
+# exactly one JSON value, rather than requiring the whole line to be JSON.
+decoder = json.JSONDecoder()
+records = [decoder.raw_decode(part)[0] for part in Path('build/validation/server.log').read_text().split('SCROBBLE ')[1:]]
 assert any(r['submission'] == ['false'] for r in records), 'Missing now-playing notification'
 assert any(r['id'] == ['song-1'] and r['submission'] == ['true'] and int(r['time'][0]) > 0 for r in records), 'Missing completed listen with play timestamp'
 print('Subsonic now-playing and timestamped listening-history submission passed')

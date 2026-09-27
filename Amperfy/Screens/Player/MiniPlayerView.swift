@@ -765,8 +765,14 @@ class MiniPlayerView: UIView, UIGestureRecognizerDelegate {
     overlay.isUserInteractionEnabled = false
     let content = UIView(frame: overlay.bounds)
     for view in [artworkImage, titleLabel, subtitleLabel] {
-      if let snapshot = view.snapshotView(afterScreenUpdates: false) {
-        snapshot.frame = view.frame
+      if !view.bounds.isEmpty {
+        // Material-backed tab accessories can return an empty snapshot view.
+        // Capture these small, ordinary content layers once at gesture start.
+        let image = UIGraphicsImageRenderer(bounds: view.bounds).image { context in
+          view.layer.render(in: context.cgContext)
+        }
+        let snapshot = UIImageView(image: image)
+        snapshot.frame = view.convert(view.bounds, to: self)
         content.addSubview(snapshot)
       }
       view.alpha = 0
