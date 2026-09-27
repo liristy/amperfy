@@ -347,7 +347,7 @@ class PlayerUIHandler: NSObject {
 
   func refreshArtwork(artworkImage: LibraryEntityImage) {
     if let playableInfo = player.currentlyPlaying {
-      artworkImage.display(entity: playableInfo)
+      artworkImage.displayAndUpdate(entity: playableInfo)
     } else {
       switch player.playerMode {
       case .music:

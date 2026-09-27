@@ -127,17 +127,18 @@ class TabBarVC: UITabBarController {
 
     miniPlayer = MiniPlayerView(player: appDelegate.player)
     miniPlayer!.configureForiOS()
-    miniPlayer!.glassContainer.translatesAutoresizingMaskIntoConstraints = false
-
-    let accessory = UITabAccessory(contentView: miniPlayer!.glassContainer)
-    bottomAccessory = accessory
-
-    heightConstraint = miniPlayer!.glassContainer.heightAnchor.constraint(equalToConstant: 56.0)
-    heightConstraint?.isActive = true
-    compactWidthConstraint = miniPlayer!.glassContainer.widthAnchor
-      .constraint(equalTo: miniPlayer!.glassContainer.superview!.widthAnchor)
-
-    miniPlayer!.tabAccessoryTraitChangeCB = configureTraitChangesForMiniPlayer
+    let playerContainer = miniPlayer!.glassContainer
+    playerContainer.translatesAutoresizingMaskIntoConstraints = false
+    playerContainer.clipsToBounds = true
+    playerContainer.layer.cornerRadius = 28
+    playerContainer.layer.cornerCurve = .continuous
+    view.addSubview(playerContainer)
+    // A separate floating bar keeps a real gap above the system tab bar.
+    miniPlayerTabBarBottom = playerContainer.bottomAnchor.constraint(equalTo: tabBar.topAnchor, constant: -12)
+    miniPlayerSafeAreaBottom = playerContainer.bottomAnchor.constraint(equalTo: view.safeAreaLayoutGuide.bottomAnchor, constant: -12)
+    NSLayoutConstraint.activate([
+      playerContainer.heightAnchor.constraint(equalToConstant: 56),
+    ])
     configureTraitChangesForMiniPlayer()
 
     registerForTraitChanges(
@@ -163,51 +164,37 @@ class TabBarVC: UITabBarController {
     return view
   }
 
-  var centerConstraint: NSLayoutConstraint?
-  var regularWidthConstraint: NSLayoutConstraint?
-  var heightConstraint: NSLayoutConstraint?
-  var compactWidthConstraint: NSLayoutConstraint?
+  private weak var miniPlayerLayoutGuideView: UIView?
+  private var miniPlayerHorizontalConstraints = [NSLayoutConstraint]()
+  private var miniPlayerTabBarBottom: NSLayoutConstraint?
+  private var miniPlayerSafeAreaBottom: NSLayoutConstraint?
 
   func configureTraitChangesForMiniPlayer() {
     guard let miniPlayer else { return }
-    let isInline = miniPlayer.glassContainer.traitCollection.tabAccessoryEnvironment == .inline
-
-    if traitCollection.horizontalSizeClass == .regular {
-      centerConstraint?.isActive = false
-      centerConstraint = miniPlayer.glassContainer.safeAreaLayoutGuide.centerXAnchor.constraint(
-        equalTo: mainContent().safeAreaLayoutGuide.centerXAnchor,
-        constant: 0
-      )
-      let mainContentView = mainContent()
-      var playerWidth = mainContentView.frame.width - mainContentView.safeAreaInsets
-        .left - mainContentView.safeAreaInsets.right
-      playerWidth = min(playerWidth, 600)
-      compactWidthConstraint?.isActive = false
-      regularWidthConstraint?.isActive = false
-      regularWidthConstraint = miniPlayer.glassContainer.widthAnchor
-        .constraint(equalToConstant: playerWidth)
-      regularWidthConstraint?.isActive = true
-      centerConstraint?.isActive = true
-      heightConstraint?.constant = 60.0
-    } else if isInline {
-      heightConstraint?.constant = 48.0
-      centerConstraint?.isActive = false
-      regularWidthConstraint?.isActive = false
-      compactWidthConstraint?.isActive = true
-    } else {
-      heightConstraint?.constant = 56.0
-      centerConstraint?.isActive = false
-      regularWidthConstraint?.isActive = false
-      compactWidthConstraint?.isActive = true
-    }
-
-    miniPlayer.glassContainer.setNeedsLayout()
-    miniPlayer.glassContainer.layoutIfNeeded()
+    let usesTopTabs = traitCollection.horizontalSizeClass == .regular
+    miniPlayerTabBarBottom?.isActive = !usesTopTabs
+    miniPlayerSafeAreaBottom?.isActive = usesTopTabs
+    let content = mainContent()
+    // Layout runs during every scroll and animation. Rebuild constraints only
+    // when switching content/sidebar, never force a nested layout pass here.
+    guard miniPlayerLayoutGuideView !== content else { return }
+    NSLayoutConstraint.deactivate(miniPlayerHorizontalConstraints)
+    let container = miniPlayer.glassContainer
+    let width = container.widthAnchor.constraint(equalTo: content.safeAreaLayoutGuide.widthAnchor, constant: -32)
+    width.priority = .defaultHigh
+    miniPlayerHorizontalConstraints = [
+      container.centerXAnchor.constraint(equalTo: content.safeAreaLayoutGuide.centerXAnchor),
+      width,
+      container.widthAnchor.constraint(lessThanOrEqualToConstant: 600),
+    ]
+    NSLayoutConstraint.activate(miniPlayerHorizontalConstraints)
+    miniPlayerLayoutGuideView = content
   }
 
   override func viewWillLayoutSubviews() {
     super.viewWillLayoutSubviews()
     configureTraitChangesForMiniPlayer()
+    if let container = miniPlayer?.glassContainer { view.bringSubviewToFront(container) }
   }
 
   override func viewIsAppearing(_ animated: Bool) {
@@ -303,6 +290,6 @@ extension TabBarVC: MainSceneHostingViewController {
   }
 
   func getSafeAreaExtension() -> CGFloat {
-    0.0
+    76.0
   }
 }

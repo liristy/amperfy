@@ -106,39 +106,28 @@ extension PopupPlayerVC {
   }
 
   func refreshBackgroundItemArtwork() {
-    var artwork: UIImage?
-    var themePreference: ThemePreference = appDelegate.storage.settings.accounts.activeSetting.read
-      .themePreference
-    if let playableInfo = player.currentlyPlaying, let accountInfo = playableInfo.account?.info {
-      themePreference = appDelegate.storage.settings.accounts.getSetting(accountInfo).read
-        .themePreference
-      artwork = LibraryEntityImage.getImageToDisplayImmediately(
-        libraryEntity: playableInfo,
-        themePreference: themePreference,
-        artworkDisplayPreference: appDelegate.storage.settings.accounts.getSetting(accountInfo).read
-          .artworkDisplayPreference,
-        useCache: true
-      )
-    } else {
-      switch player.playerMode {
-      case .music:
-        artwork = .getGeneratedArtwork(
-          theme: themePreference,
-          artworkType: .song
-        )
-      case .podcast:
-        artwork = .getGeneratedArtwork(
-          theme: themePreference,
-          artworkType: .podcastEpisode
-        )
-      }
-    }
-    guard let artwork = artwork else { return }
-    artworkGradientColors = (try? artwork.dominantColors(max: 2)) ?? [
-      themePreference.asColor,
-      UIColor.systemBackground,
-    ]
+    let settings = appDelegate.storage.settings
+    let playable = player.currentlyPlaying
+    let account = playable?.account?.info ?? settings.accounts.active
+    let preference = account.map { settings.accounts.getSetting($0).read }
+      ?? settings.accounts.activeSetting.read
+    let path = playable?.imagePath(setting: preference.artworkDisplayPreference)
+    let key = path ?? "placeholder-\(preference.themePreference.assetName)"
+    guard backgroundArtworkKey != key else { return }
+    backgroundArtworkKey = key
+    backgroundArtworkTask?.cancel()
+    artworkGradientColors = [preference.themePreference.asColor, .darkGray]
     applyGradientBackground()
+    guard let path else { return }
+    backgroundArtworkTask = Task { @MainActor [weak self] in
+      guard let image = await LibraryEntityImage.loadPreparedImage(at: path), !Task.isCancelled else { return }
+      let colors = await Task.detached(priority: .userInitiated) {
+        (try? image.dominantColors(max: 2)) ?? []
+      }.value
+      guard !Task.isCancelled, let self, self.backgroundArtworkKey == key else { return }
+      if !colors.isEmpty { self.artworkGradientColors = colors }
+      self.applyGradientBackground()
+    }
   }
 
   internal func applyGradientBackground() {
@@ -177,15 +166,13 @@ extension PopupPlayerVC {
           let curPlayable = player.currentlyPlaying
     else { return }
     if curPlayable.uniqueID == downloadNotification.id {
-      Task { @MainActor in
-        refreshBackgroundItemArtwork()
-      }
+      backgroundArtworkKey = nil
+      refreshBackgroundItemArtwork()
     }
     if let artwork = curPlayable.artwork,
        artwork.uniqueID == downloadNotification.id {
-      Task { @MainActor in
-        refreshBackgroundItemArtwork()
-      }
+      backgroundArtworkKey = nil
+      refreshBackgroundItemArtwork()
     }
   }
 

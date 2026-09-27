@@ -43,7 +43,7 @@ final class SubsonicArtworkDownloadDelegate: DownloadManagerDelegate {
   }
 
   var parallelDownloadsCount: Int {
-    2
+    4
   }
 
   var httpHeaders: [String: String] {

@@ -39,6 +39,35 @@ class ArtworkTest: XCTestCase {
 
   override func tearDown() {}
 
+  func testPreparedArtworkIsBoundedAndPreservesAspectRatio() async throws {
+    let format = UIGraphicsImageRendererFormat()
+    format.scale = 1
+    let image = UIGraphicsImageRenderer(size: CGSize(width: 2400, height: 1200), format: format).image { context in
+      UIColor.red.setFill()
+      context.fill(CGRect(x: 0, y: 0, width: 2400, height: 1200))
+    }
+    let path = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".png")
+    defer { try? FileManager.default.removeItem(at: path) }
+    try XCTUnwrap(image.pngData()).write(to: path)
+    async let first = LibraryEntityImage.loadPreparedImage(at: path.path)
+    async let second = LibraryEntityImage.loadPreparedImage(at: path.path)
+    let (one, two) = await (first, second)
+    let prepared = try XCTUnwrap(one)
+    XCTAssertEqual(prepared.cgImage?.width, 1200)
+    XCTAssertEqual(prepared.cgImage?.height, 600)
+    XCTAssertTrue(prepared === two, "Concurrent readers must share the prepared image")
+    let cached = await LibraryEntityImage.loadPreparedImage(at: path.path)
+    XCTAssertTrue(prepared === cached)
+  }
+
+  func testUnreadableArtworkDoesNotProduceAnImage() async throws {
+    let path = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: path) }
+    try Data("not an image".utf8).write(to: path)
+    let image = await LibraryEntityImage.loadPreparedImage(at: path.path)
+    XCTAssertNil(image)
+  }
+
   func testEveryThemeHasReadablePlaceholdersInBothAppearances() {
     let bundle = Bundle(for: Artwork.self)
     for theme in ThemePreference.allCases {

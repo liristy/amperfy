@@ -20,6 +20,7 @@
 //
 
 import CoreData
+import ImageIO
 import UIKit
 
 extension LibraryEntityImage {
@@ -36,7 +37,7 @@ extension LibraryEntityImage {
     ) {
       if useCache, let cachedImg = Self.cache.object(forKey: artworkImagePath as NSString) {
         return cachedImg
-      } else if let directlyLoadedImage = UIImage(named: artworkImagePath) {
+      } else if !useCache, let directlyLoadedImage = UIImage(contentsOfFile: artworkImagePath) {
         return directlyLoadedImage
       }
     }
@@ -51,7 +52,50 @@ extension LibraryEntityImage {
 
 @MainActor
 public class LibraryEntityImage: RoundedImage {
-  static private let cache: NSCache<NSString, UIImage> = NSCache()
+  static private let cache: NSCache<NSString, UIImage> = {
+    let cache = NSCache<NSString, UIImage>()
+    cache.totalCostLimit = 64 * 1024 * 1024
+    cache.countLimit = 150
+    return cache
+  }()
+  static private var pendingImages = [String: Task<UIImage?, Never>]()
+  private var imageLoadTask: Task<Void, Never>?
+  private var requestedImagePath: String?
+
+  // Mini player, full player and visible cells share one disk read and decode.
+  public static func loadPreparedImage(at imagePath: String) async -> UIImage? {
+    if let image = cache.object(forKey: imagePath as NSString) { return image }
+    let task: Task<UIImage?, Never>
+    if let pending = pendingImages[imagePath] {
+      task = pending
+    } else {
+      task = Task.detached(priority: .userInitiated) {
+        await decodeImage(at: imagePath)
+      }
+      pendingImages[imagePath] = task
+    }
+    let image = await task.value
+    guard !task.isCancelled else { return nil }
+    if let image, let cgImage = image.cgImage {
+      cache.setObject(image, forKey: imagePath as NSString,
+                      cost: cgImage.bytesPerRow * cgImage.height)
+    }
+    pendingImages[imagePath] = nil
+    return image
+  }
+
+  @concurrent
+  private static func decodeImage(at path: String) async -> UIImage? {
+    let sourceOptions = [kCGImageSourceShouldCache: false] as CFDictionary
+    guard let source = CGImageSourceCreateWithURL(URL(fileURLWithPath: path) as CFURL, sourceOptions),
+          let thumbnail = CGImageSourceCreateThumbnailAtIndex(source, 0, [
+            kCGImageSourceCreateThumbnailFromImageAlways: true,
+            kCGImageSourceCreateThumbnailWithTransform: true,
+            kCGImageSourceThumbnailMaxPixelSize: 1200,
+            kCGImageSourceShouldCacheImmediately: true,
+          ] as CFDictionary) else { return nil }
+    return await UIImage(cgImage: thumbnail).byPreparingForDisplay()
+  }
 
   private let appDelegate: AmperKit
 
@@ -133,6 +177,8 @@ public class LibraryEntityImage: RoundedImage {
   }
 
   internal func display(image: UIImage) {
+    imageLoadTask?.cancel()
+    requestedImagePath = nil
     serverArtwork = nil
     self.image = image
     entity = nil
@@ -176,30 +222,25 @@ public class LibraryEntityImage: RoundedImage {
 
     if let imagePathToDisplay,
        let cachedImg = Self.cache.object(forKey: imagePathToDisplay as NSString) {
+      imageLoadTask?.cancel()
+      imageLoadTask = nil
+      requestedImagePath = imagePathToDisplay
       image = cachedImg
       return
     }
 
+    if requestedImagePath == imagePathToDisplay, imageLoadTask != nil { return }
+    imageLoadTask?.cancel()
+    imageLoadTask = nil
+    requestedImagePath = imagePathToDisplay
     image = placeholderImage
     guard let imagePathToDisplay else { return }
-
-    Task.detached(priority: .high) { [weak self] in
-      await self?.loadImageAndCacheIt(imagePath: imagePathToDisplay)
-    }
-  }
-
-  @concurrent
-  private func loadImageAndCacheIt(
-    imagePath: String
-  ) async {
-    guard !Task.isCancelled else { return }
-    let loadedImage = UIImage(contentsOfFile: imagePath)
-    let readyImage = await loadedImage?.byPreparingForDisplay()
-    guard !Task.isCancelled else { return }
-    Task { @MainActor [weak self] in
-      guard let self, let readyImage else { return }
-      Self.cache.setObject(readyImage, forKey: imagePath as NSString)
-      refresh()
+    imageLoadTask = Task { @MainActor [weak self] in
+      let prepared = await Self.loadPreparedImage(at: imagePathToDisplay)
+      guard !Task.isCancelled, let self,
+            self.requestedImagePath == imagePathToDisplay else { return }
+      self.imageLoadTask = nil
+      if let prepared { self.image = prepared }
     }
   }
 
@@ -207,33 +248,24 @@ public class LibraryEntityImage: RoundedImage {
   private func downloadFinishedSuccessful(notification: Notification) {
     guard let downloadNotification = DownloadNotification.fromNotification(notification) else { return }
     if let serverArtwork, serverArtwork.uniqueID == downloadNotification.id {
-      refresh()
+      refreshDownloadedImage()
       return
     }
     guard let entity else { return }
     if let playable = entity as? AbstractPlayable,
-       playable.uniqueID == downloadNotification.id, let accountInfo = playable.account?.info {
-      Task { @MainActor in
-        guard let imagePath = entity.imagePath(
-          setting: appDelegate.storage.settings.accounts.getSetting(accountInfo).read
-            .artworkDisplayPreference
-        ) else { return }
-        await self.loadImageAndCacheIt(
-          imagePath: imagePath
-        )
-      }
+       playable.uniqueID == downloadNotification.id {
+      refreshDownloadedImage()
     }
     if let artwork = entity.artwork,
-       artwork.uniqueID == downloadNotification.id, let accountInfo = artwork.account?.info {
-      Task { @MainActor in
-        guard let imagePath = entity.imagePath(
-          setting: appDelegate.storage.settings.accounts.getSetting(accountInfo).read
-            .artworkDisplayPreference
-        ) else { return }
-        await self.loadImageAndCacheIt(
-          imagePath: imagePath
-        )
-      }
+       artwork.uniqueID == downloadNotification.id {
+      refreshDownloadedImage()
     }
+  }
+
+  private func refreshDownloadedImage() {
+    if let path = entityImagePathToDisplay { Self.cache.removeObject(forKey: path as NSString) }
+    imageLoadTask?.cancel()
+    imageLoadTask = nil
+    refresh()
   }
 }

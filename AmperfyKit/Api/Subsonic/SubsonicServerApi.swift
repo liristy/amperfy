@@ -349,11 +349,14 @@ final class SubsonicServerApi: URLCleanser, Sendable {
 
   public func generateUrl(forArtworkId id: String) async throws -> URL {
     let version = try await determineApiVersionToUse()
-    return try createUrl(from: try createAuthApiUrlComponent(
+    var components = try createAuthApiUrlComponent(
       version: version,
       forAction: "getCoverArt",
       id: id
-    ))
+    )
+    // Enough detail for a full-screen iPhone cover without fetching multi-MB originals.
+    components.addQueryItem(name: "size", value: "1200")
+    return try createUrl(from: components)
   }
 
   private func requestServerApiVersionPromise(

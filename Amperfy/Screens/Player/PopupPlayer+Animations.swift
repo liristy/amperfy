@@ -54,7 +54,7 @@ final class PlayerArtworkAnimator: NSObject, UIViewControllerAnimatedTransitioni
   }
 
   func transitionDuration(using transitionContext: UIViewControllerContextTransitioning?) -> TimeInterval {
-    UIAccessibility.isReduceMotionEnabled ? 0.2 : 0.5
+    UIAccessibility.isReduceMotionEnabled ? 0.15 : 0.28
   }
 
   func animateTransition(using context: UIViewControllerContextTransitioning) {
@@ -106,7 +106,7 @@ final class PlayerArtworkAnimator: NSObject, UIViewControllerAnimatedTransitioni
       playerView.transform = reducedMotion ? .identity : CGAffineTransform(translationX: 0, y: 60)
     }
     UIView.animate(withDuration: transitionDuration(using: context), delay: 0,
-                   options: [.curveEaseInOut, .allowUserInteraction]) {
+                   options: [.curveEaseOut, .allowUserInteraction]) {
       playerView.alpha = self.isPresenting ? 1 : 0
       playerView.transform = self.isPresenting || reducedMotion ? .identity :
         CGAffineTransform(translationX: 0, y: container.bounds.height)

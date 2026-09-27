@@ -42,6 +42,8 @@ class PopupPlayerVC: UIViewController, UIScrollViewDelegate, UIGestureRecognizer
   private let safetyMarginOnBottom = 8.0
   internal var artworkGradientColors = [UIColor]()
   internal let artworkGradientLayer = CAGradientLayer()
+  internal var backgroundArtworkKey: String?
+  internal var backgroundArtworkTask: Task<Void, Never>?
   private var portraitLayoutConstraints = [NSLayoutConstraint]()
   private var landscapeLayoutConstraints = [NSLayoutConstraint]()
   private var usesLandscapeLayout = false
@@ -218,7 +220,6 @@ class PopupPlayerVC: UIViewController, UIScrollViewDelegate, UIGestureRecognizer
   override func viewDidLayoutSubviews() {
     super.viewDidLayoutSubviews()
     refreshCellMasks()
-    controlView?.refreshView()
     applyGradientBackground()
   }
 

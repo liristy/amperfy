@@ -179,6 +179,21 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
               guard self.appDelegate.player.elapsedTime > 0 else { return }
               vc.dismiss(animated: false)
               guard let miniPlayer = (vc as? MainSceneHostingViewController)?.miniPlayer else { return }
+              if let tabHost = vc as? UITabBarController {
+                tabHost.view.layoutIfNeeded()
+                let playerFrame = miniPlayer.glassContainer.convert(miniPlayer.glassContainer.bounds, to: tabHost.view)
+                let tabFrame = tabHost.tabBar.convert(tabHost.tabBar.bounds, to: tabHost.view)
+                guard tabFrame.minY - playerFrame.maxY >= 11 else {
+                  smokeLog("Mini player does not leave the requested gap above the tab bar")
+                  return
+                }
+                let image = UIGraphicsImageRenderer(bounds: tabHost.view.bounds).image { _ in
+                  tabHost.view.drawHierarchy(in: tabHost.view.bounds, afterScreenUpdates: true)
+                }
+                try image.pngData()?.write(to: URL.documentsDirectory.appendingPathComponent("player-mini-spacing.png"))
+              }
+              guard PlayerArtworkAnimator(isPresenting: true, sourceArtwork: nil)
+                .transitionDuration(using: nil) <= 0.3 else { return }
               miniPlayer.openPlayerView()
               func descendants(of view: UIView) -> [UIView] {
                 view.subviews + view.subviews.flatMap { descendants(of: $0) }
