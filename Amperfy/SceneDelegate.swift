@@ -360,6 +360,14 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
                 }
                 smokeLog("Custom dock: 56pt player, 12pt external gap, 48pt sinking, reversal and gap hit testing passed")
               }
+              func descendants(of view: UIView) -> [UIView] {
+                view.subviews + view.subviews.flatMap { descendants(of: $0) }
+              }
+              func flyingCover() -> UIView? {
+                miniPlayer.window.flatMap { window in
+                  descendants(of: window).first { $0.accessibilityIdentifier == "player-surface-transition-artwork" }
+                }
+              }
               miniPlayer.beginPlayerExpansion()
               try await Task.sleep(for: .milliseconds(80))
               guard let cancelledPopup = vc.presentedViewController as? PopupPlayerVC else {
@@ -372,7 +380,8 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
               try await Task.sleep(for: .seconds(1))
               guard vc.presentedViewController !== cancelledPopup,
                     cancelledPopup.presentingViewController == nil, cancelledPopup.view.mask == nil,
-                    miniPlayer.glassContainer.layer.opacity == 1 else {
+                    miniPlayer.glassContainer.layer.opacity == 1,
+                    miniPlayer.artworkImage.layer.opacity == 1, flyingCover() == nil else {
                 smokeLog("Cancelled upward expansion did not restore mini player")
                 return
               }
@@ -387,6 +396,20 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
               try await Task.sleep(for: .milliseconds(80))
               miniPlayer.updatePlayerExpansion(translation: 160)
               try await Task.sleep(for: .milliseconds(80))
+              guard let cover = flyingCover(), let coverHost = cover.superview,
+                    let coverFrame = cover.layer.presentation()?.frame,
+                    let openingPopup = vc.presentedViewController as? PopupPlayerVC,
+                    openingPopup.transitionArtwork?.layer.opacity == 0 else {
+                smokeLog("Opening did not create a shared moving album cover")
+                return
+              }
+              let miniCoverFrame = miniPlayer.artworkImage.convert(miniPlayer.artworkImage.bounds, to: coverHost)
+              guard coverFrame.width > miniCoverFrame.width + 1,
+                    coverFrame.midY < miniCoverFrame.midY - 1 else {
+                smokeLog("Held opening gesture did not move and enlarge the mini-player cover: \(coverFrame)")
+                return
+              }
+              smokeLog("Shared album cover moved from \(miniCoverFrame) to held frame \(coverFrame)")
               // Capture the held gesture before release. Rendering system glass can
               // stall the main thread and hide the short rebound from frame sampling.
               if let window = miniPlayer.window {
@@ -396,13 +419,11 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
                 try image.pngData()?.write(to: URL.documentsDirectory.appendingPathComponent("player-opening.png"))
               }
               miniPlayer.endPlayerExpansion(translation: 160, velocity: 850)
-              func descendants(of view: UIView) -> [UIView] {
-                view.subviews + view.subviews.flatMap { descendants(of: $0) }
-              }
               // UIKit may defer presentation until the next run-loop turn. Sample frames
               // throughout the transition instead of assuming one fixed scheduling delay.
               var sampledSurfaceExpansion = false
               var sampledSpringOvershoot = false
+              var sampledContentRebound = false
               var largestOpeningHeight: CGFloat = 0
               var lastSample = "no transition surface"
               for _ in 0..<60 {
@@ -420,6 +441,9 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
                 lastSample = "height \(animatedFrame.height), destination \(destinationHeight)"
                 largestOpeningHeight = max(largestOpeningHeight, animatedFrame.height)
                 if animatedFrame.height > destinationHeight + 0.5 { sampledSpringOvershoot = true }
+                if let layer = popup.view.layer.presentation(), layer.transform.m11 > 1.002 {
+                  sampledContentRebound = true
+                }
                 if animatedFrame.height > miniPlayer.glassContainer.bounds.height + 10,
                    animatedFrame.height < destinationHeight - 1 { sampledSurfaceExpansion = true }
               }
@@ -428,15 +452,16 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
                 return
               }
               smokeLog("Whole player expanded from the mini-player capsule: \(lastSample)")
-              if !sampledSpringOvershoot {
+              if !sampledSpringOvershoot || !sampledContentRebound {
                 smokeLog("Whole player did not rebound on opening: largest height \(largestOpeningHeight), \(lastSample)")
                 playerPolishChecksPassed = false
               } else {
-                smokeLog("Complete player surface spring overshoot sampled before settling")
+                smokeLog("Complete player surface and live content spring overshoot sampled before settling")
               }
               try await Task.sleep(for: .seconds(1))
               guard popup.largePlayerPlaceholderView.transform == .identity,
-                    popup.transitionArtwork?.isHidden == false else { return }
+                    popup.transitionArtwork?.isHidden == false,
+                    popup.transitionArtwork?.layer.opacity == 1, flyingCover() == nil else { return }
               popup.beginInteractiveDismissal()
               try await Task.sleep(for: .milliseconds(80))
               popup.updateInteractiveDismissal(translation: 70)
@@ -444,7 +469,9 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
               popup.endInteractiveDismissal(translation: 70, velocity: -150, cancelled: true)
               try await Task.sleep(for: .seconds(1))
               guard vc.presentedViewController === popup, popup.view.transform == .identity,
-                    popup.transitionArtwork?.isHidden == false, popup.view.layer.opacity == 1, popup.view.mask == nil else {
+                    popup.transitionArtwork?.isHidden == false, popup.view.layer.opacity == 1, popup.view.mask == nil,
+                    popup.transitionArtwork?.layer.opacity == 1,
+                    miniPlayer.artworkImage.layer.opacity == 1, flyingCover() == nil else {
                 smokeLog("Cancelled player dismissal did not restore the player")
                 return
               }
@@ -614,12 +641,18 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
               popup.updateInteractiveDismissal(translation: 28)
               popup.endInteractiveDismissal(translation: 28, velocity: 900)
               var sampledClosingRebound = false
+              var sampledReturningCover = false
               for _ in 0..<60 {
                 try await Task.sleep(for: .milliseconds(16))
                 guard let surface = popup.view.mask,
                       let animatedFrame = surface.layer.presentation()?.frame else { continue }
                 let destination = miniPlayer.glassContainer.bounds
                 if animatedFrame.height < destination.height - 0.25 { sampledClosingRebound = true }
+                if let cover = flyingCover(), let frame = cover.layer.presentation()?.frame,
+                   frame.width > miniPlayer.artworkImage.bounds.width + 1,
+                   frame.width < CurrentlyPlayingTableCell.artworkSide - 1 {
+                  sampledReturningCover = true
+                }
               }
               if !sampledClosingRebound {
                 smokeLog("Released downward gesture never produced a spring rebound")
@@ -629,11 +662,13 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
               }
               // Returning home can present the first-run welcome message. Check the
               // player's own presentation relationship, not whether every modal is gone.
-              guard vc.presentedViewController !== popup, popup.presentingViewController == nil else {
+              guard vc.presentedViewController !== popup, popup.presentingViewController == nil,
+                    sampledReturningCover, flyingCover() == nil,
+                    miniPlayer.artworkImage.layer.opacity == 1 else {
                 smokeLog("Quick downward drag did not dismiss the player")
                 return
               }
-              smokeLog("Whole-player capsule morph, cancelled dismissal, upward lyrics gesture and quick dismissal passed")
+              smokeLog("Whole-player capsule morph, shared cover flight in both directions, cancellation and quick dismissal passed")
               if let tabHost = vc as? UITabBarController,
                  let libraryTab = tabHost.tabs.first(where: { $0.identifier == "Tabs.Library" }) {
                 vc.dismiss(animated: false)

@@ -140,6 +140,7 @@ class LargeCurrentlyPlayingPlayerView: UIView {
   private var artworkIsPlaying: Bool?
   var isDisplayingLyrics: Bool { displayElement == .lyrics }
   var transitionArtwork: UIImageView { lyricsHeader.isHidden ? artworkImage : lyricsArtwork }
+  var transitionArtworkShadow: UIView? { lyricsHeader.isHidden ? artworkShadowView : nil }
   var compactHeader: UIView { lyricsHeader }
   var compactHeaderElements: [UIView] { [lyricsArtwork, lyricsTitle, lyricsArtist] }
 

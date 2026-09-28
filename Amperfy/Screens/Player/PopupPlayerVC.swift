@@ -338,8 +338,9 @@ class PopupPlayerVC: UIViewController, UIScrollViewDelegate, UIGestureRecognizer
     lyricsView.panGestureRecognizer.require(toFail: dismissPan)
   }
 
-  func configurePresentation(sourcePlayer: UIView?) {
+  func configurePresentation(sourcePlayer: UIView?, sourceArtwork: UIImageView?) {
     surfaceTransition.sourcePlayer = sourcePlayer
+    surfaceTransition.sourceArtwork = sourceArtwork
     modalPresentationStyle = .fullScreen
     transitioningDelegate = surfaceTransition
   }
@@ -364,7 +365,7 @@ class PopupPlayerVC: UIViewController, UIScrollViewDelegate, UIGestureRecognizer
     guard surfaceTransition.interaction == nil, !isBeingDismissed else { return }
     lyricsControlsTask?.cancel()
     let interaction = UIPercentDrivenInteractiveTransition()
-    interaction.timingCurve = UISpringTimingParameters(dampingRatio: UIAccessibility.isReduceMotionEnabled ? 1 : 0.74)
+    interaction.timingCurve = UISpringTimingParameters(dampingRatio: PlayerSurfaceAnimator.springDamping)
     surfaceTransition.interaction = interaction
     dismiss(animated: true) { [weak self] in self?.surfaceTransition.interaction = nil }
   }

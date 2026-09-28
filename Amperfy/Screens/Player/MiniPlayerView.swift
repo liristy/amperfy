@@ -934,7 +934,7 @@ class MiniPlayerView: UIView, UIGestureRecognizerDelegate {
     guard let hostVC = AppDelegate.mainWindowHostVC as? UIViewController,
           hostVC.presentedViewController == nil else { return }
     let popupPlayer = PopupPlayerVC()
-    popupPlayer.configurePresentation(sourcePlayer: glassContainer)
+    popupPlayer.configurePresentation(sourcePlayer: glassContainer, sourceArtwork: artworkImage)
     hostVC.present(popupPlayer, animated: true, completion: completion)
   }
 
@@ -955,9 +955,9 @@ class MiniPlayerView: UIView, UIGestureRecognizerDelegate {
     guard let hostVC = AppDelegate.mainWindowHostVC as? UIViewController,
           hostVC.presentedViewController == nil else { return }
     let popup = PopupPlayerVC()
-    popup.configurePresentation(sourcePlayer: glassContainer)
+    popup.configurePresentation(sourcePlayer: glassContainer, sourceArtwork: artworkImage)
     let interaction = UIPercentDrivenInteractiveTransition()
-    interaction.timingCurve = UISpringTimingParameters(dampingRatio: UIAccessibility.isReduceMotionEnabled ? 1 : 0.74)
+    interaction.timingCurve = UISpringTimingParameters(dampingRatio: PlayerSurfaceAnimator.springDamping)
     popup.surfaceTransition.presentationInteraction = interaction
     expandingPlayer = popup
     hostVC.present(popup, animated: true)
