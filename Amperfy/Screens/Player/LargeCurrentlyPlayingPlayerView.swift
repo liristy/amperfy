@@ -529,7 +529,7 @@ class LargeCurrentlyPlayingPlayerView: UIView {
     let playing = appDelegate.player.isPlaying
     guard artworkIsPlaying != playing else { return }
     artworkIsPlaying = playing
-    let scale: CGFloat = playing ? 1 : 0.82
+    let scale: CGFloat = playing ? 1 : 0.74
     let changes = {
       self.artworkImage.transform = CGAffineTransform(scaleX: scale, y: scale)
       self.artworkShadowView.transform = CGAffineTransform(scaleX: scale, y: scale)

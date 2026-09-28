@@ -480,7 +480,7 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
               miniPlayer.endPlayerExpansion(translation: pausedDistance * 0.85, velocity: 850)
               try await Task.sleep(for: .seconds(1))
               guard hiddenCover.mask == nil, miniPlayer.artworkImage.mask == nil,
-                    abs(hiddenCover.transform.a - 0.82) < 0.01, flyingCover() == nil else {
+                    abs(hiddenCover.transform.a - 0.74) < 0.01, flyingCover() == nil else {
                 smokeLog("Paused opening did not hand off to the real scaled cover")
                 return
               }
@@ -671,7 +671,7 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
               try await Task.sleep(for: .seconds(1))
               self.appDelegate.player.pause()
               try await Task.sleep(for: .milliseconds(700))
-              guard abs(fullPlayer.artworkImage.transform.a - 0.82) < 0.01,
+              guard abs(fullPlayer.artworkImage.transform.a - 0.74) < 0.01,
                     fullPlayer.compactHeader.transform == .identity else {
                 smokeLog("Pausing did not shrink only the large artwork")
                 return
