@@ -32,6 +32,9 @@ class MiniPlayerView: UIView, UIGestureRecognizerDelegate {
 
   private var hoverOverlayView: UIView?
   private var trackPan: UIPanGestureRecognizer?
+  private var expandPan: UIPanGestureRecognizer?
+  private weak var expandingPlayer: PopupPlayerVC?
+  private var accessoryBottomInsetConstraint: NSLayoutConstraint?
   private var trackViewport: UIView?
   private var trackContent: UIView?
   private var trackDragOverlay: UIView?
@@ -72,7 +75,7 @@ class MiniPlayerView: UIView, UIGestureRecognizerDelegate {
     return view
   }()
 
-  fileprivate lazy var artworkImage: LibraryEntityImage = {
+  private(set) lazy var artworkImage: LibraryEntityImage = {
     let imageView = LibraryEntityImage(frame: .zero)
     imageView.backgroundColor = .clear
     #if targetEnvironment(macCatalyst) // ok
@@ -679,6 +682,12 @@ class MiniPlayerView: UIView, UIGestureRecognizerDelegate {
     trackPan = pan
     miniPlayerGotTouchedView.addGestureRecognizer(pan)
     tapGesture.require(toFail: pan)
+    let expandPan = UIPanGestureRecognizer(target: self, action: #selector(handleExpandPan(_:)))
+    expandPan.maximumNumberOfTouches = 1
+    expandPan.delegate = self
+    self.expandPan = expandPan
+    miniPlayerGotTouchedView.addGestureRecognizer(expandPan)
+    tapGesture.require(toFail: expandPan)
     miniPlayerGotTouchedView.addGestureRecognizer(tapGesture)
     miniPlayerGotTouchedView.isAccessibilityElement = true
     miniPlayerGotTouchedView.accessibilityLabel = "Open Now Playing".localized
@@ -769,6 +778,11 @@ class MiniPlayerView: UIView, UIGestureRecognizerDelegate {
   }
 
   override func gestureRecognizerShouldBegin(_ gestureRecognizer: UIGestureRecognizer) -> Bool {
+    if gestureRecognizer === expandPan, let pan = gestureRecognizer as? UIPanGestureRecognizer {
+      let velocity = pan.velocity(in: self)
+      return velocity.y < -abs(velocity.x) && trackDragAnimator == nil &&
+        (AppDelegate.mainWindowHostVC as? UIViewController)?.presentedViewController == nil
+    }
     guard gestureRecognizer === trackPan, let pan = gestureRecognizer as? UIPanGestureRecognizer else { return true }
     let velocity = pan.velocity(in: self)
     return player.currentlyPlaying != nil && trackDragAnimator == nil && abs(velocity.x) > abs(velocity.y)
@@ -911,10 +925,52 @@ class MiniPlayerView: UIView, UIGestureRecognizerDelegate {
   }
 
   public func openPlayerView(completion: (() -> ())? = nil) {
-    guard let hostVC = AppDelegate.mainWindowHostVC as? UIViewController else { return }
+    guard let hostVC = AppDelegate.mainWindowHostVC as? UIViewController,
+          hostVC.presentedViewController == nil else { return }
     let popupPlayer = PopupPlayerVC()
     popupPlayer.configurePresentation(sourceArtwork: artworkImage)
     hostVC.present(popupPlayer, animated: true, completion: completion)
+  }
+
+  @objc private func handleExpandPan(_ pan: UIPanGestureRecognizer) {
+    let translation = -pan.translation(in: window).y
+    switch pan.state {
+    case .began: beginPlayerExpansion()
+    case .changed: updatePlayerExpansion(translation: translation)
+    case .ended:
+      endPlayerExpansion(translation: translation, velocity: -pan.velocity(in: window).y)
+    case .cancelled, .failed:
+      endPlayerExpansion(translation: 0, velocity: 0, cancelled: true)
+    default: break
+    }
+  }
+
+  func beginPlayerExpansion() {
+    guard let hostVC = AppDelegate.mainWindowHostVC as? UIViewController,
+          hostVC.presentedViewController == nil else { return }
+    let popup = PopupPlayerVC()
+    popup.configurePresentation(sourceArtwork: artworkImage)
+    let interaction = UIPercentDrivenInteractiveTransition()
+    popup.artworkTransition.presentationInteraction = interaction
+    expandingPlayer = popup
+    hostVC.present(popup, animated: true)
+  }
+
+  func updatePlayerExpansion(translation: CGFloat) {
+    let distance = max((window?.bounds.height ?? 800) * 0.6, 1)
+    expandingPlayer?.artworkTransition.presentationInteraction?.update(min(0.99, max(0, translation / distance)))
+  }
+
+  func endPlayerExpansion(translation: CGFloat, velocity: CGFloat, cancelled: Bool = false) {
+    guard let interaction = expandingPlayer?.artworkTransition.presentationInteraction else { return }
+    let finish = !cancelled && velocity > -100 && (translation > 70 || (translation > 12 && velocity > 550))
+    if finish { interaction.finish() } else { interaction.cancel() }
+    expandingPlayer = nil
+  }
+
+  func setAccessoryBottomInset(_ inset: CGFloat) {
+    guard accessoryBottomInsetConstraint?.constant != inset else { return }
+    accessoryBottomInsetConstraint?.constant = inset
   }
 
   @objc
@@ -1061,11 +1117,13 @@ class MiniPlayerView: UIView, UIGestureRecognizerDelegate {
     container.translatesAutoresizingMaskIntoConstraints = false
     self.translatesAutoresizingMaskIntoConstraints = false
 
+    let bottomInset = container.bottomAnchor.constraint(equalTo: bottomAnchor)
+    accessoryBottomInsetConstraint = bottomInset
     NSLayoutConstraint.activate([
       container.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 0),
       container.trailingAnchor.constraint(equalTo: trailingAnchor),
       container.topAnchor.constraint(equalTo: topAnchor, constant: 0),
-      container.bottomAnchor.constraint(equalTo: bottomAnchor),
+      bottomInset,
     ])
 
     return container

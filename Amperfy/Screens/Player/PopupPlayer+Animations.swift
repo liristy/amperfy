@@ -28,6 +28,10 @@ import UIKit
 final class PlayerArtworkTransitionDelegate: NSObject, UIViewControllerTransitioningDelegate {
   weak var sourceArtwork: UIImageView?
   var interaction: UIPercentDrivenInteractiveTransition?
+  var presentationInteraction: UIPercentDrivenInteractiveTransition?
+
+  func interactionControllerForPresentation(using animator: UIViewControllerAnimatedTransitioning)
+    -> UIViewControllerInteractiveTransitioning? { presentationInteraction }
 
   func animationController(forPresented presented: UIViewController,
                            presenting: UIViewController, source: UIViewController)
@@ -47,6 +51,7 @@ final class PlayerArtworkTransitionDelegate: NSObject, UIViewControllerTransitio
 final class PlayerArtworkAnimator: NSObject, UIViewControllerAnimatedTransitioning {
   private let isPresenting: Bool
   private weak var sourceArtwork: UIImageView?
+  private var animator: UIViewPropertyAnimator?
 
   init(isPresenting: Bool, sourceArtwork: UIImageView?) {
     self.isPresenting = isPresenting
@@ -54,10 +59,15 @@ final class PlayerArtworkAnimator: NSObject, UIViewControllerAnimatedTransitioni
   }
 
   func transitionDuration(using transitionContext: UIViewControllerContextTransitioning?) -> TimeInterval {
-    UIAccessibility.isReduceMotionEnabled ? 0.15 : 0.28
+    UIAccessibility.isReduceMotionEnabled ? 0.15 : 0.6
   }
 
   func animateTransition(using context: UIViewControllerContextTransitioning) {
+    interruptibleAnimator(using: context).startAnimation()
+  }
+
+  func interruptibleAnimator(using context: UIViewControllerContextTransitioning) -> UIViewImplicitlyAnimating {
+    if let animator { return animator }
     let container = context.containerView
     guard let fromVC = context.viewController(forKey: .from),
           let toVC = context.viewController(forKey: .to),
@@ -65,7 +75,7 @@ final class PlayerArtworkAnimator: NSObject, UIViewControllerAnimatedTransitioni
           let fromView = context.view(forKey: .from),
           let toView = context.view(forKey: .to) else {
       context.completeTransition(false)
-      return
+      return UIViewPropertyAnimator(duration: 0, curve: .linear)
     }
     if isPresenting {
       toView.frame = context.finalFrame(for: toVC)
@@ -105,8 +115,9 @@ final class PlayerArtworkAnimator: NSObject, UIViewControllerAnimatedTransitioni
       playerView.alpha = 0
       playerView.transform = reducedMotion ? .identity : CGAffineTransform(translationX: 0, y: 60)
     }
-    UIView.animate(withDuration: transitionDuration(using: context), delay: 0,
-                   options: [.curveEaseOut, .allowUserInteraction]) {
+    let animator = UIViewPropertyAnimator(
+      duration: transitionDuration(using: context), dampingRatio: reducedMotion ? 1 : 0.74
+    ) {
       playerView.alpha = self.isPresenting ? 1 : 0
       playerView.transform = self.isPresenting || reducedMotion ? .identity :
         CGAffineTransform(translationX: 0, y: container.bounds.height)
@@ -114,16 +125,24 @@ final class PlayerArtworkAnimator: NSObject, UIViewControllerAnimatedTransitioni
         movingArtwork?.frame = self.isPresenting ? largeFrame : smallFrame
         movingArtwork?.layer.cornerRadius = self.isPresenting ? 12 : 5
       }
-    } completion: { _ in
+    }
+    animator.scrubsLinearly = true
+    let presenting = isPresenting
+    animator.addCompletion { [weak self] _ in
       let completed = !context.transitionWasCancelled
       movingArtwork?.removeFromSuperview()
-      self.sourceArtwork?.isHidden = sourceWasHidden
+      self?.sourceArtwork?.isHidden = sourceWasHidden
       fullArtwork?.isHidden = fullWasHidden
-      if !self.isPresenting, completed { playerView.removeFromSuperview() }
+      if presenting != completed { playerView.removeFromSuperview() }
       playerView.alpha = 1
       playerView.transform = .identity
+      popup.artworkTransition.presentationInteraction = nil
+      popup.artworkTransition.interaction = nil
+      self?.animator = nil
       context.completeTransition(completed)
     }
+    self.animator = animator
+    return animator
   }
 }
 

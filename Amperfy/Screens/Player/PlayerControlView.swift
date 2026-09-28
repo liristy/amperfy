@@ -78,8 +78,6 @@ class PlayerControlView: UIView {
   @IBOutlet
   weak var volumeButton: UIButton!
   @IBOutlet
-  weak var optionsButton: UIButton!
-  @IBOutlet
   weak var lyricsButton: UIButton!
 
   required init?(coder aDecoder: NSCoder) {
@@ -114,7 +112,6 @@ class PlayerControlView: UIView {
     }
     airplayButton.accessibilityLabel = "AirPlay"
     displayPlaylistButton.accessibilityLabel = "Playing next".localized
-    optionsButton.accessibilityLabel = "Player options".localized
     volumeButton.accessibilityLabel = "Volume options".localized
     lyricsButton.addTarget(self, action: #selector(lyricsPressed), for: .touchUpInside)
 
@@ -126,12 +123,7 @@ class PlayerControlView: UIView {
     airplayButton.tintColor = .label
     playerModeButton.tintColor = .label
     volumeButton.tintColor = .label
-    optionsButton.imageView?.tintColor = .label
     refreshPlayer()
-    playerHandler?.refreshPlayerOptions(
-      optionsButton: optionsButton,
-      menuCreateCB: createPlayerOptionsMenu
-    )
 
     registerForTraitChanges(
       [UITraitUserInterfaceStyle.self, UITraitHorizontalSizeClass.self],
@@ -182,7 +174,7 @@ class PlayerControlView: UIView {
     // Use native button materials so highlights and touch deformation are handled by UIKit.
     (playButton.superview as? UIStackView)?.spacing = 12
     for button in [playButton, previousButton, nextButton, skipBackwardButton,
-                   skipForwardButton, airplayButton, playerModeButton, volumeButton, optionsButton] {
+                   skipForwardButton, airplayButton, playerModeButton, volumeButton] {
       guard let button else { continue }
       var configuration = UIButton.Configuration.player(isSelected: false)
       configuration.image = button.image(for: .normal)
@@ -313,10 +305,6 @@ class PlayerControlView: UIView {
     rootView?.switchDisplayStyleOptionPersistent()
     playerHandler?.refreshDisplayPlaylistButton(displayPlaylistButton: displayPlaylistButton)
     refreshLyricsButton()
-    playerHandler?.refreshPlayerOptions(
-      optionsButton: optionsButton,
-      menuCreateCB: createPlayerOptionsMenu
-    )
   }
 
   @IBAction

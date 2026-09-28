@@ -62,15 +62,19 @@ extension PopupPlayerVC {
     button.isEnabled = true
     button.configuration = config
 
-    if let currentlyPlaying = appDelegate.player.currentlyPlaying,
-       let rootView = rootView {
-      button.showsMenuAsPrimaryAction = true
-      button.menu = UIMenu.lazyMenu {
-        EntityPreviewActionBuilder(container: currentlyPlaying, on: rootView).createMenuActions()
+    button.accessibilityLabel = "Player options".localized
+    button.showsMenuAsPrimaryAction = true
+    button.menu = UIMenu.lazyMenu { [weak self, weak rootView] in
+      guard let self else { return [] }
+      var sections = [UIMenuElement]()
+      if let song = self.player.currentlyPlaying, let rootView {
+        sections.append(UIMenu(options: .displayInline, children:
+          EntityPreviewActionBuilder(container: song, on: rootView).createMenuActions()))
       }
-      button.isEnabled = true
-    } else {
-      button.isEnabled = false
+      if let controls = self.controlView {
+        sections.append(UIMenu(options: .displayInline, children: controls.createPlayerOptionsMenu()))
+      }
+      return sections
     }
   }
 

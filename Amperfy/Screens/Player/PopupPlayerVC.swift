@@ -606,6 +606,7 @@ extension PopupPlayerVC: MusicPlayable {
   func didStartPlaying() {
     reloadData()
     refresh()
+    largeCurrentlyPlayingView?.refreshPlaybackAppearance(animated: true)
   }
 
   func didStopPlaying() {
@@ -618,7 +619,9 @@ extension PopupPlayerVC: MusicPlayable {
     refresh()
   }
 
-  func didPause() {}
+  func didPause() {
+    largeCurrentlyPlayingView?.refreshPlaybackAppearance(animated: true)
+  }
   func didElapsedTimeChange() {}
 
   func didLyricsTimeChange(time: CMTime) {

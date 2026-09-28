@@ -137,6 +137,7 @@ class LargeCurrentlyPlayingPlayerView: UIView {
   private let lyricsOptions = UIButton(type: .system)
   private let compactFavorite = UIButton(type: .system)
   private var displayAnimator: UIViewPropertyAnimator?
+  private var artworkIsPlaying: Bool?
   var isDisplayingLyrics: Bool { displayElement == .lyrics }
   var transitionArtwork: UIImageView { lyricsHeader.isHidden ? artworkImage : lyricsArtwork }
   var compactHeader: UIView { lyricsHeader }
@@ -176,7 +177,9 @@ class LargeCurrentlyPlayingPlayerView: UIView {
     super.layoutSubviews()
     // Force a layout to prevent wrong size on first appearance on macOS
     upperContainerView.layoutIfNeeded()
-    artworkShadowView.frame = artworkImage.frame
+    // Use untransformed geometry; a paused artwork must not shrink its shadow twice.
+    artworkShadowView.bounds = artworkImage.bounds
+    artworkShadowView.center = artworkImage.center
     artworkShadowView.layer.shadowPath = UIBezierPath(
       roundedRect: artworkShadowView.bounds,
       cornerRadius: 12
@@ -513,6 +516,26 @@ class LargeCurrentlyPlayingPlayerView: UIView {
     rootView?.refreshFavoriteButton(button: favoriteButton)
     rootView?.refreshOptionButton(button: optionsButton, rootView: rootView)
     display(element: displayElement, animated: false)
+    refreshPlaybackAppearance(animated: window != nil)
+  }
+
+  func refreshPlaybackAppearance(animated: Bool) {
+    let playing = appDelegate.player.isPlaying
+    guard artworkIsPlaying != playing else { return }
+    artworkIsPlaying = playing
+    let scale: CGFloat = playing ? 1 : 0.82
+    let changes = {
+      self.artworkImage.transform = CGAffineTransform(scaleX: scale, y: scale)
+      self.artworkShadowView.transform = CGAffineTransform(scaleX: scale, y: scale)
+      self.artworkShadowView.layer.shadowOpacity = playing ? 0.3 : 0.16
+    }
+    if animated && !UIAccessibility.isReduceMotionEnabled {
+      UIView.animate(withDuration: 0.5, delay: 0, usingSpringWithDamping: 0.76,
+                     initialSpringVelocity: 0, options: [.beginFromCurrentState, .allowUserInteraction],
+                     animations: changes)
+    } else {
+      UIView.performWithoutAnimation(changes)
+    }
   }
 
   func refreshArtwork() {

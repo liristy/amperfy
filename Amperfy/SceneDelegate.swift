@@ -272,17 +272,34 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
                 }
                 miniPlayer.glassContainer.traitOverrides.tabAccessoryEnvironment = .inline
                 tabHost.view.layoutIfNeeded()
-                guard miniPlayer.traitCollection.tabAccessoryEnvironment == .inline else { return }
+                guard miniPlayer.traitCollection.tabAccessoryEnvironment == .inline,
+                      abs(miniPlayer.glassContainer.bounds.height - miniPlayer.bounds.height) < 0.5 else {
+                  smokeLog("Inline mini player retained expanded bottom spacing")
+                  return
+                }
                 miniPlayer.glassContainer.traitOverrides.remove(UITraitTabAccessoryEnvironment.self)
                 tabHost.view.layoutIfNeeded()
+                guard abs(miniPlayer.glassContainer.bounds.height - miniPlayer.bounds.height - 8) < 0.5 else {
+                  smokeLog("Expanded mini player did not restore its bottom spacing")
+                  return
+                }
                 smokeLog("Native mini player accessory and inline environment restored")
                 let image = UIGraphicsImageRenderer(bounds: tabHost.view.bounds).image { _ in
                   tabHost.view.drawHierarchy(in: tabHost.view.bounds, afterScreenUpdates: true)
                 }
                 try image.pngData()?.write(to: URL.documentsDirectory.appendingPathComponent("player-mini-spacing.png"))
               }
-              guard PlayerArtworkAnimator(isPresenting: true, sourceArtwork: nil)
-                .transitionDuration(using: nil) <= 0.3 else { return }
+              miniPlayer.beginPlayerExpansion()
+              try await Task.sleep(for: .milliseconds(80))
+              miniPlayer.updatePlayerExpansion(translation: 110)
+              try await Task.sleep(for: .milliseconds(80))
+              miniPlayer.endPlayerExpansion(translation: 110, velocity: -200, cancelled: true)
+              try await Task.sleep(for: .seconds(1))
+              guard vc.presentedViewController == nil, !miniPlayer.artworkImage.isHidden else {
+                smokeLog("Cancelled upward expansion did not restore mini player")
+                return
+              }
+              smokeLog("Upward expansion cancellation restored mini player")
               miniPlayer.openPlayerView()
               func descendants(of view: UIView) -> [UIView] {
                 view.subviews + view.subviews.flatMap { descendants(of: $0) }
@@ -290,6 +307,7 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
               // UIKit may defer presentation until the next run-loop turn. Sample frames
               // throughout the transition instead of assuming one fixed scheduling delay.
               var sampledZoom = false
+              var sampledSpringOvershoot = false
               var lastSample = "no transition view"
               for _ in 0..<60 {
                 try await Task.sleep(for: .milliseconds(16))
@@ -300,6 +318,10 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
                       }), let animatedFrame = movingCover.layer.presentation()?.frame,
                       let finalCover = popup.transitionArtwork else { continue }
                 lastSample = "width \(animatedFrame.width), destination \(finalCover.bounds.width)"
+                if animatedFrame.width > finalCover.convert(finalCover.bounds, to: window).width + 0.5 {
+                  sampledSpringOvershoot = true
+                }
+                if sampledZoom { continue }
                 guard animatedFrame.width > 60,
                       animatedFrame.width < finalCover.bounds.width - 1 else { continue }
                 let image = UIGraphicsImageRenderer(bounds: window.bounds).image { _ in
@@ -307,13 +329,17 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
                 }
                 try image.pngData()?.write(to: URL.documentsDirectory.appendingPathComponent("player-opening.png"))
                 sampledZoom = true
-                break
               }
               guard sampledZoom, let popup = vc.presentedViewController as? PopupPlayerVC else {
                 smokeLog("Cover zoom did not interpolate: \(lastSample)")
                 return
               }
               smokeLog("Cover zoom interpolated: \(lastSample)")
+              guard sampledSpringOvershoot else {
+                smokeLog("Opening transition never produced a spring overshoot")
+                return
+              }
+              smokeLog("Opening spring overshoot sampled before settling")
               try await Task.sleep(for: .seconds(1))
               guard popup.largePlayerPlaceholderView.transform == .identity,
                     popup.transitionArtwork?.isHidden == false else { return }
@@ -354,6 +380,28 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
               self.appDelegate.player.seek(toSecond: 42)
               try await Task.sleep(for: .seconds(1))
               self.appDelegate.player.pause()
+              try await Task.sleep(for: .milliseconds(700))
+              guard abs(fullPlayer.artworkImage.transform.a - 0.82) < 0.01,
+                    fullPlayer.compactHeader.transform == .identity else {
+                smokeLog("Pausing did not shrink only the large artwork")
+                return
+              }
+              try screenshot("player-paused-artwork.png")
+              self.appDelegate.player.play()
+              try await Task.sleep(for: .milliseconds(800))
+              guard fullPlayer.artworkImage.transform == .identity else {
+                smokeLog("Resuming did not restore artwork scale")
+                return
+              }
+              self.appDelegate.player.pause()
+              self.appDelegate.player.seek(toSecond: 42)
+              guard popup.controlView?.optionsStackView.arrangedSubviews.compactMap({ $0 as? UIButton })
+                .contains(where: { $0.accessibilityLabel == "Player options".localized }) == false,
+                fullPlayer.optionsButton.menu != nil else {
+                smokeLog("Player options were not consolidated into the top menu")
+                return
+              }
+              smokeLog("Pause/resume artwork scale and single top options menu passed")
               guard self.appDelegate.player.elapsedTime >= 41 else { return }
               self.appDelegate.storage.settings.user.isPlayerLyricsDisplayed = true
               popup.largeCurrentlyPlayingView?.display(element: .lyrics)

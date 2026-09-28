@@ -196,18 +196,6 @@
                                 <action selector="playerModeChangePressed:" destination="iN0-l3-epB" eventType="touchUpInside" id="WMf-zb-HxJ"/>
                             </connections>
                         </button>
-                        <button opaque="NO" contentMode="scaleToFill" contentHorizontalAlignment="center" contentVerticalAlignment="center" lineBreakMode="middleTruncation" preferredBehavioralStyle="pad" translatesAutoresizingMaskIntoConstraints="NO" id="0xq-hb-FZa" userLabel="Options Button">
-                            <rect key="frame" x="272" y="0.0" width="28" height="28"/>
-                            <constraints>
-                                <constraint firstAttribute="height" constant="44" id="Ble-C9-owO"/>
-                                <constraint firstAttribute="width" secondItem="0xq-hb-FZa" secondAttribute="height" multiplier="1:1" id="ND9-Bu-dGG"/>
-                            </constraints>
-                            <color key="tintColor" systemColor="labelColor"/>
-                            <state key="normal">
-                                <color key="titleColor" systemColor="labelColor"/>
-                                <imageReference key="image" image="ellipsis" catalog="system" symbolScale="medium"/>
-                            </state>
-                        </button>
                     </subviews>
                     <constraints>
                         <constraint firstAttribute="width" constant="300" relation="lessThanOrEqual" id="dMH-9W-9do"/>
@@ -297,7 +285,6 @@
                 <outlet property="elapsedTimeLabel" destination="okd-ac-nGY" id="MFD-Qa-B7r"/>
                 <outlet property="liveLabel" destination="lCe-bR-yIr" id="vcG-AT-BfK"/>
                 <outlet property="nextButton" destination="E3q-DK-jgm" id="MGI-Lm-8TL"/>
-                <outlet property="optionsButton" destination="0xq-hb-FZa" id="5AH-yU-Tbd"/>
                 <outlet property="optionsStackView" destination="xXq-r4-gI6" id="52T-2y-bUq"/>
                 <outlet property="playButton" destination="Byk-rx-3Lv" id="03r-73-6Na"/>
                 <outlet property="playTypeIcon" destination="1aU-Ga-twf" id="VTm-39-ARk"/>

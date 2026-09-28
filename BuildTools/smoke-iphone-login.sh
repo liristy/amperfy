@@ -106,6 +106,13 @@ for screenshot in player-library-defaults player-mini-drag player-mini-drag-prev
   cp "$container/Documents/$screenshot.png" "build/validation/$screenshot.png"
 done
 
+for screenshot in player-next-song player-paused-artwork player-mini-spacing player-lyrics-controls player-queue-from-lyrics; do
+  source="$container/Documents/$screenshot.png"
+  if [[ -f "$source" ]]; then
+    sips -s format jpeg -s formatOptions 80 -Z 1000 "$source" --out "build/validation/$screenshot-preview.jpg" >/dev/null
+  fi
+done
+
 python3 - <<'PY'
 import json
 from pathlib import Path
