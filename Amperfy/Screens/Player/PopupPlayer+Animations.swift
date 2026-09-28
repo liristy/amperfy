@@ -31,6 +31,19 @@ final class PlayerSurfaceTransitionDelegate: NSObject, UIViewControllerTransitio
   weak var sourceArtwork: UIImageView?
   var interaction: UIPercentDrivenInteractiveTransition?
   var presentationInteraction: UIPercentDrivenInteractiveTransition?
+  var artworkMotion: PlayerArtworkMotion?
+  var artworkProgress: CGFloat = 0
+  var artworkDestination: CGFloat?
+
+  func updateArtwork(_ progress: CGFloat) {
+    artworkProgress = min(1, max(0, progress))
+    artworkMotion?.update(artworkProgress)
+  }
+
+  func finishArtwork(completed: Bool) {
+    artworkDestination = completed ? 1 : 0
+    artworkMotion?.settle(to: completed ? 1 : 0)
+  }
 
   func interactionControllerForPresentation(using animator: UIViewControllerAnimatedTransitioning)
     -> UIViewControllerInteractiveTransitioning? { presentationInteraction }
@@ -47,6 +60,69 @@ final class PlayerSurfaceTransitionDelegate: NSObject, UIViewControllerTransitio
 
   func interactionControllerForDismissal(using animator: UIViewControllerAnimatedTransitioning)
     -> UIViewControllerInteractiveTransitioning? { interaction }
+}
+
+// UIKit retimes all animations owned by an interactive transition with its
+// surface spring. Render the cover separately, using the same gesture progress,
+// so finishing or cancelling cannot inject an overshoot into the cover's path.
+@MainActor
+final class PlayerArtworkMotion: NSObject {
+  private let cover: UIImageView
+  private let startFrame: CGRect
+  private let endFrame: CGRect
+  private let startRadius: CGFloat
+  private let endRadius: CGFloat
+  private var progress: CGFloat = 0
+  private var startProgress: CGFloat = 0
+  private var destination: CGFloat = 1
+  private var startedAt: TimeInterval = 0
+  private var duration: TimeInterval = 0
+  private var displayLink: CADisplayLink?
+
+  init(cover: UIImageView, endFrame: CGRect, endRadius: CGFloat) {
+    self.cover = cover
+    self.startFrame = cover.frame
+    self.endFrame = endFrame
+    self.startRadius = cover.layer.cornerRadius
+    self.endRadius = endRadius
+    super.init()
+  }
+
+  func update(_ value: CGFloat) {
+    progress = min(1, max(0, value))
+    let p = progress
+    UIView.performWithoutAnimation {
+      cover.frame = CGRect(
+        x: startFrame.minX + (endFrame.minX - startFrame.minX) * p,
+        y: startFrame.minY + (endFrame.minY - startFrame.minY) * p,
+        width: startFrame.width + (endFrame.width - startFrame.width) * p,
+        height: startFrame.height + (endFrame.height - startFrame.height) * p)
+      cover.layer.cornerRadius = startRadius + (endRadius - startRadius) * p
+    }
+  }
+
+  func settle(to target: CGFloat) {
+    stop()
+    startProgress = progress
+    destination = target
+    duration = max(0.06, 0.45 * Double(abs(target - progress)))
+    startedAt = CACurrentMediaTime()
+    let link = CADisplayLink(target: self, selector: #selector(tick(_:)))
+    displayLink = link
+    link.add(to: .main, forMode: .common)
+  }
+
+  @objc private func tick(_ link: CADisplayLink) {
+    let t = min(1, max(0, (link.timestamp - startedAt) / duration))
+    let eased = CGFloat(t * t * (3 - 2 * t))
+    update(startProgress + (destination - startProgress) * eased)
+    if t >= 1 { stop() }
+  }
+
+  func stop() {
+    displayLink?.invalidate()
+    displayLink = nil
+  }
 }
 
 @MainActor
@@ -167,13 +243,23 @@ final class PlayerSurfaceAnimator: NSObject, UIViewControllerAnimatedTransitioni
       cover.layer.cornerRadius = isPresenting ? sourceArtwork.layer.cornerRadius : targetArtwork.layer.cornerRadius
       container.addSubview(cover)
       flyingArtwork = cover
+      let motion = PlayerArtworkMotion(cover: cover,
+        endFrame: isPresenting ? largeArtworkFrame : smallArtworkFrame,
+        endRadius: isPresenting ? targetArtwork.layer.cornerRadius : sourceArtwork.layer.cornerRadius)
+      popup.surfaceTransition.artworkMotion = motion
+      motion.update(popup.surfaceTransition.artworkProgress)
+      if let destination = popup.surfaceTransition.artworkDestination {
+        motion.settle(to: destination)
+      } else if !context.isInteractive {
+        motion.settle(to: 1)
+      }
       for artwork in [sourceArtwork, targetArtwork, artworkShadow].compactMap({ $0 }) {
         _ = installMask(on: artwork, alpha: 0, identifier: "player-transition-artwork-mask")
       }
     }
     let animator = UIViewPropertyAnimator(
       duration: duration, dampingRatio: Self.springDamping
-    ) { [contentMasks, contentTransforms, flyingArtwork] in
+    ) { [contentMasks, contentTransforms] in
       playerView.transform = self.isPresenting ? originalTransform : collapsedTransform
       for entry in contentTransforms {
         entry.view.transform = self.isPresenting ? entry.original :
@@ -200,16 +286,6 @@ final class PlayerSurfaceAnimator: NSObject, UIViewControllerAnimatedTransitioni
           }
         }
       }
-      if let smallArtworkFrame, let largeArtworkFrame {
-        // Share the interactive timeline, but explicitly replace the inherited
-        // spring: the cover travels smoothly while only the whole page rebounds.
-        UIView.animate(withDuration: duration, delay: 0,
-                       options: [.overrideInheritedOptions, .overrideInheritedCurve, .curveEaseInOut]) {
-          flyingArtwork?.frame = self.isPresenting ? largeArtworkFrame : smallArtworkFrame
-          flyingArtwork?.layer.cornerRadius = self.isPresenting ? (targetArtwork?.layer.cornerRadius ?? 0) :
-            (self.sourceArtwork?.layer.cornerRadius ?? 0)
-        }
-      }
     }
     animator.scrubsLinearly = true
     let presenting = isPresenting
@@ -223,6 +299,10 @@ final class PlayerSurfaceAnimator: NSObject, UIViewControllerAnimatedTransitioni
       for entry in contentTransforms { entry.view.transform = entry.original }
       if presenting != completed { playerView.removeFromSuperview() }
       flyingArtwork?.removeFromSuperview()
+      popup.surfaceTransition.artworkMotion?.stop()
+      popup.surfaceTransition.artworkMotion = nil
+      popup.surfaceTransition.artworkProgress = 0
+      popup.surfaceTransition.artworkDestination = nil
       popup.surfaceTransition.presentationInteraction = nil
       popup.surfaceTransition.interaction = nil
       self?.animator = nil

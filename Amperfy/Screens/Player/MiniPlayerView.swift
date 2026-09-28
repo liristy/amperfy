@@ -965,12 +965,15 @@ class MiniPlayerView: UIView, UIGestureRecognizerDelegate {
 
   func updatePlayerExpansion(translation: CGFloat) {
     let distance = max((window?.bounds.height ?? 800) * 0.6, 1)
-    expandingPlayer?.surfaceTransition.presentationInteraction?.update(min(0.99, max(0, translation / distance)))
+    let progress = min(0.99, max(0, translation / distance))
+    expandingPlayer?.surfaceTransition.presentationInteraction?.update(progress)
+    expandingPlayer?.surfaceTransition.updateArtwork(progress)
   }
 
   func endPlayerExpansion(translation: CGFloat, velocity: CGFloat, cancelled: Bool = false) {
     guard let interaction = expandingPlayer?.surfaceTransition.presentationInteraction else { return }
     let finish = !cancelled && velocity > -100 && (translation > 70 || (translation > 12 && velocity > 550))
+    expandingPlayer?.surfaceTransition.finishArtwork(completed: finish)
     if finish { interaction.finish() } else { interaction.cancel() }
     expandingPlayer = nil
   }

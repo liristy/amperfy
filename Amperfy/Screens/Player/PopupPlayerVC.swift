@@ -374,13 +374,16 @@ class PopupPlayerVC: UIViewController, UIScrollViewDelegate, UIGestureRecognizer
   }
 
   func updateInteractiveDismissal(translation: CGFloat) {
-    surfaceTransition.interaction?.update(min(0.99, max(0, translation / max(view.bounds.height, 1))))
+    let progress = min(0.99, max(0, translation / max(view.bounds.height, 1)))
+    surfaceTransition.interaction?.update(progress)
+    surfaceTransition.updateArtwork(progress)
   }
 
   func endInteractiveDismissal(translation: CGFloat, velocity: CGFloat, cancelled: Bool = false) {
     guard let interaction = surfaceTransition.interaction else { return }
     let shouldFinish = !cancelled && velocity > -100 &&
       (translation > 90 || (translation > 12 && velocity > 650))
+    surfaceTransition.finishArtwork(completed: shouldFinish)
     if shouldFinish { interaction.finish() } else { interaction.cancel() }
     surfaceTransition.interaction = nil
     if !shouldFinish { scheduleLyricsControlsHide() }
