@@ -282,6 +282,11 @@ class TabBarVC: UITabBarController {
       let dock = FloatingPlayerDock(miniPlayer: miniPlayer)
       dock.onNavigate = { [weak self] index in
         guard let self else { return }
+        // Start the glass motion before UIKit's tab switch performs its
+        // nonanimated layout pass. That pass must not become the first update.
+        let tint = self.appDelegate.storage.settings.accounts
+          .getSetting(self.account.info).read.themePreference.asColor
+        self.playerDock?.updateSelection(index, tint: tint)
         self.selectedTab = index == 0 ? self.homeTab : self.libraryGroup
         self.updateDockSelection()
         self.view.setNeedsLayout()

@@ -345,12 +345,21 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
                 try dockScreenshot("player-mini-spacing.png")
                 let homeSelectionX = dock.selectionGlass.frame.minX
                 dock.navigationButtons[1].sendActions(for: .touchUpInside)
-                try await Task.sleep(for: .milliseconds(80))
-                guard tabHost.selectedTab?.identifier == "Tabs.Library",
-                      let movingSelection = dock.selectionGlass.layer.presentation(),
-                      movingSelection.frame.minX > homeSelectionX + 1,
-                      movingSelection.frame.minX < dock.selectionGlass.frame.minX - 1 else {
-                  smokeLog("Glass selection did not slide between the two navigation items")
+                var sampledNavigationMotion = false
+                var navigationFrame = CGRect.zero
+                for _ in 0..<30 {
+                  try await Task.sleep(for: .milliseconds(16))
+                  guard let movingSelection = dock.selectionGlass.layer.presentation() else { continue }
+                  navigationFrame = movingSelection.frame
+                  if navigationFrame.minX > homeSelectionX + 1,
+                     navigationFrame.minX < dock.selectionGlass.frame.minX - 1 {
+                    sampledNavigationMotion = true
+                    break
+                  }
+                }
+                guard tabHost.selectedTab?.identifier.hasPrefix("Tabs.Library") == true,
+                      sampledNavigationMotion else {
+                  smokeLog("Glass selection did not slide: tab=\(tabHost.selectedTab?.identifier ?? "nil"), rendered=\(navigationFrame), target=\(dock.selectionGlass.frame)")
                   return
                 }
                 dock.navigationButtons[0].sendActions(for: .touchUpInside)
