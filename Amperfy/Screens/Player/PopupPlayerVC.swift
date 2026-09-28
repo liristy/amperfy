@@ -49,7 +49,7 @@ class PopupPlayerVC: UIViewController, UIScrollViewDelegate, UIGestureRecognizer
   private var usesLandscapeLayout = false
   private var lyricsControlsTask: Task<Void, Never>?
   private(set) var areLyricsControlsHidden = false
-  let artworkTransition = PlayerArtworkTransitionDelegate()
+  let surfaceTransition = PlayerSurfaceTransitionDelegate()
   private lazy var dismissPan = UIPanGestureRecognizer(target: self, action: #selector(dragToDismiss(_:)))
   override var preferredStatusBarStyle: UIStatusBarStyle { .lightContent }
 
@@ -333,10 +333,10 @@ class PopupPlayerVC: UIViewController, UIScrollViewDelegate, UIGestureRecognizer
     lyricsView.panGestureRecognizer.require(toFail: dismissPan)
   }
 
-  func configurePresentation(sourceArtwork: UIImageView?) {
-    artworkTransition.sourceArtwork = sourceArtwork
+  func configurePresentation(sourcePlayer: UIView?) {
+    surfaceTransition.sourcePlayer = sourcePlayer
     modalPresentationStyle = .fullScreen
-    transitioningDelegate = artworkTransition
+    transitioningDelegate = surfaceTransition
   }
 
   var transitionArtwork: UIImageView? {
@@ -356,24 +356,24 @@ class PopupPlayerVC: UIViewController, UIScrollViewDelegate, UIGestureRecognizer
   }
 
   func beginInteractiveDismissal() {
-    guard artworkTransition.interaction == nil, !isBeingDismissed else { return }
+    guard surfaceTransition.interaction == nil, !isBeingDismissed else { return }
     lyricsControlsTask?.cancel()
     let interaction = UIPercentDrivenInteractiveTransition()
     interaction.timingCurve = UISpringTimingParameters(dampingRatio: UIAccessibility.isReduceMotionEnabled ? 1 : 0.74)
-    artworkTransition.interaction = interaction
-    dismiss(animated: true) { [weak self] in self?.artworkTransition.interaction = nil }
+    surfaceTransition.interaction = interaction
+    dismiss(animated: true) { [weak self] in self?.surfaceTransition.interaction = nil }
   }
 
   func updateInteractiveDismissal(translation: CGFloat) {
-    artworkTransition.interaction?.update(min(0.99, max(0, translation / max(view.bounds.height, 1))))
+    surfaceTransition.interaction?.update(min(0.99, max(0, translation / max(view.bounds.height, 1))))
   }
 
   func endInteractiveDismissal(translation: CGFloat, velocity: CGFloat, cancelled: Bool = false) {
-    guard let interaction = artworkTransition.interaction else { return }
+    guard let interaction = surfaceTransition.interaction else { return }
     let shouldFinish = !cancelled && velocity > -100 &&
       (translation > 90 || (translation > 12 && velocity > 650))
     if shouldFinish { interaction.finish() } else { interaction.cancel() }
-    artworkTransition.interaction = nil
+    surfaceTransition.interaction = nil
     if !shouldFinish { scheduleLyricsControlsHide() }
   }
 

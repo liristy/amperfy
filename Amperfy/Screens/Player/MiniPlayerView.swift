@@ -934,7 +934,7 @@ class MiniPlayerView: UIView, UIGestureRecognizerDelegate {
     guard let hostVC = AppDelegate.mainWindowHostVC as? UIViewController,
           hostVC.presentedViewController == nil else { return }
     let popupPlayer = PopupPlayerVC()
-    popupPlayer.configurePresentation(sourceArtwork: artworkImage)
+    popupPlayer.configurePresentation(sourcePlayer: glassContainer)
     hostVC.present(popupPlayer, animated: true, completion: completion)
   }
 
@@ -955,21 +955,21 @@ class MiniPlayerView: UIView, UIGestureRecognizerDelegate {
     guard let hostVC = AppDelegate.mainWindowHostVC as? UIViewController,
           hostVC.presentedViewController == nil else { return }
     let popup = PopupPlayerVC()
-    popup.configurePresentation(sourceArtwork: artworkImage)
+    popup.configurePresentation(sourcePlayer: glassContainer)
     let interaction = UIPercentDrivenInteractiveTransition()
     interaction.timingCurve = UISpringTimingParameters(dampingRatio: UIAccessibility.isReduceMotionEnabled ? 1 : 0.74)
-    popup.artworkTransition.presentationInteraction = interaction
+    popup.surfaceTransition.presentationInteraction = interaction
     expandingPlayer = popup
     hostVC.present(popup, animated: true)
   }
 
   func updatePlayerExpansion(translation: CGFloat) {
     let distance = max((window?.bounds.height ?? 800) * 0.6, 1)
-    expandingPlayer?.artworkTransition.presentationInteraction?.update(min(0.99, max(0, translation / distance)))
+    expandingPlayer?.surfaceTransition.presentationInteraction?.update(min(0.99, max(0, translation / distance)))
   }
 
   func endPlayerExpansion(translation: CGFloat, velocity: CGFloat, cancelled: Bool = false) {
-    guard let interaction = expandingPlayer?.artworkTransition.presentationInteraction else { return }
+    guard let interaction = expandingPlayer?.surfaceTransition.presentationInteraction else { return }
     let finish = !cancelled && velocity > -100 && (translation > 70 || (translation > 12 && velocity > 550))
     if finish { interaction.finish() } else { interaction.cancel() }
     expandingPlayer = nil

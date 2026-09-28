@@ -22,11 +22,11 @@
 import AmperfyKit
 import UIKit
 
-// The same artwork travels between the mini player and the full-screen player.
-// The destination is laid out once at its final size before measuring the cover.
+// The complete player expands from, and contracts into, the mini-player capsule.
+// Keep the full-screen content laid out at its final size inside a springing mask.
 @MainActor
-final class PlayerArtworkTransitionDelegate: NSObject, UIViewControllerTransitioningDelegate {
-  weak var sourceArtwork: UIImageView?
+final class PlayerSurfaceTransitionDelegate: NSObject, UIViewControllerTransitioningDelegate {
+  weak var sourcePlayer: UIView?
   var interaction: UIPercentDrivenInteractiveTransition?
   var presentationInteraction: UIPercentDrivenInteractiveTransition?
 
@@ -36,11 +36,11 @@ final class PlayerArtworkTransitionDelegate: NSObject, UIViewControllerTransitio
   func animationController(forPresented presented: UIViewController,
                            presenting: UIViewController, source: UIViewController)
     -> UIViewControllerAnimatedTransitioning? {
-    PlayerArtworkAnimator(isPresenting: true, sourceArtwork: sourceArtwork)
+    PlayerSurfaceAnimator(isPresenting: true, sourcePlayer: sourcePlayer)
   }
 
   func animationController(forDismissed dismissed: UIViewController) -> UIViewControllerAnimatedTransitioning? {
-    PlayerArtworkAnimator(isPresenting: false, sourceArtwork: sourceArtwork)
+    PlayerSurfaceAnimator(isPresenting: false, sourcePlayer: sourcePlayer)
   }
 
   func interactionControllerForDismissal(using animator: UIViewControllerAnimatedTransitioning)
@@ -48,14 +48,14 @@ final class PlayerArtworkTransitionDelegate: NSObject, UIViewControllerTransitio
 }
 
 @MainActor
-final class PlayerArtworkAnimator: NSObject, UIViewControllerAnimatedTransitioning {
+final class PlayerSurfaceAnimator: NSObject, UIViewControllerAnimatedTransitioning {
   private let isPresenting: Bool
-  private weak var sourceArtwork: UIImageView?
+  private weak var sourcePlayer: UIView?
   private var animator: UIViewPropertyAnimator?
 
-  init(isPresenting: Bool, sourceArtwork: UIImageView?) {
+  init(isPresenting: Bool, sourcePlayer: UIView?) {
     self.isPresenting = isPresenting
-    self.sourceArtwork = sourceArtwork
+    self.sourcePlayer = sourcePlayer
   }
 
   func transitionDuration(using transitionContext: UIViewControllerContextTransitioning?) -> TimeInterval {
@@ -89,55 +89,60 @@ final class PlayerArtworkAnimator: NSObject, UIViewControllerAnimatedTransitioni
     toView.layoutIfNeeded()
     popup.view.layoutIfNeeded()
     popup.largeCurrentlyPlayingView?.layoutIfNeeded()
-    let fullArtwork = popup.transitionArtwork
-    let smallFrame = sourceArtwork.map { $0.convert($0.bounds, to: container) }
-    let largeFrame = fullArtwork.map { $0.convert($0.bounds, to: container) }
-    let reducedMotion = UIAccessibility.isReduceMotionEnabled
-    var movingArtwork: UIImageView?
-    let sourceWasHidden = sourceArtwork?.isHidden ?? false
-    let fullWasHidden = fullArtwork?.isHidden ?? false
-    if !reducedMotion, let smallFrame, let largeFrame,
-       smallFrame.width > 0, largeFrame.width > 0 {
-      let image = UIImageView(image: fullArtwork?.image ?? sourceArtwork?.image)
-      image.accessibilityIdentifier = "player-transition-artwork"
-      image.contentMode = .scaleAspectFit
-      image.clipsToBounds = true
-      image.layer.cornerCurve = .continuous
-      image.layer.cornerRadius = isPresenting ? 5 : 12
-      image.frame = isPresenting ? smallFrame : largeFrame
-      container.addSubview(image)
-      movingArtwork = image
-      sourceArtwork?.isHidden = true
-      fullArtwork?.isHidden = true
-    }
     let playerView = popup.view!
-    if isPresenting {
-      playerView.alpha = 0
-      playerView.transform = reducedMotion ? .identity : CGAffineTransform(translationX: 0, y: 60)
+    let fullFrame = isPresenting ? context.finalFrame(for: toVC) : playerView.frame
+    let smallFrame = sourcePlayer.map { $0.convert($0.bounds, to: container) } ??
+      CGRect(x: fullFrame.minX + 20, y: fullFrame.maxY - 140, width: fullFrame.width - 40, height: 56)
+    let reducedMotion = UIAccessibility.isReduceMotionEnabled
+    let sourceOpacity = sourcePlayer?.layer.opacity ?? 1
+    let playerOpacity = playerView.layer.opacity
+    let capsule = sourcePlayer?.snapshotView(afterScreenUpdates: true)
+    let movingPlayer = playerView.snapshotView(afterScreenUpdates: true) ?? UIView(frame: playerView.bounds)
+    movingPlayer.accessibilityIdentifier = "player-transition-content"
+    let surface = UIView(frame: isPresenting && !reducedMotion ? smallFrame : fullFrame)
+    surface.accessibilityIdentifier = "player-transition-surface"
+    surface.backgroundColor = .secondarySystemBackground
+    surface.clipsToBounds = true
+    surface.autoresizesSubviews = false
+    surface.layer.cornerCurve = .continuous
+    surface.layer.cornerRadius = isPresenting && !reducedMotion ? smallFrame.height / 2 : 0
+    container.addSubview(surface)
+    surface.addSubview(movingPlayer)
+    movingPlayer.bounds = CGRect(origin: .zero, size: fullFrame.size)
+    movingPlayer.center = CGPoint(x: surface.bounds.midX, y: surface.bounds.midY)
+    movingPlayer.transform = isPresenting && !reducedMotion ? CGAffineTransform(scaleX: 0.92, y: 0.92) : .identity
+    movingPlayer.alpha = isPresenting ? 0 : 1
+    if let capsule, !reducedMotion {
+      capsule.bounds = CGRect(origin: .zero, size: smallFrame.size)
+      capsule.center = CGPoint(x: surface.bounds.midX, y: surface.bounds.midY)
+      capsule.alpha = isPresenting ? 1 : 0
+      surface.addSubview(capsule)
     }
+    // Keep the real views attached and interactive so an in-flight pan is not
+    // cancelled, and safe-area changes cannot relayout the player mid-morph.
+    sourcePlayer?.layer.opacity = 0
+    playerView.layer.opacity = 0
     let animator = UIViewPropertyAnimator(
       duration: transitionDuration(using: context), dampingRatio: reducedMotion ? 1 : 0.74
     ) {
-      playerView.alpha = self.isPresenting ? 1 : 0
-      playerView.transform = self.isPresenting || reducedMotion ? .identity :
-        CGAffineTransform(translationX: 0, y: container.bounds.height)
-      if let smallFrame, let largeFrame {
-        movingArtwork?.frame = self.isPresenting ? largeFrame : smallFrame
-        movingArtwork?.layer.cornerRadius = self.isPresenting ? 12 : 5
-      }
+      movingPlayer.alpha = self.isPresenting ? 1 : 0
+      surface.frame = self.isPresenting || reducedMotion ? fullFrame : smallFrame
+      surface.layer.cornerRadius = self.isPresenting || reducedMotion ? 0 : smallFrame.height / 2
+      movingPlayer.center = CGPoint(x: surface.bounds.midX, y: surface.bounds.midY)
+      movingPlayer.transform = self.isPresenting || reducedMotion ? .identity : CGAffineTransform(scaleX: 0.92, y: 0.92)
+      capsule?.center = CGPoint(x: surface.bounds.midX, y: surface.bounds.midY)
+      capsule?.alpha = self.isPresenting ? 0 : 1
     }
     animator.scrubsLinearly = true
     let presenting = isPresenting
     animator.addCompletion { [weak self] _ in
       let completed = !context.transitionWasCancelled
-      movingArtwork?.removeFromSuperview()
-      self?.sourceArtwork?.isHidden = sourceWasHidden
-      fullArtwork?.isHidden = fullWasHidden
+      self?.sourcePlayer?.layer.opacity = sourceOpacity
+      playerView.layer.opacity = playerOpacity
       if presenting != completed { playerView.removeFromSuperview() }
-      playerView.alpha = 1
-      playerView.transform = .identity
-      popup.artworkTransition.presentationInteraction = nil
-      popup.artworkTransition.interaction = nil
+      surface.removeFromSuperview()
+      popup.surfaceTransition.presentationInteraction = nil
+      popup.surfaceTransition.interaction = nil
       self?.animator = nil
       context.completeTransition(completed)
     }

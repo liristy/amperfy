@@ -452,17 +452,18 @@ extension TabBarVC: UIGestureRecognizerDelegate {
 // The phone's navigation and player share one layout, without depending on
 // UIKit's private tab accessory hierarchy or changing the player's own height.
 @MainActor
-final class FloatingPlayerDock: UIView {
+final class FloatingPlayerDock: UIView, UITabBarDelegate {
   static let playerHeight: CGFloat = 56
-  static let navigationHeight: CGFloat = 52
+  static let navigationHeight: CGFloat = 64
   static let gap: CGFloat = 12
   static let expandedHeight = playerHeight + gap + navigationHeight
   private(set) var isCollapsed = false
   let miniPlayer: MiniPlayerView
-  let navigationGlass = UIVisualEffectView(effect: UIGlassEffect(style: .regular))
+  let navigationGlass = UIVisualEffectView()
   let searchGlass = UIVisualEffectView(effect: UIGlassEffect(style: .regular))
-  private let homeButton = UIButton(type: .system)
-  private let libraryButton = UIButton(type: .system)
+  let navigationBar = UITabBar()
+  private let homeItem = UITabBarItem(title: TabNavigatorItem.home.title, image: TabNavigatorItem.home.icon, tag: 0)
+  private let libraryItem = UITabBarItem(title: "Library".localized, image: .musicLibrary, tag: 1)
   private let searchButton = UIButton(type: .system)
   private let compactNavigationButton = UIButton(type: .system)
   private var selection = -1
@@ -482,47 +483,38 @@ final class FloatingPlayerDock: UIView {
     for glass in [navigationGlass, searchGlass] {
       glass.cornerConfiguration = .capsule()
     }
-    navigationGlass.contentView.addSubview(homeButton)
-    navigationGlass.contentView.addSubview(libraryButton)
+    navigationGlass.contentView.addSubview(navigationBar)
+    navigationBar.delegate = self
+    navigationBar.items = [homeItem, libraryItem]
+    navigationBar.itemPositioning = .fill
+    navigationBar.unselectedItemTintColor = .label
     navigationGlass.contentView.addSubview(compactNavigationButton)
     searchGlass.contentView.addSubview(searchButton)
-    homeButton.accessibilityLabel = TabNavigatorItem.home.title
-    libraryButton.accessibilityLabel = "Library".localized
     searchButton.accessibilityLabel = TabNavigatorItem.search.title
     compactNavigationButton.accessibilityLabel = "Show navigation".localized
-    homeButton.addAction(UIAction { [weak self] _ in self?.onHome?() }, for: .touchUpInside)
-    libraryButton.addAction(UIAction { [weak self] _ in self?.onLibrary?() }, for: .touchUpInside)
     searchButton.addAction(UIAction { [weak self] _ in self?.onSearch?() }, for: .touchUpInside)
     compactNavigationButton.addAction(UIAction { [weak self] _ in self?.setCollapsed(false, animated: true) }, for: .touchUpInside)
   }
 
   required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
 
+  func tabBar(_ tabBar: UITabBar, didSelect item: UITabBarItem) {
+    if item === homeItem { onHome?() } else if item === libraryItem { onLibrary?() }
+  }
+
   func updateSelection(_ selected: Int, tint: UIColor) {
     guard selected != selection || theme != tint else { return }
     selection = selected
     theme = tint
     let icons = [TabNavigatorItem.home.icon, UIImage.musicLibrary, TabNavigatorItem.search.icon]
-    let titles = [TabNavigatorItem.home.title, "Library".localized, TabNavigatorItem.search.title]
-    for (index, button) in [homeButton, libraryButton, searchButton].enumerated() {
-      var config = UIButton.Configuration.plain()
-      config.image = icons[index]
-      config.preferredSymbolConfigurationForImage = .init(pointSize: index == 2 ? 23 : 21, weight: .medium)
-      config.baseForegroundColor = selected == index ? tint : .label
-      config.contentInsets = .zero
-      if index != 2 {
-        config.title = titles[index]
-        config.imagePlacement = .top
-        config.imagePadding = 1
-        config.titleTextAttributesTransformer = UIConfigurationTextAttributesTransformer { incoming in
-          var outgoing = incoming
-          outgoing.font = .systemFont(ofSize: 10, weight: .medium)
-          return outgoing
-        }
-      }
-      button.configuration = config
-      button.accessibilityTraits = selected == index ? [.button, .selected] : .button
-    }
+    navigationBar.tintColor = tint
+    navigationBar.selectedItem = selected == 0 ? homeItem : (selected == 1 ? libraryItem : nil)
+    var search = UIButton.Configuration.plain()
+    search.image = icons[2]
+    search.preferredSymbolConfigurationForImage = .init(pointSize: 27, weight: .medium)
+    search.baseForegroundColor = selected == 2 ? tint : .label
+    searchButton.configuration = search
+    searchButton.accessibilityTraits = selected == 2 ? [.button, .selected] : .button
     var compact = UIButton.Configuration.plain()
     compact.image = icons[selected]
     compact.preferredSymbolConfigurationForImage = .init(pointSize: 23, weight: .medium)
@@ -534,6 +526,7 @@ final class FloatingPlayerDock: UIView {
     guard isCollapsed != collapsed else { return }
     layoutIfNeeded()
     isCollapsed = collapsed
+    navigationGlass.effect = collapsed ? UIGlassEffect(style: .regular) : nil
     miniPlayer.setCompactPresentation(collapsed)
     setNeedsLayout()
     let changes = { self.layoutIfNeeded() }
@@ -553,20 +546,17 @@ final class FloatingPlayerDock: UIView {
     navigationGlass.frame = CGRect(x: 0, y: rowY, width: navigationWidth, height: side)
     searchGlass.frame = CGRect(x: bounds.width - side, y: rowY, width: side, height: side)
     miniPlayer.glassContainer.frame = isCollapsed ?
-      CGRect(x: side + Self.gap, y: rowY + 2, width: max(0, bounds.width - (side + Self.gap) * 2), height: 48) :
+      CGRect(x: side + Self.gap, y: rowY + (side - 48) / 2, width: max(0, bounds.width - (side + Self.gap) * 2), height: 48) :
       CGRect(x: 0, y: 0, width: bounds.width, height: Self.playerHeight)
     navigationGlass.layoutIfNeeded()
     searchGlass.layoutIfNeeded()
     miniPlayer.glassContainer.layoutIfNeeded()
-    homeButton.frame = CGRect(x: 4, y: 0, width: max(0, navigationWidth / 2 - 4), height: side)
-    libraryButton.frame = CGRect(x: navigationWidth / 2, y: 0, width: max(0, navigationWidth / 2 - 4), height: side)
+    navigationBar.frame = navigationGlass.bounds
     searchButton.frame = CGRect(x: 0, y: 0, width: side, height: side)
     compactNavigationButton.frame = CGRect(x: 0, y: 0, width: side, height: side)
-    for button in [homeButton, libraryButton] {
-      button.alpha = isCollapsed ? 0 : 1
-      button.isUserInteractionEnabled = !isCollapsed
-      button.accessibilityElementsHidden = isCollapsed
-    }
+    navigationBar.alpha = isCollapsed ? 0 : 1
+    navigationBar.isUserInteractionEnabled = !isCollapsed
+    navigationBar.accessibilityElementsHidden = isCollapsed
     compactNavigationButton.alpha = isCollapsed ? 1 : 0
     compactNavigationButton.isUserInteractionEnabled = isCollapsed
     compactNavigationButton.accessibilityElementsHidden = !isCollapsed
