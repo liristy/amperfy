@@ -359,7 +359,7 @@ class PopupPlayerVC: UIViewController, UIScrollViewDelegate, UIGestureRecognizer
     guard artworkTransition.interaction == nil, !isBeingDismissed else { return }
     lyricsControlsTask?.cancel()
     let interaction = UIPercentDrivenInteractiveTransition()
-    interaction.completionCurve = .easeOut
+    interaction.timingCurve = UISpringTimingParameters(dampingRatio: UIAccessibility.isReduceMotionEnabled ? 1 : 0.74)
     artworkTransition.interaction = interaction
     dismiss(animated: true) { [weak self] in self?.artworkTransition.interaction = nil }
   }

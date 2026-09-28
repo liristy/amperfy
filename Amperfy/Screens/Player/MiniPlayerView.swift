@@ -951,6 +951,7 @@ class MiniPlayerView: UIView, UIGestureRecognizerDelegate {
     let popup = PopupPlayerVC()
     popup.configurePresentation(sourceArtwork: artworkImage)
     let interaction = UIPercentDrivenInteractiveTransition()
+    interaction.timingCurve = UISpringTimingParameters(dampingRatio: UIAccessibility.isReduceMotionEnabled ? 1 : 0.74)
     popup.artworkTransition.presentationInteraction = interaction
     expandingPlayer = popup
     hostVC.present(popup, animated: true)

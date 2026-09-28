@@ -300,7 +300,11 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
                 return
               }
               smokeLog("Upward expansion cancellation restored mini player")
-              miniPlayer.openPlayerView()
+              miniPlayer.beginPlayerExpansion()
+              try await Task.sleep(for: .milliseconds(80))
+              miniPlayer.updatePlayerExpansion(translation: 160)
+              try await Task.sleep(for: .milliseconds(80))
+              miniPlayer.endPlayerExpansion(translation: 160, velocity: 850)
               func descendants(of view: UIView) -> [UIView] {
                 view.subviews + view.subviews.flatMap { descendants(of: $0) }
               }
@@ -336,10 +340,10 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
               }
               smokeLog("Cover zoom interpolated: \(lastSample)")
               guard sampledSpringOvershoot else {
-                smokeLog("Opening transition never produced a spring overshoot")
+                smokeLog("Released upward gesture never produced a spring overshoot")
                 return
               }
-              smokeLog("Opening spring overshoot sampled before settling")
+              smokeLog("Released upward gesture spring overshoot sampled before settling")
               // PNG encoding can block the main actor long enough to miss the rebound.
               try openingImage?.pngData()?.write(to: URL.documentsDirectory.appendingPathComponent("player-opening.png"))
               try await Task.sleep(for: .seconds(1))
@@ -521,7 +525,21 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
               try await Task.sleep(for: .milliseconds(80))
               popup.updateInteractiveDismissal(translation: 28)
               popup.endInteractiveDismissal(translation: 28, velocity: 900)
-              try await Task.sleep(for: .seconds(1))
+              var sampledClosingRebound = false
+              for _ in 0..<60 {
+                try await Task.sleep(for: .milliseconds(16))
+                guard let window = miniPlayer.window,
+                      let movingCover = descendants(of: window).first(where: {
+                        $0.accessibilityIdentifier == "player-transition-artwork"
+                      }), let animatedFrame = movingCover.layer.presentation()?.frame else { continue }
+                let destination = miniPlayer.artworkImage.convert(miniPlayer.artworkImage.bounds, to: window)
+                if animatedFrame.width < destination.width - 0.25 { sampledClosingRebound = true }
+              }
+              guard sampledClosingRebound else {
+                smokeLog("Released downward gesture never produced a spring rebound")
+                return
+              }
+              smokeLog("Released downward gesture spring rebound sampled before settling")
               // Returning home can present the first-run welcome message. Check the
               // player's own presentation relationship, not whether every modal is gone.
               guard vc.presentedViewController !== popup, popup.presentingViewController == nil else {
