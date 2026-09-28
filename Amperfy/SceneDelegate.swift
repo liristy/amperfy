@@ -634,8 +634,12 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
               }
               if let tabHost = vc as? TabBarVC, let dock = tabHost.playerDock {
                 dock.onSearch?()
-                try await Task.sleep(for: .seconds(1))
-                tabHost.view.layoutIfNeeded()
+                for _ in 0..<30 {
+                  try await Task.sleep(for: .milliseconds(100))
+                  tabHost.view.layoutIfNeeded()
+                  if tabHost.searchViewController?.searchController.searchBar.searchTextField.isFirstResponder == true,
+                     dock.isHidden { break }
+                }
                 let search = tabHost.searchViewController
                 let searchFocused = search?.searchController.searchBar.searchTextField.isFirstResponder == true
                 guard tabHost.selectedTab is UISearchTab, searchFocused, dock.isHidden else {

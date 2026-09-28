@@ -139,6 +139,7 @@ extension UIButton.Configuration {
     config.buttonSize = .small
     config.baseForegroundColor = isSelected ? .tintColor : .label
     config.background = .clear()
+    config.background.backgroundColorTransformer = UIConfigurationColorTransformer { _ in .clear }
     config.contentInsets = NSDirectionalEdgeInsets(top: 8, leading: 8, bottom: 8, trailing: 8)
     return config
   }
@@ -155,6 +156,7 @@ extension UIButton.Configuration {
     config.preferredSymbolConfigurationForImage = UIImage.SymbolConfiguration(scale: .medium)
     config.buttonSize = .small
     config.background = .clear()
+    config.background.backgroundColorTransformer = UIConfigurationColorTransformer { _ in .clear }
     return config
   }
 }

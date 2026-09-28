@@ -5,6 +5,11 @@ device_id=$1
 app_path=$2
 bundle_id=$3
 mkdir -p build/validation/crashes
+# A fresh CI simulator otherwise presents the swipe-typing tutorial instead of
+# the keyboard, blocking the search focus / dock restoration regression check.
+for preference in DidShowContinuousPathIntroduction KeyboardDidShowProductivityTutorial DidShowGestureKeyboardIntroduction UIKeyboardDidShowInternationalInfoIntroduction; do
+  xcrun simctl spawn "$device_id" defaults write com.apple.keyboard.preferences "$preference" -bool true
+done
 python3 -u BuildTools/subsonic-smoke-server.py > build/validation/server.log 2>&1 &
 server_pid=$!
 cleanup() {
