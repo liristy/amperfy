@@ -196,6 +196,9 @@ class TabBarVC: UITabBarController {
       updateDockContentInset(visible: false)
     }
     if isTabBarHidden { setTabBarHidden(false, animated: false) }
+    tabBar.alpha = 1
+    tabBar.isUserInteractionEnabled = true
+    tabBar.accessibilityElementsHidden = false
     if tabBarMinimizeBehavior != .onScrollDown { tabBarMinimizeBehavior = .onScrollDown }
     if bottomAccessory == nil {
       container.translatesAutoresizingMaskIntoConstraints = false
@@ -247,11 +250,6 @@ class TabBarVC: UITabBarController {
     let margin: CGFloat = 20
     let availableWidth = view.bounds.width - view.safeAreaInsets.left - view.safeAreaInsets.right
     let dockWidth = min(600, availableWidth - margin * 2)
-    // Fill the available navigation capsule even with only Home and Library.
-    // Centered sizing lets iOS 26 shrink that group beside the separate search tab.
-    if tabBar.itemPositioning != .fill { tabBar.itemPositioning = .fill }
-    if tabBar.itemWidth != 0 { tabBar.itemWidth = 0 }
-    if tabBar.itemSpacing != 0 { tabBar.itemSpacing = 0 }
     if !isTabBarHidden, tabBar.bounds.height > 0 {
       dockNavigationTop = tabBar.convert(tabBar.bounds, to: view).minY
     }
@@ -282,8 +280,16 @@ class TabBarVC: UITabBarController {
       glass.isInteractive = true
       miniPlayer.glassContainer.effect = glass
       let dock = FloatingPlayerDock(miniPlayer: miniPlayer)
+      dock.onNavigate = { [weak self] index in
+        guard let self else { return }
+        self.selectedTab = index == 0 ? self.homeTab : self.libraryGroup
+        self.updateDockSelection()
+        self.view.setNeedsLayout()
+      }
       dock.onSearch = { [weak self] in
         guard let self else { return }
+        self.tabBar.alpha = 1
+        self.tabBar.isUserInteractionEnabled = true
         self.selectedTab = self.searchTab
         self.updateDockSelection()
         self.searchViewController?.activateSearchBar()
@@ -307,6 +313,13 @@ class TabBarVC: UITabBarController {
     // Hiding that bar would detach its first responder and dismiss the keyboard.
     let hidden = dock.isCollapsed || top?.hidesBottomBarWhenPushed == true
     if isTabBarHidden != hidden { setTabBarHidden(hidden, animated: animated) }
+    // Keep the system search host mounted. The fixed-length glass navigation
+    // covers ordinary tabs; the native bar is visible only for active search.
+    let nativeSearch = selectedTab === searchTab &&
+      (dockKeyboardVisible || searchViewController?.searchController.isActive == true)
+    tabBar.alpha = nativeSearch ? 1 : 0
+    tabBar.isUserInteractionEnabled = nativeSearch
+    tabBar.accessibilityElementsHidden = !nativeSearch
   }
 
   private func updateDockSelection() {
@@ -481,12 +494,15 @@ final class FloatingPlayerDock: UIView {
   let miniPlayer: MiniPlayerView
   let navigationGlass = UIVisualEffectView(effect: UIGlassEffect(style: .regular))
   let searchGlass = UIVisualEffectView(effect: UIGlassEffect(style: .regular))
+  let selectionGlass = UIVisualEffectView(effect: UIGlassEffect(style: .regular))
+  let navigationButtons = [UIButton(type: .system), UIButton(type: .system)]
   private let searchButton = UIButton(type: .system)
   private let compactNavigationButton = UIButton(type: .system)
   private var selection = -1
   private var theme: UIColor?
   var onCollapseChanged: ((Bool) -> Void)?
   var onSearch: (() -> Void)?
+  var onNavigate: ((Int) -> Void)?
 
   init(miniPlayer: MiniPlayerView) {
     self.miniPlayer = miniPlayer
@@ -496,8 +512,23 @@ final class FloatingPlayerDock: UIView {
     addSubview(navigationGlass)
     addSubview(searchGlass)
     addSubview(miniPlayer.glassContainer)
-    for glass in [navigationGlass, searchGlass] {
+    for glass in [navigationGlass, searchGlass, selectionGlass] {
       glass.cornerConfiguration = .capsule()
+    }
+    let interactive = UIGlassEffect(style: .regular)
+    interactive.isInteractive = true
+    selectionGlass.effect = interactive
+    selectionGlass.isUserInteractionEnabled = false
+    for glass in [navigationGlass, searchGlass] {
+      let effect = UIGlassEffect(style: .regular)
+      effect.isInteractive = true
+      glass.effect = effect
+    }
+    navigationGlass.contentView.addSubview(selectionGlass)
+    for (index, button) in navigationButtons.enumerated() {
+      navigationGlass.contentView.addSubview(button)
+      button.accessibilityIdentifier = index == 0 ? "dock-home" : "dock-library"
+      button.addAction(UIAction { [weak self] _ in self?.onNavigate?(index) }, for: .touchUpInside)
     }
     navigationGlass.contentView.addSubview(compactNavigationButton)
     searchGlass.contentView.addSubview(searchButton)
@@ -511,6 +542,9 @@ final class FloatingPlayerDock: UIView {
 
   func updateSelection(_ selected: Int, tint: UIColor) {
     guard selected != selection || theme != tint else { return }
+    let animate = selection >= 0 && selected != selection && !isCollapsed && window != nil &&
+      !UIAccessibility.isReduceMotionEnabled
+    layoutIfNeeded()
     selection = selected
     theme = tint
     let icons = [TabNavigatorItem.home.icon, UIImage.musicLibrary, TabNavigatorItem.search.icon]
@@ -525,6 +559,32 @@ final class FloatingPlayerDock: UIView {
     compact.preferredSymbolConfigurationForImage = .init(pointSize: 23, weight: .medium)
     compact.baseForegroundColor = tint
     compactNavigationButton.configuration = compact
+    for (index, button) in navigationButtons.enumerated() {
+      var configuration = UIButton.Configuration.plain()
+      configuration.image = icons[index]
+      configuration.title = index == 0 ? TabNavigatorItem.home.title : "Library".localized
+      configuration.imagePlacement = .top
+      configuration.imagePadding = 2
+      configuration.contentInsets = .zero
+      configuration.preferredSymbolConfigurationForImage = .init(pointSize: 25, weight: .medium)
+      configuration.baseForegroundColor = index == selected ? tint : .label
+      configuration.titleTextAttributesTransformer = UIConfigurationTextAttributesTransformer { attributes in
+        var result = attributes
+        result.font = .systemFont(ofSize: 11, weight: .semibold)
+        return result
+      }
+      button.configuration = configuration
+      button.accessibilityTraits = index == selected ? [.button, .selected] : .button
+    }
+    setNeedsLayout()
+    if animate {
+      UIView.animate(withDuration: 0.46, delay: 0, usingSpringWithDamping: 0.72,
+                     initialSpringVelocity: 0, options: [.beginFromCurrentState, .allowUserInteraction]) {
+        self.layoutIfNeeded()
+      }
+    } else {
+      layoutIfNeeded()
+    }
   }
 
   func setCollapsed(_ collapsed: Bool, animated: Bool) {
@@ -558,9 +618,14 @@ final class FloatingPlayerDock: UIView {
     miniPlayer.glassContainer.layoutIfNeeded()
     searchButton.frame = CGRect(x: 0, y: 0, width: side, height: side)
     compactNavigationButton.frame = CGRect(x: 0, y: 0, width: side, height: side)
-    // Expanded navigation is the owning controller's untouched system tab bar.
-    navigationGlass.isHidden = !isCollapsed
-    searchGlass.isHidden = !isCollapsed
+    let itemWidth = (navigationWidth - 8) / 2
+    for (index, button) in navigationButtons.enumerated() {
+      button.frame = CGRect(x: 4 + CGFloat(index) * itemWidth, y: 4, width: itemWidth, height: side - 8)
+      button.isHidden = isCollapsed
+    }
+    selectionGlass.frame = CGRect(x: 4 + CGFloat(max(0, min(1, selection))) * itemWidth,
+                                 y: 4, width: itemWidth, height: side - 8)
+    selectionGlass.isHidden = isCollapsed || selection == 2
     compactNavigationButton.alpha = isCollapsed ? 1 : 0
     compactNavigationButton.isUserInteractionEnabled = isCollapsed
     compactNavigationButton.accessibilityElementsHidden = !isCollapsed
