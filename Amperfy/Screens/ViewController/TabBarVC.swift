@@ -247,9 +247,10 @@ class TabBarVC: UITabBarController {
     let margin: CGFloat = 20
     let availableWidth = view.bounds.width - view.safeAreaInsets.left - view.safeAreaInsets.right
     let dockWidth = min(600, availableWidth - margin * 2)
-    let navigationItemWidth = max(64, (dockWidth - FloatingPlayerDock.navigationHeight - FloatingPlayerDock.gap) / 2)
-    if tabBar.itemPositioning != .centered { tabBar.itemPositioning = .centered }
-    if tabBar.itemWidth != navigationItemWidth { tabBar.itemWidth = navigationItemWidth }
+    // Fill the available navigation capsule even with only Home and Library.
+    // Centered sizing lets iOS 26 shrink that group beside the separate search tab.
+    if tabBar.itemPositioning != .fill { tabBar.itemPositioning = .fill }
+    if tabBar.itemWidth != 0 { tabBar.itemWidth = 0 }
     if tabBar.itemSpacing != 0 { tabBar.itemSpacing = 0 }
     if !isTabBarHidden, tabBar.bounds.height > 0 {
       dockNavigationTop = tabBar.convert(tabBar.bounds, to: view).minY

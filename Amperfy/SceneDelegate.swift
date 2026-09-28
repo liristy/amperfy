@@ -310,6 +310,7 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
                 }
                 dock.layoutIfNeeded()
                 guard tabHost.tabBar.items?.count == 3,
+                      tabHost.tabBar.itemPositioning == .fill,
                       tabHost.tabBar.superview !== dock,
                       dock.navigationGlass.isHidden, dock.searchGlass.isHidden else {
                   smokeLog("Dock did not restore a full-height system tab bar")
@@ -406,6 +407,17 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
               try await Task.sleep(for: .milliseconds(80))
               guard let pausedPopup = vc.presentedViewController as? PopupPlayerVC else { return }
               let pausedDistance = (miniPlayer.window?.bounds.height ?? 800) * 0.6
+              miniPlayer.updatePlayerExpansion(translation: pausedDistance * 0.30)
+              try await Task.sleep(for: .milliseconds(100))
+              guard let earlySurface = pausedPopup.view.mask?.layer.presentation(),
+                    earlySurface.frame.height > miniPlayer.glassContainer.bounds.height + 20,
+                    earlySurface.frame.height < pausedPopup.view.bounds.height - 20,
+                    (pausedPopup.view.layer.presentation()?.opacity ?? 0) > 0.98,
+                    let earlyContent = pausedPopup.controlPlaceholderView.mask?.layer.presentation(),
+                    earlyContent.opacity > 0.5 else {
+                smokeLog("Opening hid the whole player during the capsule expansion")
+                return
+              }
               miniPlayer.updatePlayerExpansion(translation: pausedDistance * 0.85)
               pausedPopup.refreshCurrentlyPlayingInfoView()
               try await Task.sleep(for: .milliseconds(100))
@@ -445,10 +457,10 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
               guard let controlsMask = pausedPopup.controlPlaceholderView.mask,
                     controlsMask.accessibilityIdentifier == "player-transition-content-mask",
                     (controlsMask.layer.presentation()?.opacity ?? controlsMask.layer.opacity) < 0.01,
-                    (pausedPopup.view.layer.presentation()?.opacity ?? 1) < 0.01,
+                    (pausedPopup.view.layer.presentation()?.opacity ?? 0) > 0.98,
                     miniPlayer.glassContainer.layer.opacity == 1,
                     hiddenCover.mask?.alpha == 0, flyingCover() != nil else {
-                smokeLog("Fullscreen controls remained visible over the live mini player during closing")
+                smokeLog("Closing hid the shrinking surface or exposed fullscreen controls near the capsule")
                 return
               }
               try transitionScreenshot("player-closing-capsule.png")
@@ -461,7 +473,7 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
                 smokeLog("Reversing the final closing phase did not restore all content masks")
                 return
               }
-              smokeLog("Paused opening refresh kept one cover; closing hid fullscreen controls and restored live mini player; reversal restored masks")
+              smokeLog("Opening and closing kept the morphing surface visible; refresh kept one cover; capsule hid fullscreen controls; reversal restored masks")
               pausedPopup.dismiss(animated: false)
               try await Task.sleep(for: .milliseconds(150))
               if vc.presentedViewController != nil {
@@ -526,7 +538,13 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
                 largestOpeningHeight = max(largestOpeningHeight, animatedFrame.height)
                 if animatedFrame.height > destinationHeight + 0.5 { sampledSpringOvershoot = true }
                 if let layer = popup.view.layer.presentation(), layer.transform.m11 > 1.002 {
-                  sampledContentRebound = true
+                  // Model alpha can be 1 while the rendered page is invisible.
+                  // The rebound must be visible in both surface and content.
+                  if layer.opacity > 0.98,
+                     let content = popup.controlPlaceholderView.mask?.layer.presentation(),
+                     content.opacity > 0.98 {
+                    sampledContentRebound = true
+                  }
                 }
                 if animatedFrame.height > miniPlayer.glassContainer.bounds.height + 10,
                    animatedFrame.height < destinationHeight - 1 { sampledSurfaceExpansion = true }

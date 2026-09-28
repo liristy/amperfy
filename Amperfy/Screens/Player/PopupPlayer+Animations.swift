@@ -141,8 +141,8 @@ final class PlayerSurfaceAnimator: NSObject, UIViewControllerAnimatedTransitioni
     }
     var contentMasks = [UIView]()
     if !reducedMotion {
-      // Fade all foreground content before the surface reaches capsule height.
-      // Keep the background and the independently moving album cover separate.
+      // Keep the foreground visible through the spring's main travel/rebound.
+      // Hide it only near the capsule, where full-size controls cannot fit.
       for content in playerView.subviews where content !== popup.backgroundImage {
         contentMasks.append(installMask(on: content, alpha: isPresenting ? 0 : 1,
                                         identifier: "player-transition-content-mask"))
@@ -176,14 +176,16 @@ final class PlayerSurfaceAnimator: NSObject, UIViewControllerAnimatedTransitioni
       } else {
         UIView.animateKeyframes(withDuration: self.transitionDuration(using: context), delay: 0,
                                 options: [.calculationModeLinear]) {
-          UIView.addKeyframe(withRelativeStartTime: self.isPresenting ? 0.55 : 0,
-                            relativeDuration: 0.45) {
+          UIView.addKeyframe(withRelativeStartTime: self.isPresenting ? 0.05 : 0.35,
+                            relativeDuration: 0.30) {
             contentMasks.forEach { $0.alpha = self.isPresenting ? 1 : 0 }
           }
-          // Reveal the real mini player underneath, including its live glass
-          // and labels. A snapshot of offscreen glass can contain stale controls.
-          UIView.addKeyframe(withRelativeStartTime: self.isPresenting ? 0.1 : 0.65,
-                            relativeDuration: 0.25) {
+          // The moving surface must remain opaque through the entire visible
+          // morph. Crossfade only at the capsule endpoint; fading the page over
+          // its travel turns the whole-player spring into a cover-only animation.
+          // Keep the real mini player underneath, never a stale glass snapshot.
+          UIView.addKeyframe(withRelativeStartTime: self.isPresenting ? 0 : 0.965,
+                            relativeDuration: 0.035) {
             playerView.alpha = self.isPresenting ? originalAlpha : 0
           }
         }
