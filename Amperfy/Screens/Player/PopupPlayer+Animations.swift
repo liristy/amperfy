@@ -173,7 +173,7 @@ final class PlayerSurfaceAnimator: NSObject, UIViewControllerAnimatedTransitioni
     }
     let animator = UIViewPropertyAnimator(
       duration: duration, dampingRatio: Self.springDamping
-    ) {
+    ) { [contentMasks, contentTransforms, flyingArtwork] in
       playerView.transform = self.isPresenting ? originalTransform : collapsedTransform
       for entry in contentTransforms {
         entry.view.transform = self.isPresenting ? entry.original :
@@ -213,7 +213,7 @@ final class PlayerSurfaceAnimator: NSObject, UIViewControllerAnimatedTransitioni
     }
     animator.scrubsLinearly = true
     let presenting = isPresenting
-    animator.addCompletion { [weak self] _ in
+    animator.addCompletion { [weak self, maskedViews, contentTransforms, flyingArtwork] _ in
       let completed = !context.transitionWasCancelled
       // Restore nested artwork masks before their ancestor content masks.
       for entry in maskedViews.reversed() { entry.view.mask = entry.original }
