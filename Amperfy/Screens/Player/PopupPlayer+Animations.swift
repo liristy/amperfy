@@ -73,6 +73,7 @@ final class PlayerSurfaceAnimator: NSObject, UIViewControllerAnimatedTransitioni
 
   func interruptibleAnimator(using context: UIViewControllerContextTransitioning) -> UIViewImplicitlyAnimating {
     if let animator { return animator }
+    let duration = transitionDuration(using: context)
     let container = context.containerView
     guard let fromVC = context.viewController(forKey: .from),
           let toVC = context.viewController(forKey: .to),
@@ -171,7 +172,7 @@ final class PlayerSurfaceAnimator: NSObject, UIViewControllerAnimatedTransitioni
       }
     }
     let animator = UIViewPropertyAnimator(
-      duration: transitionDuration(using: context), dampingRatio: Self.springDamping
+      duration: duration, dampingRatio: Self.springDamping
     ) {
       playerView.transform = self.isPresenting ? originalTransform : collapsedTransform
       for entry in contentTransforms {
@@ -183,7 +184,7 @@ final class PlayerSurfaceAnimator: NSObject, UIViewControllerAnimatedTransitioni
       if reducedMotion {
         playerView.alpha = self.isPresenting ? originalAlpha : 0
       } else {
-        UIView.animateKeyframes(withDuration: self.transitionDuration(using: context), delay: 0,
+        UIView.animateKeyframes(withDuration: duration, delay: 0,
                                 options: [.calculationModeLinear]) {
           UIView.addKeyframe(withRelativeStartTime: self.isPresenting ? 0.05 : 0.35,
                             relativeDuration: 0.30) {
@@ -202,7 +203,7 @@ final class PlayerSurfaceAnimator: NSObject, UIViewControllerAnimatedTransitioni
       if let smallArtworkFrame, let largeArtworkFrame {
         // Share the interactive timeline, but explicitly replace the inherited
         // spring: the cover travels smoothly while only the whole page rebounds.
-        UIView.animate(withDuration: self.transitionDuration(using: context), delay: 0,
+        UIView.animate(withDuration: duration, delay: 0,
                        options: [.overrideInheritedOptions, .overrideInheritedCurve, .curveEaseInOut]) {
           flyingArtwork?.frame = self.isPresenting ? largeArtworkFrame : smallArtworkFrame
           flyingArtwork?.layer.cornerRadius = self.isPresenting ? (targetArtwork?.layer.cornerRadius ?? 0) :
