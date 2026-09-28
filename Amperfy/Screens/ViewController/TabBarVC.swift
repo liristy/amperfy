@@ -247,6 +247,10 @@ class TabBarVC: UITabBarController {
     let margin: CGFloat = 20
     let availableWidth = view.bounds.width - view.safeAreaInsets.left - view.safeAreaInsets.right
     let dockWidth = min(600, availableWidth - margin * 2)
+    let navigationItemWidth = max(64, (dockWidth - FloatingPlayerDock.navigationHeight - FloatingPlayerDock.gap) / 2)
+    if tabBar.itemPositioning != .centered { tabBar.itemPositioning = .centered }
+    if tabBar.itemWidth != navigationItemWidth { tabBar.itemWidth = navigationItemWidth }
+    if tabBar.itemSpacing != 0 { tabBar.itemSpacing = 0 }
     if !isTabBarHidden, tabBar.bounds.height > 0 {
       dockNavigationTop = tabBar.convert(tabBar.bounds, to: view).minY
     }
@@ -298,7 +302,9 @@ class TabBarVC: UITabBarController {
   private func updateNativeDockNavigation(animated: Bool) {
     guard let dock = playerDock else { return }
     let top = (selectedViewController as? UINavigationController)?.topViewController
-    let hidden = dock.isCollapsed || dockKeyboardVisible || top?.hidesBottomBarWhenPushed == true
+    // The native search field moves into the tab bar above the keyboard.
+    // Hiding that bar would detach its first responder and dismiss the keyboard.
+    let hidden = dock.isCollapsed || top?.hidesBottomBarWhenPushed == true
     if isTabBarHidden != hidden { setTabBarHidden(hidden, animated: animated) }
   }
 

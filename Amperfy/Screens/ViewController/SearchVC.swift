@@ -267,15 +267,10 @@ class SearchVC: BasicTableViewController {
       scopeButtonTitles: scopeButtonTitles
     )
 
-    if (tabBarController as? TabBarVC)?.playerDock != nil {
-      // The system tab bar is hidden while the floating dock owns navigation.
-      // Keep the search field in a visible navigation bar instead of that tab bar.
-      navigationItem.searchBarPlacementAllowsExternalIntegration = false
-      navigationItem.searchBarPlacementAllowsToolbarIntegration = false
-      navigationController?.navigationItem.searchBarPlacementAllowsExternalIntegration = false
-      navigationItem.preferredSearchBarPlacement = .stacked
-      navigationItem.hidesSearchBarWhenScrolling = false
-    }
+    // The expanded dock uses the original system tab bar, including its
+    // integrated search field. Only the mini player hides when typing.
+    navigationItem.searchBarPlacementAllowsExternalIntegration = true
+    navigationController?.navigationItem.searchBarPlacementAllowsExternalIntegration = true
 
     // Install the options button
     optionsButton = UIBarButtonItem.createOptionsBarButton()
