@@ -762,6 +762,8 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
                 }
                 return true
               }
+              // Keep real upcoming rows visible for queue layout review.
+              self.appDelegate.player.appendContextQueue(playables: [song, nextSong, song])
               popup.controlView?.displayPlaylistPressed()
               guard try await compactHeaderStayedFixed(),
                     self.appDelegate.storage.settings.user.playerDisplayStyle == .compact else {
