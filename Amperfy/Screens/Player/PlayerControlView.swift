@@ -103,6 +103,7 @@ class PlayerControlView: UIView {
     rootView = toWorkOnRootView
 
     playerHandler = PlayerUIHandler(player: player, style: .popupPlayer)
+    configureGlassControls()
     configureVolumeSlider()
     timeSlider.minimumTrackTintColor = .white.withAlphaComponent(0.8)
     timeSlider.maximumTrackTintColor = .white.withAlphaComponent(0.18)
@@ -177,6 +178,20 @@ class PlayerControlView: UIView {
     ])
   }
 
+  private func configureGlassControls() {
+    // Use native button materials so highlights and touch deformation are handled by UIKit.
+    (playButton.superview as? UIStackView)?.spacing = 12
+    for button in [playButton, previousButton, nextButton, skipBackwardButton,
+                   skipForwardButton, airplayButton, playerModeButton, volumeButton, optionsButton] {
+      guard let button else { continue }
+      var configuration = UIButton.Configuration.player(isSelected: false)
+      configuration.image = button.image(for: .normal)
+      button.backgroundColor = .clear
+      button.clipsToBounds = false
+      button.configuration = configuration
+    }
+  }
+
   @objc
   private func volumeChanged() {
     player.volume = volumeSlider.value
@@ -198,11 +213,8 @@ class PlayerControlView: UIView {
   func refreshLyricsButton() {
     let selected = appDelegate.storage.settings.user.isPlayerLyricsDisplayed &&
       appDelegate.storage.settings.user.playerDisplayStyle == .large
-    var configuration = UIButton.Configuration.plain()
+    var configuration = UIButton.Configuration.player(isSelected: selected)
     configuration.image = UIImage(systemName: "quote.bubble")
-    configuration.baseForegroundColor = .white
-    configuration.background.backgroundColor = selected ? .white.withAlphaComponent(0.18) : .clear
-    configuration.background.cornerRadius = 12
     lyricsButton.configuration = configuration
     lyricsButton.isSelected = selected
     lyricsButton.isEnabled = playerHandler?.isLyricsButtonAllowedToDisplay ?? false
@@ -518,8 +530,10 @@ class PlayerControlView: UIView {
     switch player.playerMode {
     case .music:
       playerModeButton.setImage(UIImage.musicalNotes, for: .normal)
+      playerModeButton.configuration?.image = .musicalNotes
     case .podcast:
       playerModeButton.setImage(UIImage.podcast, for: .normal)
+      playerModeButton.configuration?.image = .podcast
     }
     optionsStackView.layoutIfNeeded()
   }

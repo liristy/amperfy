@@ -134,6 +134,7 @@ class PopupPlayerVC: UIViewController, UIScrollViewDelegate, UIGestureRecognizer
     closeButtonPlaceholderView.isHidden = true
     let closePlayer = UIButton(type: .system)
     closePlayer.translatesAutoresizingMaskIntoConstraints = false
+    closePlayer.configuration = .player(isSelected: false)
     closePlayer.accessibilityLabel = "Close".localized
     closePlayer.addTarget(self, action: #selector(dismissFullScreenPlayer), for: .touchUpInside)
     let handle = UIView()

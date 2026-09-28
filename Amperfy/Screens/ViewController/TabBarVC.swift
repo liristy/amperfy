@@ -128,6 +128,9 @@ class TabBarVC: UITabBarController {
     miniPlayer = MiniPlayerView(player: appDelegate.player)
     miniPlayer!.configureForiOS()
     miniPlayer!.glassContainer.translatesAutoresizingMaskIntoConstraints = false
+    // UITabAccessory owns the glass and its transition into the minimized tab bar.
+    // A second glass effect here makes the surface cloudy and doubles its edges.
+    miniPlayer!.glassContainer.effect = nil
     bottomAccessory = UITabAccessory(contentView: miniPlayer!.glassContainer)
     heightConstraint = miniPlayer!.glassContainer.heightAnchor.constraint(equalToConstant: 56)
     heightConstraint?.isActive = true

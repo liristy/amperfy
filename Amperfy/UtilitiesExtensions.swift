@@ -134,28 +134,21 @@ extension UIColor {
 
 extension UIButton.Configuration {
   static func player(isSelected: Bool) -> UIButton.Configuration {
-    var config = UIButton.Configuration.tinted()
-    if isSelected {
-      config.background.strokeColor = .label
-      config.background.strokeWidth = 1.0
-      config.preferredSymbolConfigurationForImage = UIImage.SymbolConfiguration(scale: .medium)
-    }
+    var config = isSelected ? UIButton.Configuration.prominentGlass() : .glass()
+    config.preferredSymbolConfigurationForImage = UIImage.SymbolConfiguration(scale: .medium)
     config.buttonSize = .small
-    #if targetEnvironment(macCatalyst)
-      config.baseForegroundColor = .label
-      config.baseBackgroundColor = .clear
-    #else
-      config.baseForegroundColor = !isSelected ? .label : .systemBackground
-      config.baseBackgroundColor = !isSelected ? .clear : .label
-    #endif
-    config.cornerStyle = .medium
+    config.baseForegroundColor = isSelected ? .systemBackground : .label
+    if isSelected { config.baseBackgroundColor = .label }
+    config.cornerStyle = .capsule
+    config.contentInsets = NSDirectionalEdgeInsets(top: 8, leading: 8, bottom: 8, trailing: 8)
     return config
   }
 
   static func playerRound() -> UIButton.Configuration {
-    var config = UIButton.Configuration.gray()
+    var config = UIButton.Configuration.glass()
     config.preferredSymbolConfigurationForImage = UIImage.SymbolConfiguration(scale: .medium)
     config.buttonSize = .small
+    config.cornerStyle = .capsule
     return config
   }
 }

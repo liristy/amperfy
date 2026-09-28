@@ -113,7 +113,7 @@ class PlayerUIHandler: NSObject {
         )
     case .popupPlayer:
       buttonImg = buttonImg.withConfiguration(
-        UIImage.SymbolConfiguration(pointSize: 44, weight: .semibold)
+        UIImage.SymbolConfiguration(pointSize: 34, weight: .semibold)
       )
     }
 
@@ -270,12 +270,10 @@ class PlayerUIHandler: NSObject {
     case .miniPlayeriOS, .miniPlayerMac:
       displayPlaylistButton.tintColor = isSelected ? .tintColor : .label
     case .popupPlayer:
-      var config = UIButton.Configuration.plain()
+      var config = UIButton.Configuration.player(isSelected: isSelected)
       config.image = UIImage(systemName: "list.bullet")
-      config.baseForegroundColor = .white
-      config.background.backgroundColor = isSelected ? .white.withAlphaComponent(0.18) : .clear
-      config.background.cornerRadius = 12
       displayPlaylistButton.isSelected = isSelected
+      displayPlaylistButton.clipsToBounds = false
       displayPlaylistButton.configuration = config
     }
   }

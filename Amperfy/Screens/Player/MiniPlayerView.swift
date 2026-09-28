@@ -1053,8 +1053,9 @@ class MiniPlayerView: UIView, UIGestureRecognizerDelegate {
   public lazy var glassContainer: UIVisualEffectView = {
     let container = UIVisualEffectView()
     let glassEffect = UIGlassEffect(style: .regular)
-    glassEffect.isInteractive = false
+    glassEffect.isInteractive = true
     container.effect = glassEffect
+    container.cornerConfiguration = .capsule()
     container.contentView.addSubview(self)
 
     container.translatesAutoresizingMaskIntoConstraints = false

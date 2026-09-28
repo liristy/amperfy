@@ -60,6 +60,11 @@ class UserQueueSectionHeader: UIView {
     nameLabel.applyAmperfyStyle()
     rightButton.isHidden = false
     rightButton.isEnabled = true
+    var configuration = UIButton.Configuration.glass()
+    configuration.title = "Clear".localized
+    configuration.buttonSize = .small
+    configuration.cornerStyle = .capsule
+    rightButton.configuration = configuration
     self.buttonPressAction = buttonPressAction
   }
 
