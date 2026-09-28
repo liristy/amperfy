@@ -181,6 +181,9 @@ class PlayerControlView: UIView {
       button.clipsToBounds = false
       button.configuration = configuration
     }
+    var airplayConfiguration = UIButton.Configuration.playerAccessory(isSelected: false)
+    airplayConfiguration.image = UIImage(systemName: "airplay.audio")
+    airplayButton.configuration = airplayConfiguration
   }
 
   @objc
@@ -204,7 +207,7 @@ class PlayerControlView: UIView {
   func refreshLyricsButton() {
     let selected = appDelegate.storage.settings.user.isPlayerLyricsDisplayed &&
       appDelegate.storage.settings.user.playerDisplayStyle == .large
-    var configuration = UIButton.Configuration.player(isSelected: selected)
+    var configuration = UIButton.Configuration.playerAccessory(isSelected: selected)
     configuration.image = UIImage(systemName: "quote.bubble")
     lyricsButton.configuration = configuration
     lyricsButton.isSelected = selected

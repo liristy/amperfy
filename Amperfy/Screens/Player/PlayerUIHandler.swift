@@ -270,7 +270,7 @@ class PlayerUIHandler: NSObject {
     case .miniPlayeriOS, .miniPlayerMac:
       displayPlaylistButton.tintColor = isSelected ? .tintColor : .label
     case .popupPlayer:
-      var config = UIButton.Configuration.player(isSelected: isSelected)
+      var config = UIButton.Configuration.playerAccessory(isSelected: isSelected)
       config.image = UIImage(systemName: "list.bullet")
       displayPlaylistButton.isSelected = isSelected
       displayPlaylistButton.clipsToBounds = false

@@ -143,6 +143,13 @@ extension UIButton.Configuration {
     return config
   }
 
+  static func playerAccessory(isSelected: Bool) -> UIButton.Configuration {
+    var config = player(isSelected: isSelected)
+    config.preferredSymbolConfigurationForImage = .init(pointSize: 24, weight: .regular, scale: .medium)
+    config.contentInsets = NSDirectionalEdgeInsets(top: 6, leading: 6, bottom: 6, trailing: 6)
+    return config
+  }
+
   static func playerRound() -> UIButton.Configuration {
     var config = UIButton.Configuration.plain()
     config.preferredSymbolConfigurationForImage = UIImage.SymbolConfiguration(scale: .medium)
