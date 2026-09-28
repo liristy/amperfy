@@ -343,29 +343,29 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
                   try image.pngData()?.write(to: URL.documentsDirectory.appendingPathComponent(name))
                 }
                 try dockScreenshot("player-mini-spacing.png")
-                let homeSelectionX = dock.selectionGlass.frame.minX
+                let homeSelectionX = dock.selectionContainer.frame.minX
                 dock.navigationButtons[1].sendActions(for: .touchUpInside)
                 var sampledNavigationMotion = false
                 var navigationFrame = CGRect.zero
                 for _ in 0..<30 {
                   try await Task.sleep(for: .milliseconds(16))
-                  guard let movingSelection = dock.selectionGlass.layer.presentation() else { continue }
+                  guard let movingSelection = dock.selectionContainer.layer.presentation() else { continue }
                   navigationFrame = movingSelection.frame
                   if navigationFrame.minX > homeSelectionX + 1,
-                     navigationFrame.minX < dock.selectionGlass.frame.minX - 1 {
+                     navigationFrame.minX < dock.selectionContainer.frame.minX - 1 {
                     sampledNavigationMotion = true
                     break
                   }
                 }
                 guard tabHost.selectedTab?.identifier.hasPrefix("Tabs.Library") == true,
                       sampledNavigationMotion else {
-                  smokeLog("Glass selection did not slide: tab=\(tabHost.selectedTab?.identifier ?? "nil"), rendered=\(navigationFrame), target=\(dock.selectionGlass.frame)")
+                  smokeLog("Glass selection did not slide: tab=\(tabHost.selectedTab?.identifier ?? "nil"), rendered=\(navigationFrame), target=\(dock.selectionContainer.frame)")
                   return
                 }
                 dock.navigationButtons[0].sendActions(for: .touchUpInside)
                 try await Task.sleep(for: .milliseconds(600))
                 guard tabHost.selectedTab?.identifier == "Tabs.Home",
-                      abs(dock.selectionGlass.frame.minX - homeSelectionX) < 0.5 else { return }
+                      abs(dock.selectionContainer.frame.minX - homeSelectionX) < 0.5 else { return }
                 smokeLog("Full-length glass navigation selection animated and reversed without changing height")
                 tabHost.updatePlayerDockForScroll(delta: -40, atTop: false)
                 try await Task.sleep(for: .milliseconds(650))

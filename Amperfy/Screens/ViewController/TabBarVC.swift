@@ -500,6 +500,9 @@ final class FloatingPlayerDock: UIView {
   let navigationGlass = UIVisualEffectView(effect: UIGlassEffect(style: .regular))
   let searchGlass = UIVisualEffectView(effect: UIGlassEffect(style: .regular))
   let selectionGlass = UIVisualEffectView(effect: UIGlassEffect(style: .regular))
+  // Glass owns its internal rendering transforms. Animate a plain host so
+  // navigation motion remains independent of the material's interactive layout.
+  let selectionContainer = UIView()
   let navigationButtons = [UIButton(type: .system), UIButton(type: .system)]
   private let searchButton = UIButton(type: .system)
   private let compactNavigationButton = UIButton(type: .system)
@@ -529,7 +532,10 @@ final class FloatingPlayerDock: UIView {
       effect.isInteractive = true
       glass.effect = effect
     }
-    navigationGlass.contentView.addSubview(selectionGlass)
+    selectionContainer.isUserInteractionEnabled = false
+    navigationGlass.contentView.addSubview(selectionContainer)
+    selectionContainer.addSubview(selectionGlass)
+    selectionGlass.autoresizingMask = [.flexibleWidth, .flexibleHeight]
     for (index, button) in navigationButtons.enumerated() {
       navigationGlass.contentView.addSubview(button)
       button.accessibilityIdentifier = index == 0 ? "dock-home" : "dock-library"
@@ -628,9 +634,10 @@ final class FloatingPlayerDock: UIView {
       button.frame = CGRect(x: 4 + CGFloat(index) * itemWidth, y: 4, width: itemWidth, height: side - 8)
       button.isHidden = isCollapsed
     }
-    selectionGlass.frame = CGRect(x: 4 + CGFloat(max(0, min(1, selection))) * itemWidth,
-                                 y: 4, width: itemWidth, height: side - 8)
-    selectionGlass.isHidden = isCollapsed || selection == 2
+    selectionContainer.frame = CGRect(x: 4 + CGFloat(max(0, min(1, selection))) * itemWidth,
+                                     y: 4, width: itemWidth, height: side - 8)
+    selectionGlass.frame = selectionContainer.bounds
+    selectionContainer.isHidden = isCollapsed || selection == 2
     compactNavigationButton.alpha = isCollapsed ? 1 : 0
     compactNavigationButton.isUserInteractionEnabled = isCollapsed
     compactNavigationButton.accessibilityElementsHidden = !isCollapsed
