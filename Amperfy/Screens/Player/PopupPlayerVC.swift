@@ -40,6 +40,11 @@ class PopupPlayerVC: UIViewController, UIScrollViewDelegate, UIGestureRecognizer
   @IBOutlet
   weak var controlPlaceholderHeightConstraint: NSLayoutConstraint!
   private let safetyMarginOnBottom = 8.0
+  internal static let backgroundPaletteCache: NSCache<NSString, NSArray> = {
+    let cache = NSCache<NSString, NSArray>()
+    cache.countLimit = 16
+    return cache
+  }()
   internal var artworkGradientColors = [UIColor]()
   internal let artworkGradientLayer = CAGradientLayer()
   internal var backgroundArtworkKey: String?

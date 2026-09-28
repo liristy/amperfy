@@ -85,9 +85,9 @@ extension PopupPlayerVC {
     case .music:
       if let playableInfo = player.currentlyPlaying,
          playableInfo.isSong {
+        config = .player(isSelected: playableInfo.isFavorite)
+        config.preferredSymbolConfigurationForImage = .init(pointSize: 21, weight: .regular)
         config.image = playableInfo.isFavorite ? .starFill : .starEmpty
-        config.baseForegroundColor = playableInfo.isFavorite ? appDelegate.storage.settings.accounts
-          .getSetting(playableInfo.account?.info).read.themePreference.asColor : .label
         button.isEnabled = appDelegate.storage.settings.user.isOnlineMode
       } else if let playableInfo = player.currentlyPlaying,
                 let radio = playableInfo.asRadio {
@@ -122,7 +122,13 @@ extension PopupPlayerVC {
     guard backgroundArtworkKey != key else { return }
     backgroundArtworkKey = key
     backgroundArtworkTask?.cancel()
-    artworkGradientColors = [preference.themePreference.asColor, .darkGray]
+    // Do not flash the account's accent color while artwork is decoded.
+    // Reopening the same cover starts with its final palette immediately.
+    if let cached = Self.backgroundPaletteCache.object(forKey: key as NSString) as? [UIColor] {
+      artworkGradientColors = cached
+    } else if artworkGradientColors.isEmpty || path == nil {
+      artworkGradientColors = [.darkGray, .darkGray]
+    }
     applyGradientBackground()
     guard let path else { return }
     backgroundArtworkTask = Task { @MainActor [weak self] in
@@ -131,12 +137,15 @@ extension PopupPlayerVC {
         (try? image.dominantColors(max: 2)) ?? []
       }.value
       guard !Task.isCancelled, let self, self.backgroundArtworkKey == key else { return }
-      if !colors.isEmpty { self.artworkGradientColors = colors }
-      self.applyGradientBackground()
+      if !colors.isEmpty {
+        self.artworkGradientColors = colors
+        Self.backgroundPaletteCache.setObject(colors as NSArray, forKey: key as NSString)
+      }
+      self.applyGradientBackground(animated: true)
     }
   }
 
-  internal func applyGradientBackground() {
+  internal func applyGradientBackground(animated: Bool = false) {
     func shaded(_ color: UIColor, brightness: CGFloat) -> CGColor {
       var red: CGFloat = 0
       var green: CGFloat = 0
@@ -150,6 +159,7 @@ extension PopupPlayerVC {
         alpha: 1
       ).cgColor
     }
+    let previousColors = artworkGradientLayer.presentation()?.colors ?? artworkGradientLayer.colors
     let first = artworkGradientColors.first ?? .darkGray
     let last = artworkGradientColors.last ?? first
     CATransaction.begin()
@@ -164,6 +174,13 @@ extension PopupPlayerVC {
     artworkGradientLayer.startPoint = CGPoint(x: 0, y: 0)
     artworkGradientLayer.endPoint = CGPoint(x: 1, y: 1)
     CATransaction.commit()
+    if animated, let previousColors, view.window != nil, !UIAccessibility.isReduceMotionEnabled {
+      let fade = CABasicAnimation(keyPath: "colors")
+      fade.fromValue = previousColors
+      fade.toValue = artworkGradientLayer.colors
+      fade.duration = 0.3
+      artworkGradientLayer.add(fade, forKey: "artwork-palette")
+    }
   }
 
   @objc

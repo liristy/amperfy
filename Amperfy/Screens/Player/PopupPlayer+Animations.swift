@@ -23,7 +23,8 @@ import AmperfyKit
 import UIKit
 
 // The complete player expands from, and contracts into, the mini-player capsule.
-// Keep the full-screen content laid out at its final size inside a springing mask.
+// Keep the live content at its final layout size inside a springing mask.
+// Never swap a rendered screenshot for the real player at the end of the animation.
 @MainActor
 final class PlayerSurfaceTransitionDelegate: NSObject, UIViewControllerTransitioningDelegate {
   weak var sourcePlayer: UIView?
@@ -77,6 +78,9 @@ final class PlayerSurfaceAnimator: NSObject, UIViewControllerAnimatedTransitioni
       context.completeTransition(false)
       return UIViewPropertyAnimator(duration: 0, curve: .linear)
     }
+    // Capture only the existing mini player before attaching the destination.
+    // afterScreenUpdates: true here can commit a full-screen destination frame.
+    let capsule = sourcePlayer?.snapshotView(afterScreenUpdates: false)
     if isPresenting {
       toView.frame = context.finalFrame(for: toVC)
       container.addSubview(toView)
@@ -95,42 +99,35 @@ final class PlayerSurfaceAnimator: NSObject, UIViewControllerAnimatedTransitioni
       CGRect(x: fullFrame.minX + 20, y: fullFrame.maxY - 140, width: fullFrame.width - 40, height: 56)
     let reducedMotion = UIAccessibility.isReduceMotionEnabled
     let sourceOpacity = sourcePlayer?.layer.opacity ?? 1
-    let playerOpacity = playerView.layer.opacity
-    let capsule = sourcePlayer?.snapshotView(afterScreenUpdates: true)
-    let movingPlayer = playerView.snapshotView(afterScreenUpdates: true) ?? UIView(frame: playerView.bounds)
-    movingPlayer.accessibilityIdentifier = "player-transition-content"
-    let surface = UIView(frame: isPresenting && !reducedMotion ? smallFrame : fullFrame)
+    let originalMask = playerView.mask
+    let originalAlpha = playerView.alpha
+    let originalTransform = playerView.transform
+    let collapsedTransform = reducedMotion ? originalTransform : originalTransform.scaledBy(x: 0.94, y: 0.94)
+    // Measure the capsule in the collapsed coordinate space so the live view's
+    // elastic scale still lands precisely on the mini player in either direction.
+    playerView.transform = collapsedTransform
+    let localSmallFrame = playerView.convert(smallFrame, from: container)
+    playerView.transform = isPresenting ? collapsedTransform : originalTransform
+    let surface = UIView(frame: isPresenting && !reducedMotion ? localSmallFrame : playerView.bounds)
     surface.accessibilityIdentifier = "player-transition-surface"
-    surface.backgroundColor = .secondarySystemBackground
-    surface.clipsToBounds = true
-    surface.autoresizesSubviews = false
+    surface.backgroundColor = .black
     surface.layer.cornerCurve = .continuous
     surface.layer.cornerRadius = isPresenting && !reducedMotion ? smallFrame.height / 2 : 0
-    container.addSubview(surface)
-    surface.addSubview(movingPlayer)
-    movingPlayer.bounds = CGRect(origin: .zero, size: fullFrame.size)
-    movingPlayer.center = CGPoint(x: surface.bounds.midX, y: surface.bounds.midY)
-    movingPlayer.transform = isPresenting && !reducedMotion ? CGAffineTransform(scaleX: 0.92, y: 0.92) : .identity
-    movingPlayer.alpha = isPresenting ? 0 : 1
+    playerView.mask = surface
+    if reducedMotion { playerView.alpha = isPresenting ? 0 : originalAlpha }
     if let capsule, !reducedMotion {
-      capsule.bounds = CGRect(origin: .zero, size: smallFrame.size)
-      capsule.center = CGPoint(x: surface.bounds.midX, y: surface.bounds.midY)
+      capsule.frame = smallFrame
       capsule.alpha = isPresenting ? 1 : 0
-      surface.addSubview(capsule)
+      container.addSubview(capsule)
     }
-    // Keep the real views attached and interactive so an in-flight pan is not
-    // cancelled, and safe-area changes cannot relayout the player mid-morph.
     sourcePlayer?.layer.opacity = 0
-    playerView.layer.opacity = 0
     let animator = UIViewPropertyAnimator(
       duration: transitionDuration(using: context), dampingRatio: reducedMotion ? 1 : 0.74
     ) {
-      movingPlayer.alpha = self.isPresenting ? 1 : 0
-      surface.frame = self.isPresenting || reducedMotion ? fullFrame : smallFrame
+      playerView.transform = self.isPresenting ? originalTransform : collapsedTransform
+      surface.frame = self.isPresenting || reducedMotion ? playerView.bounds : localSmallFrame
       surface.layer.cornerRadius = self.isPresenting || reducedMotion ? 0 : smallFrame.height / 2
-      movingPlayer.center = CGPoint(x: surface.bounds.midX, y: surface.bounds.midY)
-      movingPlayer.transform = self.isPresenting || reducedMotion ? .identity : CGAffineTransform(scaleX: 0.92, y: 0.92)
-      capsule?.center = CGPoint(x: surface.bounds.midX, y: surface.bounds.midY)
+      if reducedMotion { playerView.alpha = self.isPresenting ? originalAlpha : 0 }
       capsule?.alpha = self.isPresenting ? 0 : 1
     }
     animator.scrubsLinearly = true
@@ -138,9 +135,11 @@ final class PlayerSurfaceAnimator: NSObject, UIViewControllerAnimatedTransitioni
     animator.addCompletion { [weak self] _ in
       let completed = !context.transitionWasCancelled
       self?.sourcePlayer?.layer.opacity = sourceOpacity
-      playerView.layer.opacity = playerOpacity
+      playerView.mask = originalMask
+      playerView.alpha = originalAlpha
+      playerView.transform = originalTransform
       if presenting != completed { playerView.removeFromSuperview() }
-      surface.removeFromSuperview()
+      capsule?.removeFromSuperview()
       popup.surfaceTransition.presentationInteraction = nil
       popup.surfaceTransition.interaction = nil
       self?.animator = nil

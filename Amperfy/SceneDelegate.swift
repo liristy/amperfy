@@ -371,7 +371,8 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
               miniPlayer.endPlayerExpansion(translation: 110, velocity: -200, cancelled: true)
               try await Task.sleep(for: .seconds(1))
               guard vc.presentedViewController !== cancelledPopup,
-                    cancelledPopup.presentingViewController == nil, miniPlayer.glassContainer.layer.opacity == 1 else {
+                    cancelledPopup.presentingViewController == nil, cancelledPopup.view.mask == nil,
+                    miniPlayer.glassContainer.layer.opacity == 1 else {
                 smokeLog("Cancelled upward expansion did not restore mini player")
                 return
               }
@@ -395,9 +396,6 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
                 try image.pngData()?.write(to: URL.documentsDirectory.appendingPathComponent("player-opening.png"))
               }
               miniPlayer.endPlayerExpansion(translation: 160, velocity: 850)
-              func descendants(of view: UIView) -> [UIView] {
-                view.subviews + view.subviews.flatMap { descendants(of: $0) }
-              }
               // UIKit may defer presentation until the next run-loop turn. Sample frames
               // throughout the transition instead of assuming one fixed scheduling delay.
               var sampledSurfaceExpansion = false
@@ -407,16 +405,13 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
               for _ in 0..<60 {
                 try await Task.sleep(for: .milliseconds(16))
                 guard let popup = vc.presentedViewController as? PopupPlayerVC,
-                      let window = popup.view.window,
-                      let surface = descendants(of: window).first(where: {
-                        $0.accessibilityIdentifier == "player-transition-surface"
-                      }), let animatedFrame = surface.layer.presentation()?.frame,
-                      let content = surface.subviews.first(where: {
-                        $0.accessibilityIdentifier == "player-transition-content"
-                      }) else { continue }
+                      let surface = popup.view.mask,
+                      surface.accessibilityIdentifier == "player-transition-surface",
+                      let animatedFrame = surface.layer.presentation()?.frame else { continue }
                 let destinationHeight = popup.view.bounds.height
-                guard content.bounds.size == popup.view.bounds.size else {
-                  smokeLog("Transition does not contain the complete player surface")
+                guard popup.view.layer.opacity == 1, popup.view.alpha == 1,
+                      popup.view.bounds.size == popup.view.window?.bounds.size else {
+                  smokeLog("Live player was hidden or resized during opening")
                   return
                 }
                 lastSample = "height \(animatedFrame.height), destination \(destinationHeight)"
@@ -446,7 +441,7 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
               popup.endInteractiveDismissal(translation: 70, velocity: -150, cancelled: true)
               try await Task.sleep(for: .seconds(1))
               guard vc.presentedViewController === popup, popup.view.transform == .identity,
-                    popup.transitionArtwork?.isHidden == false, popup.view.layer.opacity == 1 else {
+                    popup.transitionArtwork?.isHidden == false, popup.view.layer.opacity == 1, popup.view.mask == nil else {
                 smokeLog("Cancelled player dismissal did not restore the player")
                 return
               }
@@ -618,11 +613,9 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
               var sampledClosingRebound = false
               for _ in 0..<60 {
                 try await Task.sleep(for: .milliseconds(16))
-                guard let window = miniPlayer.window,
-                      let surface = descendants(of: window).first(where: {
-                        $0.accessibilityIdentifier == "player-transition-surface"
-                      }), let animatedFrame = surface.layer.presentation()?.frame else { continue }
-                let destination = miniPlayer.glassContainer.convert(miniPlayer.glassContainer.bounds, to: window)
+                guard let surface = popup.view.mask,
+                      let animatedFrame = surface.layer.presentation()?.frame else { continue }
+                let destination = miniPlayer.glassContainer.bounds
                 if animatedFrame.height < destination.height - 0.25 { sampledClosingRebound = true }
               }
               if !sampledClosingRebound {

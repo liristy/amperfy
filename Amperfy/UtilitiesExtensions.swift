@@ -137,9 +137,13 @@ extension UIButton.Configuration {
     var config = UIButton.Configuration.plain()
     config.preferredSymbolConfigurationForImage = UIImage.SymbolConfiguration(scale: .medium)
     config.buttonSize = .small
-    config.baseForegroundColor = isSelected ? .tintColor : .label
+    config.baseForegroundColor = .label
     config.background = .clear()
-    config.background.backgroundColorTransformer = UIConfigurationColorTransformer { _ in .clear }
+    config.cornerStyle = .capsule
+    config.background.cornerRadius = 22
+    config.background.backgroundColorTransformer = UIConfigurationColorTransformer { _ in
+      isSelected ? UIColor.white.withAlphaComponent(0.16) : .clear
+    }
     config.contentInsets = NSDirectionalEdgeInsets(top: 8, leading: 8, bottom: 8, trailing: 8)
     return config
   }
