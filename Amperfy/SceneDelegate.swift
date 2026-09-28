@@ -798,8 +798,10 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
                   tabHost.view.drawHierarchy(in: tabHost.view.bounds, afterScreenUpdates: true)
                 }
                 try searchImage.pngData()?.write(to: URL.documentsDirectory.appendingPathComponent("player-search-keyboard.png"))
-                // iOS can host the native tab search field outside the tab
-                // controller's view, so end editing on the actual responder.
+                // Close the integrated search session, as its Cancel control
+                // does. Resigning only the text field leaves UISearchTab's
+                // automatically activated search session running.
+                search?.searchController.isActive = false
                 search?.searchController.searchBar.searchTextField.resignFirstResponder()
                 tabHost.view.window?.endEditing(true)
                 for _ in 0..<30 {
@@ -809,7 +811,7 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
                 }
                 guard !dock.isHidden,
                       search?.searchController.searchBar.searchTextField.isFirstResponder != true else {
-                  smokeLog("Custom dock did not return after dismissing the keyboard")
+                  smokeLog("Custom dock did not return after closing search: active=\(search?.searchController.isActive == true), focused=\(search?.searchController.searchBar.searchTextField.isFirstResponder == true), dockHidden=\(dock.isHidden), keyboardFrame=\(tabHost.view.keyboardLayoutGuide.layoutFrame)")
                   return
                 }
                 tabHost.selectedTab = tabHost.tabs.first(where: { $0.identifier == "Tabs.Home" })
