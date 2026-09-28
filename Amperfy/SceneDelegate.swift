@@ -281,7 +281,11 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
               smokeLog("Adjacent song previews, edge resistance, user queue priority and repeat wrapping passed")
               var playerPolishChecksPassed = true
               let outputSymbols: [(AVAudioSession.Port, String, String)] = [
-                (.bluetoothA2DP, "JYQ 的 AirPods", "airpods"),
+                (.bluetoothA2DP, "JYQ 的 AirPods", "airpods.gen3"),
+                (.bluetoothA2DP, "airpods", "airpods.gen3"),
+                (.bluetoothA2DP, "AirPods 4", "airpods.gen3"),
+                (.bluetoothHFP, "AirPods 3", "airpods.gen3"),
+                (.bluetoothA2DP, "AirPods 2", "airpods"),
                 (.bluetoothHFP, "AirPods Pro 2", "airpodspro"),
                 (.bluetoothLE, "AIRPODS MAX", "airpodsmax"),
                 (.bluetoothA2DP, "My renamed headset", "airplay.audio"),
@@ -412,6 +416,10 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
                 smokeLog("A refresh exposed the real cover during paused opening")
                 return
               }
+              guard PlayerControlView.audioOutputSymbol(portType: .bluetoothA2DP, portName: "Renamed",
+                                                        preferredSymbol: "airpods.gen3") == "airpods.gen3",
+                    PlayerControlView.audioOutputSymbol(portType: .builtInSpeaker, portName: "iPhone",
+                                                        preferredSymbol: "airpods.gen3") == "airplay.audio" else { return }
               func transitionScreenshot(_ name: String) throws {
                 guard let window = miniPlayer.window else { return }
                 let image = UIGraphicsImageRenderer(bounds: window.bounds).image { _ in
@@ -563,6 +571,21 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
                     fullPlayer.titleLabel.font.pointSize >= fullPlayer.artistLabel.font.pointSize + 6 else {
                 smokeLog("Full player title is not larger than the artist after appearance")
                 return
+              }
+              if let controls = popup.controlView {
+                controls.renderAudioOutput(.init(portType: .bluetoothA2DP, name: "airpods", uid: "smoke-airpods4"))
+                controls.refreshPlayer()
+                controls.renderAudioOutput(nil, settled: false)
+                controls.renderAudioOutput(.init(portType: .builtInSpeaker, name: "iPhone", uid: "speaker"), settled: false)
+                controls.renderAudioOutput(.init(portType: .bluetoothHFP, name: "Bluetooth", uid: "smoke-airpods4"))
+                guard controls.audioOutputIconName == "airpods.gen3",
+                      controls.airplayButton.menu != nil else {
+                  smokeLog("Playback refresh or empty route reset the AirPods 4 icon")
+                  return
+                }
+                controls.renderAudioOutput(.init(portType: .builtInSpeaker, name: "iPhone", uid: "speaker"))
+                guard controls.audioOutputIconName == "airplay.audio", controls.airplayButton.menu == nil else { return }
+                smokeLog("AirPods 3/4 symbol, model override, refresh stability and real disconnect reset passed")
               }
               try screenshot("player-artwork-landscape.png")
               // Leave enough time for the real engine to preload the second stream.
@@ -775,10 +798,17 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
                   tabHost.view.drawHierarchy(in: tabHost.view.bounds, afterScreenUpdates: true)
                 }
                 try searchImage.pngData()?.write(to: URL.documentsDirectory.appendingPathComponent("player-search-keyboard.png"))
-                tabHost.view.endEditing(true)
-                try await Task.sleep(for: .milliseconds(650))
-                tabHost.view.layoutIfNeeded()
-                guard !dock.isHidden else {
+                // iOS can host the native tab search field outside the tab
+                // controller's view, so end editing on the actual responder.
+                search?.searchController.searchBar.searchTextField.resignFirstResponder()
+                tabHost.view.window?.endEditing(true)
+                for _ in 0..<30 {
+                  try await Task.sleep(for: .milliseconds(100))
+                  tabHost.view.layoutIfNeeded()
+                  if !dock.isHidden { break }
+                }
+                guard !dock.isHidden,
+                      search?.searchController.searchBar.searchTextField.isFirstResponder != true else {
                   smokeLog("Custom dock did not return after dismissing the keyboard")
                   return
                 }

@@ -40,6 +40,19 @@ class PlayerControlView: UIView {
   private var rootView: PopupPlayerVC?
   private var playerHandler: PlayerUIHandler?
   private let volumeSlider = UISlider()
+  private var audioRouteTask: Task<Void, Never>?
+  private static let audioIconPreferencesKey = "player.audioOutputIcons"
+  private static var bluetoothIconCache = [String: String]()
+  private var displayedAudioOutput: AudioOutput?
+  private(set) var audioOutputIconName = "airplay.audio"
+  struct AudioOutput {
+    let portType: AVAudioSession.Port
+    let name: String
+    let uid: String
+    var isBluetooth: Bool {
+      [.bluetoothA2DP, .bluetoothHFP, .bluetoothLE].contains(portType)
+    }
+  }
   #if targetEnvironment(macCatalyst) // ok
     var airplayVolume: MPVolumeView?
   #endif
@@ -94,6 +107,8 @@ class PlayerControlView: UIView {
     player.addNotifier(notifier: self)
     NotificationCenter.default.addObserver(self, selector: #selector(audioRouteChanged(_:)),
       name: AVAudioSession.routeChangeNotification, object: nil)
+    NotificationCenter.default.addObserver(self, selector: #selector(audioRouteChanged(_:)),
+      name: UIApplication.didBecomeActiveNotification, object: nil)
 
     #if targetEnvironment(macCatalyst) // ok
       addSubview(airplayVolume!)
@@ -187,17 +202,24 @@ class PlayerControlView: UIView {
     refreshAudioOutputButton()
   }
 
-  // Public audio routes expose a port name, not an AirPods model identifier.
-  // Only use a model-specific symbol when the Bluetooth name identifies it.
-  static func audioOutputSymbol(portType: AVAudioSession.Port, portName: String) -> String {
+  // The route name cannot identify a generation reliably. Plain "AirPods"
+  // uses the modern 3/4 silhouette; a per-device choice can correct renamed
+  // devices and older models without claiming to detect their hardware.
+  static func audioOutputSymbol(portType: AVAudioSession.Port, portName: String,
+                                preferredSymbol: String? = nil) -> String {
     switch portType {
     case .bluetoothA2DP, .bluetoothHFP, .bluetoothLE:
+      if let preferredSymbol,
+         ["airpods", "airpods.gen3", "airpodspro", "airpodsmax", "headphones"].contains(preferredSymbol) {
+        return preferredSymbol
+      }
       let name = portName.folding(options: [.caseInsensitive, .widthInsensitive], locale: nil)
         .filter { $0.isLetter || $0.isNumber }
         .lowercased()
       if name.contains("airpodsmax") { return "airpodsmax" }
       if name.contains("airpodspro") { return "airpodspro" }
-      if name.contains("airpods") { return "airpods" }
+      if name.contains("airpods1") || name.contains("airpods2") { return "airpods" }
+      if name.contains("airpods") { return "airpods.gen3" }
       return "airplay.audio"
     case .headphones: return "headphones"
     case .carAudio: return "car.fill"
@@ -206,18 +228,83 @@ class PlayerControlView: UIView {
   }
 
   @objc nonisolated private func audioRouteChanged(_ notification: Notification) {
-    Task { @MainActor [weak self] in self?.refreshAudioOutputButton() }
+    Task { @MainActor [weak self] in self?.scheduleAudioOutputRefresh() }
   }
 
-  private func refreshAudioOutputButton() {
-    guard let airplayButton else { return }
+  override func didMoveToWindow() {
+    super.didMoveToWindow()
+    if window != nil { scheduleAudioOutputRefresh() }
+    else { audioRouteTask?.cancel() }
+  }
+
+  private func scheduleAudioOutputRefresh() {
+    audioRouteTask?.cancel()
+    audioRouteTask = Task { @MainActor [weak self] in
+      // Profile/category changes can briefly report no output or the built-in
+      // speaker. Coalesce them, then confirm the settled route once more.
+      do { try await Task.sleep(for: .milliseconds(250)) } catch { return }
+      guard !Task.isCancelled else { return }
+      self?.refreshAudioOutputButton(settled: false)
+      do { try await Task.sleep(for: .milliseconds(650)) } catch { return }
+      guard !Task.isCancelled else { return }
+      self?.refreshAudioOutputButton()
+    }
+  }
+
+  private func refreshAudioOutputButton(settled: Bool = true) {
     let outputs = AVAudioSession.sharedInstance().currentRoute.outputs
-    let symbol = outputs.first.map { Self.audioOutputSymbol(portType: $0.portType, portName: $0.portName) }
+    let port = outputs.first { $0.portType != .builtInSpeaker && $0.portType != .builtInReceiver } ?? outputs.first
+    renderAudioOutput(port.map { AudioOutput(portType: $0.portType, name: $0.portName, uid: $0.uid) },
+                      settled: settled)
+  }
+
+  func renderAudioOutput(_ output: AudioOutput?, settled: Bool = true) {
+    guard let airplayButton else { return }
+    if !settled, output == nil || (displayedAudioOutput?.isBluetooth == true && output?.isBluetooth != true) {
+      return
+    }
+    let preferences = UserDefaults.standard.dictionary(forKey: Self.audioIconPreferencesKey) as? [String: String] ?? [:]
+    let preferred = output.flatMap { preferences[$0.uid] }
+    let inferredSymbol = output.map { Self.audioOutputSymbol(portType: $0.portType, portName: $0.name) }
       ?? "airplay.audio"
+    var symbol = inferredSymbol
+    if let output, output.isBluetooth, !output.uid.isEmpty {
+      if inferredSymbol != "airplay.audio" {
+        if Self.bluetoothIconCache.count > 64 { Self.bluetoothIconCache.removeAll() }
+        Self.bluetoothIconCache[output.uid] = inferredSymbol
+      } else {
+        // The same endpoint can temporarily have a generic name during a
+        // profile change. Never borrow another device's model by name.
+        symbol = Self.bluetoothIconCache[output.uid] ?? inferredSymbol
+      }
+      if let preferred {
+        symbol = Self.audioOutputSymbol(portType: output.portType, portName: output.name, preferredSymbol: preferred)
+      }
+    }
+    displayedAudioOutput = output
+    audioOutputIconName = symbol
     var configuration = UIButton.Configuration.playerAccessory(isSelected: false)
     configuration.image = UIImage(systemName: symbol) ?? UIImage(systemName: "airplay.audio")
     airplayButton.configuration = configuration
-    airplayButton.accessibilityValue = outputs.map(\.portName).joined(separator: ", ")
+    airplayButton.accessibilityValue = output?.name
+    airplayButton.menu = nil
+    airplayButton.accessibilityHint = nil
+    guard let output, output.isBluetooth, !output.uid.isEmpty else { return }
+    let choices: [(String, String?)] = [
+      ("Automatic".localized, nil), ("AirPods 1 / 2", "airpods"),
+      ("AirPods 3 / 4", "airpods.gen3"), ("AirPods Pro", "airpodspro"),
+      ("AirPods Max", "airpodsmax"), ("Headphones".localized, "headphones"),
+    ]
+    airplayButton.menu = UIMenu(title: "Headphone Icon".localized, children: choices.map { title, value in
+      UIAction(title: title, image: value.flatMap { UIImage(systemName: $0) },
+               state: preferred == value ? .on : .off) { [weak self] _ in
+        var saved = UserDefaults.standard.dictionary(forKey: Self.audioIconPreferencesKey) as? [String: String] ?? [:]
+        saved[output.uid] = value
+        UserDefaults.standard.set(saved, forKey: Self.audioIconPreferencesKey)
+        self?.refreshAudioOutputButton()
+      }
+    })
+    airplayButton.accessibilityHint = "Long press to choose headphone icon".localized
   }
 
   @objc
@@ -359,7 +446,8 @@ class PlayerControlView: UIView {
   }
 
   func refreshPlayer() {
-    refreshAudioOutputButton()
+    // Playback and metadata changes must not overwrite a settled output icon
+    // using a transient route snapshot. Route notifications own that update.
     if !volumeSlider.isTracking {
       volumeSlider.value = player.volume
     }
