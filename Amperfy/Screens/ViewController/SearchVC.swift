@@ -68,6 +68,7 @@ class SearchDiffableDataSource: BasicUITableViewDiffableDataSource {
 
 class SearchVC: BasicTableViewController {
   override var sceneTitle: String { "Search".localized }
+  private var pendingSearchFocus = false
 
   nonisolated private static let categoryItemLimit = 10
 
@@ -234,13 +235,26 @@ class SearchVC: BasicTableViewController {
   }
 
   public func activateSearchBar() {
-    if isViewLoaded {
-      searchController.isActive = true
-      // Let the search presentation attach its text field before requesting focus.
-      DispatchQueue.main.async { [weak self] in
-        guard let self, self.view.window != nil else { return }
-        self.searchController.searchBar.becomeFirstResponder()
-      }
+    pendingSearchFocus = true
+    guard isViewLoaded, view.window != nil else { return }
+    searchController.isActive = true
+    focusSearchFieldIfRequested()
+    DispatchQueue.main.async { [weak self] in self?.focusSearchFieldIfRequested() }
+  }
+
+  override func viewDidAppear(_ animated: Bool) {
+    super.viewDidAppear(animated)
+    if pendingSearchFocus { activateSearchBar() }
+  }
+
+  func didPresentSearchController(_ searchController: UISearchController) {
+    focusSearchFieldIfRequested()
+  }
+
+  private func focusSearchFieldIfRequested() {
+    guard pendingSearchFocus, searchController.searchBar.searchTextField.window != nil else { return }
+    if searchController.searchBar.searchTextField.becomeFirstResponder() {
+      pendingSearchFocus = false
     }
   }
 

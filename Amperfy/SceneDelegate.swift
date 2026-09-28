@@ -602,8 +602,10 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
                 dock.onSearch?()
                 try await Task.sleep(for: .seconds(1))
                 tabHost.view.layoutIfNeeded()
-                guard tabHost.selectedTab is UISearchTab, dock.isHidden else {
-                  smokeLog("Custom search navigation did not focus search and hide the dock for the keyboard")
+                let search = tabHost.searchViewController
+                let searchFocused = search?.searchController.searchBar.searchTextField.isFirstResponder == true
+                guard tabHost.selectedTab is UISearchTab, searchFocused, dock.isHidden else {
+                  smokeLog("Custom search navigation failed: controller=\(String(describing: search)), loaded=\(search?.isViewLoaded == true), active=\(search?.searchController.isActive == true), focused=\(searchFocused), dockHidden=\(dock.isHidden)")
                   return
                 }
                 let searchImage = UIGraphicsImageRenderer(bounds: tabHost.view.bounds).image { _ in

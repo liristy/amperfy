@@ -27,6 +27,7 @@ import UIKit
 class TabBarVC: UITabBarController {
   private var libraryGroup: UITabGroup?
   private var searchTab: UISearchTab?
+  private(set) weak var searchViewController: SearchVC?
   private var homeTab: UITab?
   private let account: Account
 
@@ -61,10 +62,9 @@ class TabBarVC: UITabBarController {
     var fixTabs = [UITab]()
 
     searchTab = UISearchTab { _ in
-      UINavigationController(
-        rootViewController: TabNavigatorItem.search
-          .getController(account: self.account)
-      )
+      let search = AppStoryboard.Main.segueToSearch(account: self.account)
+      self.searchViewController = search
+      return UINavigationController(rootViewController: search)
     }
     searchTab!.automaticallyActivatesSearch = true
 
@@ -285,11 +285,7 @@ class TabBarVC: UITabBarController {
         guard let self else { return }
         self.selectedTab = self.searchTab
         self.updateDockSelection()
-        DispatchQueue.main.async { [weak self] in
-          guard let self, self.selectedTab === self.searchTab else { return }
-          let navigation = self.selectedViewController as? UINavigationController
-          (navigation?.topViewController as? SearchVC)?.activateSearchBar()
-        }
+        self.searchViewController?.activateSearchBar()
       }
       view.addSubview(dock)
       playerDock = dock
