@@ -329,13 +329,14 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
                   return
                 }
                 smokeLog("Navigation spans \(dock.navigationGlass.frame.width)pt with equal items; player gap \(nativeTop - playerBottom)")
-                for button in dock.navigationButtons {
+                for (index, button) in dock.navigationButtons.enumerated() {
                   button.layoutIfNeeded()
-                  guard let image = button.imageView, let title = button.titleLabel,
-                        title.convert(title.bounds, to: button).minY -
-                        image.convert(image.bounds, to: button).maxY >= 5.5 else {
+                  let image = dock.navigationIcons[index]
+                  let title = dock.navigationTitles[index]
+                  if title.convert(title.bounds, to: button).minY -
+                        image.convert(image.bounds, to: button).maxY < 7.5 {
                     smokeLog("Navigation title is too close to its icon")
-                    return
+                    playerPolishChecksPassed = false
                   }
                 }
                 guard abs(expandedFrame.height - 56) < 0.5,
@@ -579,11 +580,11 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
                 largestOpeningHeight = max(largestOpeningHeight, animatedFrame.height)
                 if animatedFrame.height > destinationHeight + 0.5 { sampledSpringOvershoot = true }
                 if let cover = flyingCover(), let frame = cover.layer.presentation()?.frame {
-                  guard frame.width >= previousCoverWidth - 0.5,
-                        frame.width <= destinationCoverFrame.width + 0.5,
-                        frame.minY >= destinationCoverFrame.minY - 0.5 else {
+                  if frame.width < previousCoverWidth - 0.5 ||
+                        frame.width > destinationCoverFrame.width + 0.5 ||
+                        frame.minY < destinationCoverFrame.minY - 0.5 {
                     smokeLog("Opening artwork bounced instead of travelling smoothly: \(frame), target \(destinationCoverFrame)")
-                    return
+                    playerPolishChecksPassed = false
                   }
                   previousCoverWidth = frame.width
                 }
@@ -832,10 +833,10 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
                 let destination = miniPlayer.glassContainer.bounds
                 if animatedFrame.height < destination.height - 0.25 { sampledClosingRebound = true }
                 if let cover = flyingCover(), let frame = cover.layer.presentation()?.frame {
-                  guard frame.width <= previousReturningWidth + 0.5,
-                        frame.width >= miniPlayer.artworkImage.bounds.width - 0.5 else {
+                  if frame.width > previousReturningWidth + 0.5 ||
+                        frame.width < miniPlayer.artworkImage.bounds.width - 0.5 {
                     smokeLog("Returning artwork bounced instead of travelling smoothly: \(frame)")
-                    return
+                    playerPolishChecksPassed = false
                   }
                   previousReturningWidth = frame.width
                   if frame.width > miniPlayer.artworkImage.bounds.width + 1,

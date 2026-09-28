@@ -85,6 +85,16 @@ done
 
 # Exercise real streaming, seeking, the server lyrics response, and the full player.
 xcrun simctl terminate "$device_id" "$bundle_id"
+# Keep a short recording of the real compositor output for transition review.
+# It runs independently so frame sampling in the app is never stalled by captures.
+(
+  xcrun simctl io "$device_id" recordVideo --codec=h264 build/validation/player-motion.mp4 >build/validation/player-motion.log 2>&1 &
+  motion_pid=$!
+  sleep 35
+  kill -INT "$motion_pid" 2>/dev/null || true
+  wait "$motion_pid" || true
+) &
+motion_capture_pid=$!
 xcrun simctl launch \
   --stdout="$PWD/build/validation/player.stdout.log" \
   --stderr="$PWD/build/validation/player.stderr.log" \
@@ -97,6 +107,7 @@ for attempt in {1..60}; do
   fi
   sleep 2
 done
+wait "$motion_capture_pid" || true
 xcrun simctl io "$device_id" screenshot build/validation/player-dismissed-zh-Hans.png
 for screenshot in player-opening player-opening-refreshed player-closing-capsule player-next-song player-paused-artwork player-mini-spacing player-mini-collapsed player-search-keyboard player-lyrics-controls player-queue-from-lyrics; do
   source="$container/Documents/$screenshot.png"

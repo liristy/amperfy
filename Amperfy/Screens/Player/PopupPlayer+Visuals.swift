@@ -153,10 +153,16 @@ extension PopupPlayerVC {
       var alpha: CGFloat = 0
       color.getRed(&red, green: &green, blue: &blue, alpha: &alpha)
       let neutral = red * 0.2126 + green * 0.7152 + blue * 0.0722
+      let shadedRed = (red * 0.4 + neutral * 0.6) * brightness + 0.16
+      let shadedGreen = (green * 0.4 + neutral * 0.6) * brightness + 0.16
+      let shadedBlue = (blue * 0.4 + neutral * 0.6) * brightness + 0.16
+      // White or very bright covers must not wash out the white controls.
+      let luminance = shadedRed * 0.2126 + shadedGreen * 0.7152 + shadedBlue * 0.0722
+      let attenuation = min(1, 0.4 / max(luminance, 0.001))
       return UIColor(
-        red: (red * 0.4 + neutral * 0.6) * brightness + 0.16,
-        green: (green * 0.4 + neutral * 0.6) * brightness + 0.16,
-        blue: (blue * 0.4 + neutral * 0.6) * brightness + 0.16,
+        red: shadedRed * attenuation,
+        green: shadedGreen * attenuation,
+        blue: shadedBlue * attenuation,
         alpha: 1
       ).cgColor
     }

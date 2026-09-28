@@ -409,6 +409,7 @@ class PlayableTableCell: BasicTableCell {
     if rootView is PopupPlayerVC {
       // Queue rows have their own compact geometry; library rows retain their
       // duration/cache/favourite columns and existing appearance.
+      contentView.preservesSuperviewLayoutMargins = false
       contentView.layoutMargins = UIEdgeInsets(top: 6, left: 8, bottom: 6, right: 8)
       entityImage.constraints.first { $0.firstAttribute == .width && $0.secondItem == nil }?.constant = 44
       favoriteIconImage.superview?.constraints.first {

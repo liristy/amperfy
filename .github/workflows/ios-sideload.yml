@@ -42,6 +42,7 @@ jobs:
             build/validation/PlaylistTests.xcresult
             build/validation/*.png
             build/validation/*.jpg
+            build/validation/player-motion.mp4
             build/validation/crashes
           retention-days: 7
 

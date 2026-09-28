@@ -151,7 +151,7 @@
                                                 <label opaque="NO" userInteractionEnabled="NO" contentMode="left" horizontalHuggingPriority="251" verticalHuggingPriority="251" text="Album Name" lineBreakMode="tailTruncation" baselineAdjustment="alignBaselines" adjustsFontSizeToFit="NO" translatesAutoresizingMaskIntoConstraints="NO" id="BQj-am-zrx" userLabel="Album Label" customClass="MarqueeLabel" customModule="MarqueeLabel">
                                                     <rect key="frame" x="0.0" y="0.0" width="265" height="25.5"/>
                                                     <constraints>
-                                                        <constraint firstAttribute="height" constant="18" id="bvg-8g-TC9"/>
+                                                        <constraint firstAttribute="height" constant="18" priority="999" id="bvg-8g-TC9"/>
                                                     </constraints>
                                                     <fontDescription key="fontDescription" type="system" pointSize="13"/>
                                                     <nil key="textColor"/>

@@ -504,6 +504,8 @@ final class FloatingPlayerDock: UIView {
   // navigation motion remains independent of the material's interactive layout.
   let selectionContainer = UIView()
   let navigationButtons = [UIButton(type: .system), UIButton(type: .system)]
+  let navigationIcons = [UIImageView(), UIImageView()]
+  let navigationTitles = [UILabel(), UILabel()]
   private let searchButton = UIButton(type: .system)
   private let compactNavigationButton = UIButton(type: .system)
   private var selection = -1
@@ -540,6 +542,15 @@ final class FloatingPlayerDock: UIView {
     for (index, button) in navigationButtons.enumerated() {
       navigationGlass.contentView.addSubview(button)
       button.accessibilityIdentifier = index == 0 ? "dock-home" : "dock-library"
+      button.isAccessibilityElement = true
+      navigationIcons[index].contentMode = .scaleAspectFit
+      navigationTitles[index].font = .systemFont(ofSize: 11, weight: .semibold)
+      navigationTitles[index].textAlignment = .center
+      for content in [navigationIcons[index] as UIView, navigationTitles[index]] {
+        content.isUserInteractionEnabled = false
+        content.isAccessibilityElement = false
+        button.addSubview(content)
+      }
       button.addAction(UIAction { [weak self] _ in self?.onNavigate?(index) }, for: .touchUpInside)
     }
     navigationGlass.contentView.addSubview(compactNavigationButton)
@@ -576,19 +587,13 @@ final class FloatingPlayerDock: UIView {
     compactNavigationButton.configuration = compact
     for (index, button) in navigationButtons.enumerated() {
       var configuration = UIButton.Configuration.plain()
-      configuration.image = icons[index]
-      configuration.title = index == 0 ? TabNavigatorItem.home.title : "Library".localized
-      configuration.imagePlacement = .top
-      configuration.imagePadding = 6
       configuration.contentInsets = .zero
-      configuration.preferredSymbolConfigurationForImage = .init(pointSize: 25, weight: .medium)
-      configuration.baseForegroundColor = index == selected ? tint : .label
-      configuration.titleTextAttributesTransformer = UIConfigurationTextAttributesTransformer { attributes in
-        var result = attributes
-        result.font = .systemFont(ofSize: 11, weight: .semibold)
-        return result
-      }
       button.configuration = configuration
+      navigationIcons[index].image = icons[index].withConfiguration(UIImage.SymbolConfiguration(pointSize: 25, weight: .medium))
+      navigationIcons[index].tintColor = index == selected ? tint : .label
+      navigationTitles[index].text = index == 0 ? TabNavigatorItem.home.title : "Library".localized
+      navigationTitles[index].textColor = index == selected ? tint : .label
+      button.accessibilityLabel = navigationTitles[index].text
       button.accessibilityTraits = index == selected ? [.button, .selected] : .button
     }
     setNeedsLayout()
@@ -652,6 +657,10 @@ final class FloatingPlayerDock: UIView {
     for (index, button) in navigationButtons.enumerated() {
       button.frame = CGRect(x: 4 + CGFloat(index) * itemWidth, y: 4, width: itemWidth, height: side - 8)
       button.isHidden = isCollapsed
+      // Own these two frames: system button configurations can compress their
+      // image/title spacing when fitting inside a fixed-height glass capsule.
+      navigationIcons[index].frame = CGRect(x: (itemWidth - 30) / 2, y: 3, width: 30, height: 28)
+      navigationTitles[index].frame = CGRect(x: 0, y: 39, width: itemWidth, height: 14)
     }
     if selectionAnimator == nil {
       selectionContainer.frame = CGRect(x: 4 + CGFloat(max(0, min(1, selection))) * itemWidth,
