@@ -957,7 +957,7 @@ class MiniPlayerView: UIView, UIGestureRecognizerDelegate {
     let popup = PopupPlayerVC()
     popup.configurePresentation(sourcePlayer: glassContainer, sourceArtwork: artworkImage)
     let interaction = UIPercentDrivenInteractiveTransition()
-    interaction.timingCurve = UISpringTimingParameters(dampingRatio: PlayerSurfaceAnimator.springDamping)
+    // Preserve each animation's curve; a global spring also makes the cover bounce.
     popup.surfaceTransition.presentationInteraction = interaction
     expandingPlayer = popup
     hostVC.present(popup, animated: true)

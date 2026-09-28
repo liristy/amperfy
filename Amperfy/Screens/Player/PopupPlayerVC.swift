@@ -368,7 +368,7 @@ class PopupPlayerVC: UIViewController, UIScrollViewDelegate, UIGestureRecognizer
     guard surfaceTransition.interaction == nil, !isBeingDismissed else { return }
     lyricsControlsTask?.cancel()
     let interaction = UIPercentDrivenInteractiveTransition()
-    interaction.timingCurve = UISpringTimingParameters(dampingRatio: PlayerSurfaceAnimator.springDamping)
+    // Let the surface spring and the cover's easing retain their own curves.
     surfaceTransition.interaction = interaction
     dismiss(animated: true) { [weak self] in self?.surfaceTransition.interaction = nil }
   }

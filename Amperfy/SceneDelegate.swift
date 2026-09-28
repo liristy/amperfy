@@ -370,7 +370,7 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
                   guard let movingSelection = dock.selectionContainer.layer.presentation() else { continue }
                   navigationFrame = movingSelection.frame
                   if navigationFrame.minX > homeSelectionX + 1,
-                     navigationFrame.minX < dock.selectionContainer.frame.minX - 1 {
+                     navigationFrame.minX < dock.navigationButtons[1].frame.minX - 1 {
                     sampledNavigationMotion = true
                     break
                   }
@@ -381,7 +381,7 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
                   playerPolishChecksPassed = false
                 }
                 dock.navigationButtons[0].sendActions(for: .touchUpInside)
-                try await Task.sleep(for: .milliseconds(600))
+                try await Task.sleep(for: .milliseconds(900))
                 guard tabHost.selectedTab?.identifier == "Tabs.Home",
                       abs(dock.selectionContainer.frame.minX - homeSelectionX) < 0.5 else { return }
                 smokeLog("Full-length glass navigation selection animated and reversed without changing height")
@@ -618,7 +618,7 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
                 smokeLog("Whole player did not rebound on opening: largest height \(largestOpeningHeight), \(lastSample)")
                 playerPolishChecksPassed = false
               } else {
-                smokeLog("Complete player surface rebounded visibly (scale \(largestContentScale)); artwork travelled without overshoot")
+                smokeLog("Complete player surface rebounded visibly (scale \(largestContentScale))")
               }
               try await Task.sleep(for: .seconds(1))
               guard popup.largePlayerPlaceholderView.transform == .identity,
@@ -646,8 +646,9 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
                 try image.pngData()?.write(to: URL.documentsDirectory.appendingPathComponent(name))
               }
               guard let fullPlayer = popup.largeCurrentlyPlayingView,
-                    fullPlayer.titleLabel.font.pointSize >= fullPlayer.artistLabel.font.pointSize + 6 else {
-                smokeLog("Full player title is not larger than the artist after appearance")
+                    abs(fullPlayer.titleLabel.font.pointSize - 20) < 0.5,
+                    abs(fullPlayer.artistLabel.font.pointSize - 20) < 0.5 else {
+                smokeLog("Full player typography no longer matches the reference layout")
                 return
               }
               if let controls = popup.controlView {
