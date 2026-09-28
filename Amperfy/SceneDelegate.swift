@@ -262,6 +262,7 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
               try await Task.sleep(for: .milliseconds(250))
               self.appDelegate.player.setRepeatMode(.off)
               smokeLog("Adjacent song previews, edge resistance, user queue priority and repeat wrapping passed")
+              var playerPolishChecksPassed = true
               if let tabHost = vc as? UITabBarController {
                 tabHost.view.layoutIfNeeded()
                 guard tabHost.bottomAccessory != nil,
@@ -271,19 +272,23 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
                   return
                 }
                 miniPlayer.glassContainer.traitOverrides.tabAccessoryEnvironment = .inline
+                try await Task.sleep(for: .milliseconds(100))
                 tabHost.view.layoutIfNeeded()
-                guard miniPlayer.traitCollection.tabAccessoryEnvironment == .inline,
-                      abs(miniPlayer.glassContainer.bounds.height - miniPlayer.bounds.height) < 0.5 else {
-                  smokeLog("Inline mini player retained expanded bottom spacing")
-                  return
+                miniPlayer.glassContainer.layoutIfNeeded()
+                if miniPlayer.traitCollection.tabAccessoryEnvironment != .inline ||
+                  abs(miniPlayer.glassContainer.bounds.height - miniPlayer.bounds.height) >= 0.5 {
+                  smokeLog("Inline mini player retained expanded bottom spacing: container \(miniPlayer.glassContainer.bounds), content \(miniPlayer.bounds)")
+                  playerPolishChecksPassed = false
                 }
                 miniPlayer.glassContainer.traitOverrides.remove(UITraitTabAccessoryEnvironment.self)
+                try await Task.sleep(for: .milliseconds(100))
                 tabHost.view.layoutIfNeeded()
-                guard abs(miniPlayer.glassContainer.bounds.height - miniPlayer.bounds.height - 8) < 0.5 else {
-                  smokeLog("Expanded mini player did not restore its bottom spacing")
-                  return
+                miniPlayer.glassContainer.layoutIfNeeded()
+                if abs(miniPlayer.glassContainer.bounds.height - miniPlayer.bounds.height - 8) >= 0.5 {
+                  smokeLog("Expanded mini player did not restore its bottom spacing: container \(miniPlayer.glassContainer.bounds), content \(miniPlayer.bounds)")
+                  playerPolishChecksPassed = false
                 }
-                smokeLog("Native mini player accessory and inline environment restored")
+                if playerPolishChecksPassed { smokeLog("Native mini player accessory and inline environment restored") }
                 let image = UIGraphicsImageRenderer(bounds: tabHost.view.bounds).image { _ in
                   tabHost.view.drawHierarchy(in: tabHost.view.bounds, afterScreenUpdates: true)
                 }
@@ -339,11 +344,12 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
                 return
               }
               smokeLog("Cover zoom interpolated: \(lastSample)")
-              guard sampledSpringOvershoot else {
+              if !sampledSpringOvershoot {
                 smokeLog("Released upward gesture never produced a spring overshoot")
-                return
+                playerPolishChecksPassed = false
+              } else {
+                smokeLog("Released upward gesture spring overshoot sampled before settling")
               }
-              smokeLog("Released upward gesture spring overshoot sampled before settling")
               // PNG encoding can block the main actor long enough to miss the rebound.
               try openingImage?.pngData()?.write(to: URL.documentsDirectory.appendingPathComponent("player-opening.png"))
               try await Task.sleep(for: .seconds(1))
@@ -535,11 +541,12 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
                 let destination = miniPlayer.artworkImage.convert(miniPlayer.artworkImage.bounds, to: window)
                 if animatedFrame.width < destination.width - 0.25 { sampledClosingRebound = true }
               }
-              guard sampledClosingRebound else {
+              if !sampledClosingRebound {
                 smokeLog("Released downward gesture never produced a spring rebound")
-                return
+                playerPolishChecksPassed = false
+              } else {
+                smokeLog("Released downward gesture spring rebound sampled before settling")
               }
-              smokeLog("Released downward gesture spring rebound sampled before settling")
               // Returning home can present the first-run welcome message. Check the
               // player's own presentation relationship, not whether every modal is gone.
               guard vc.presentedViewController !== popup, popup.presentingViewController == nil else {
@@ -595,6 +602,7 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
               try await Task.sleep(for: .milliseconds(350))
               guard !self.appDelegate.player.isPlaying, self.appDelegate.sleepTimer == nil else { return }
               smokeLog("Favorites shuffle and sleep timer shortcuts passed; cancellation and replacement preserved playback")
+              guard playerPolishChecksPassed else { return }
               let marker = URL.documentsDirectory.appendingPathComponent("player-smoke-ready")
               try "ready".write(to: marker, atomically: true, encoding: .utf8)
             } catch { smokeLog("Player smoke failed: \(error)") }

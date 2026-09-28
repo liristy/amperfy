@@ -599,6 +599,7 @@ class MiniPlayerView: UIView, UIGestureRecognizerDelegate {
   private func refreshForTabAccessoryTraitChange() {
     resetTrackDrag()
     let isInline = traitCollection.tabAccessoryEnvironment == .inline
+    setAccessoryBottomInset(isInline ? 0 : 8)
     playButtonTrailingConstraint?.isActive = false
     if isInline {
       nextButton.isHidden = true

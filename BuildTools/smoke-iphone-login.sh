@@ -93,6 +93,12 @@ for attempt in {1..45}; do
   sleep 2
 done
 xcrun simctl io "$device_id" screenshot build/validation/player-dismissed-zh-Hans.png
+for screenshot in player-next-song player-paused-artwork player-mini-spacing player-lyrics-controls player-queue-from-lyrics; do
+  source="$container/Documents/$screenshot.png"
+  if [[ -f "$source" ]]; then
+    sips -s format jpeg -s formatOptions 80 -Z 1000 "$source" --out "build/validation/$screenshot-preview.jpg" >/dev/null
+  fi
+done
 if [[ "$ready" != true ]]; then
   echo "Streaming/seek/lyrics smoke test failed"
   cat build/validation/player.stdout.log
@@ -104,13 +110,6 @@ cat build/validation/player.stdout.log
 
 for screenshot in player-library-defaults player-mini-drag player-mini-drag-previous player-mini-spacing player-opening player-lyrics-upward player-artwork-landscape player-next-song player-lyrics-controls player-lyrics-immersive player-lyrics-restored player-queue-from-lyrics player-lyrics-from-queue; do
   cp "$container/Documents/$screenshot.png" "build/validation/$screenshot.png"
-done
-
-for screenshot in player-next-song player-paused-artwork player-mini-spacing player-lyrics-controls player-queue-from-lyrics; do
-  source="$container/Documents/$screenshot.png"
-  if [[ -f "$source" ]]; then
-    sips -s format jpeg -s formatOptions 80 -Z 1000 "$source" --out "build/validation/$screenshot-preview.jpg" >/dev/null
-  fi
 done
 
 python3 - <<'PY'
