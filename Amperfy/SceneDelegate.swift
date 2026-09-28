@@ -263,6 +263,23 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
               self.appDelegate.player.setRepeatMode(.off)
               smokeLog("Adjacent song previews, edge resistance, user queue priority and repeat wrapping passed")
               var playerPolishChecksPassed = true
+              let outputSymbols: [(AVAudioSession.Port, String, String)] = [
+                (.bluetoothA2DP, "JYQ 的 AirPods", "airpods"),
+                (.bluetoothHFP, "AirPods Pro 2", "airpodspro"),
+                (.bluetoothLE, "AIRPODS MAX", "airpodsmax"),
+                (.bluetoothA2DP, "My renamed headset", "airplay.audio"),
+                (.builtInSpeaker, "AirPods Pro", "airplay.audio"),
+                (.headphones, "Headphones", "headphones"),
+                (.airPlay, "Living room", "airplay.audio"),
+              ]
+              guard outputSymbols.allSatisfy({ port, name, expected in
+                PlayerControlView.audioOutputSymbol(portType: port, portName: name) == expected &&
+                  UIImage(systemName: expected) != nil
+              }) else {
+                smokeLog("Audio output icon mapping or system symbol availability failed")
+                return
+              }
+              smokeLog("AirPods, Pro, Max and fallback audio output symbols passed")
               if let tabHost = vc as? TabBarVC {
                 tabHost.view.layoutIfNeeded()
                 guard let dock = tabHost.playerDock, tabHost.bottomAccessory == nil,

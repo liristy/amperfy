@@ -91,6 +91,8 @@ class PlayerControlView: UIView {
     self.layoutMargins = Self.margin
     self.player = appDelegate.player
     player.addNotifier(notifier: self)
+    NotificationCenter.default.addObserver(self, selector: #selector(audioRouteChanged(_:)),
+      name: AVAudioSession.routeChangeNotification, object: nil)
 
     #if targetEnvironment(macCatalyst) // ok
       addSubview(airplayVolume!)
@@ -181,9 +183,40 @@ class PlayerControlView: UIView {
       button.clipsToBounds = false
       button.configuration = configuration
     }
-    var airplayConfiguration = UIButton.Configuration.playerAccessory(isSelected: false)
-    airplayConfiguration.image = UIImage(systemName: "airplay.audio")
-    airplayButton.configuration = airplayConfiguration
+    refreshAudioOutputButton()
+  }
+
+  // Public audio routes expose a port name, not an AirPods model identifier.
+  // Only use a model-specific symbol when the Bluetooth name identifies it.
+  static func audioOutputSymbol(portType: AVAudioSession.Port, portName: String) -> String {
+    switch portType {
+    case .bluetoothA2DP, .bluetoothHFP, .bluetoothLE:
+      let name = portName.folding(options: [.caseInsensitive, .widthInsensitive], locale: nil)
+        .filter { $0.isLetter || $0.isNumber }
+        .lowercased()
+      if name.contains("airpodsmax") { return "airpodsmax" }
+      if name.contains("airpodspro") { return "airpodspro" }
+      if name.contains("airpods") { return "airpods" }
+      return "airplay.audio"
+    case .headphones: return "headphones"
+    case .carAudio: return "car.fill"
+    default: return "airplay.audio"
+    }
+  }
+
+  @objc nonisolated private func audioRouteChanged(_ notification: Notification) {
+    Task { @MainActor [weak self] in self?.refreshAudioOutputButton() }
+  }
+
+  private func refreshAudioOutputButton() {
+    guard let airplayButton else { return }
+    let outputs = AVAudioSession.sharedInstance().currentRoute.outputs
+    let symbol = outputs.first.map { Self.audioOutputSymbol(portType: $0.portType, portName: $0.portName) }
+      ?? "airplay.audio"
+    var configuration = UIButton.Configuration.playerAccessory(isSelected: false)
+    configuration.image = UIImage(systemName: symbol) ?? UIImage(systemName: "airplay.audio")
+    airplayButton.configuration = configuration
+    airplayButton.accessibilityValue = outputs.map(\.portName).joined(separator: ", ")
   }
 
   @objc
@@ -325,6 +358,7 @@ class PlayerControlView: UIView {
   }
 
   func refreshPlayer() {
+    refreshAudioOutputButton()
     if !volumeSlider.isTracking {
       volumeSlider.value = player.volume
     }
