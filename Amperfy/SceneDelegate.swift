@@ -396,6 +396,9 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
                 try image.pngData()?.write(to: URL.documentsDirectory.appendingPathComponent("player-opening.png"))
               }
               miniPlayer.endPlayerExpansion(translation: 160, velocity: 850)
+              func descendants(of view: UIView) -> [UIView] {
+                view.subviews + view.subviews.flatMap { descendants(of: $0) }
+              }
               // UIKit may defer presentation until the next run-loop turn. Sample frames
               // throughout the transition instead of assuming one fixed scheduling delay.
               var sampledSurfaceExpansion = false
