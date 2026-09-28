@@ -331,10 +331,18 @@ class PlayableTableCell: BasicTableCell {
     trackNumberLabel.text = playable.track > 0 ? "\(playable.track)" : ""
   }
 
+  override func tintColorDidChange() {
+    super.tintColorDidChange()
+    guard let playable else { return }
+    favoriteIconImage?.tintColor = appDelegate.storage.settings.accounts
+      .getSetting(playable.account?.info).read.themePreference.asColor
+  }
+
   func refreshCacheAndDuration() {
     guard let playable = playable else { return }
     favoriteIconImage.isHidden = !playable.isFavorite
-    favoriteIconImage.tintColor = tintColor
+    favoriteIconImage.tintColor = appDelegate.storage.settings.accounts
+      .getSetting(playable.account?.info).read.themePreference.asColor
 
     let isDurationVisible = !playable.isRadio &&
       (

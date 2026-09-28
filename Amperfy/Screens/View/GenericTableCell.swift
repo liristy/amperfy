@@ -43,6 +43,13 @@ class GenericTableCell: BasicTableCell {
   private var container: PlayableContainable?
   private var rootView: UITableViewController?
 
+  override func tintColorDidChange() {
+    super.tintColorDidChange()
+    guard let container else { return }
+    favoriteIconImage?.tintColor = appDelegate.storage.settings.accounts
+      .getSetting(container.account?.info).read.themePreference.asColor
+  }
+
   func display(container: PlayableContainable, rootView: UITableViewController) {
     self.container = container
     self.rootView = rootView
@@ -63,7 +70,8 @@ class GenericTableCell: BasicTableCell {
     infoLabel.text = infoText
     infoLabel.textAlignment = (traitCollection.horizontalSizeClass == .regular) ? .right : .left
     favoriteIconImage.isHidden = !container.isFavorite
-    favoriteIconImage.tintColor = tintColor
+    favoriteIconImage.tintColor = appDelegate.storage.settings.accounts
+      .getSetting(container.account?.info).read.themePreference.asColor
 
     if container is Album {
       infoLabelWidthConstraint.constant = 75

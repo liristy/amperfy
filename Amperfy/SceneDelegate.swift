@@ -296,15 +296,26 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
               }
               miniPlayer.beginPlayerExpansion()
               try await Task.sleep(for: .milliseconds(80))
+              guard let cancelledPopup = vc.presentedViewController as? PopupPlayerVC else {
+                smokeLog("Upward expansion did not present the player")
+                return
+              }
               miniPlayer.updatePlayerExpansion(translation: 110)
               try await Task.sleep(for: .milliseconds(80))
               miniPlayer.endPlayerExpansion(translation: 110, velocity: -200, cancelled: true)
               try await Task.sleep(for: .seconds(1))
-              guard vc.presentedViewController == nil, !miniPlayer.artworkImage.isHidden else {
+              guard vc.presentedViewController !== cancelledPopup,
+                    cancelledPopup.presentingViewController == nil, !miniPlayer.artworkImage.isHidden else {
                 smokeLog("Cancelled upward expansion did not restore mini player")
                 return
               }
               smokeLog("Upward expansion cancellation restored mini player")
+              // Returning home can show its first-run sync tip after the player is gone.
+              // Clear that unrelated modal before testing another upward gesture.
+              if vc.presentedViewController != nil {
+                vc.dismiss(animated: false)
+                try await Task.sleep(for: .milliseconds(100))
+              }
               miniPlayer.beginPlayerExpansion()
               try await Task.sleep(for: .milliseconds(80))
               miniPlayer.updatePlayerExpansion(translation: 160)
