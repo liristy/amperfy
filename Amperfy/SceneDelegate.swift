@@ -674,7 +674,7 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
                   smokeLog("Custom dock did not return after dismissing the keyboard")
                   return
                 }
-                dock.onHome?()
+                tabHost.selectedTab = tabHost.tabs.first(where: { $0.identifier == "Tabs.Home" })
                 tabHost.view.layoutIfNeeded()
                 guard tabHost.selectedTab?.identifier == "Tabs.Home", !dock.isCollapsed else { return }
                 smokeLog("Custom navigation, search keyboard hiding and restoration passed")
