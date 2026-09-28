@@ -326,6 +326,9 @@ class PopupPlayerVC: UIViewController, UIScrollViewDelegate, UIGestureRecognizer
           presentedViewController == nil else { return false }
     var touchedView = view.hitTest(dismissPan.location(in: view), with: nil)
     while let current = touchedView {
+      // Lyrics own both directions: down reveals transport controls, up hides
+      // them. Dismissal remains available from the fixed header/handle.
+      if current is LyricsView { return false }
       // Keep downward scrolling available when reading earlier lyrics or queue items.
       if let scrollView = current as? UIScrollView,
          scrollView.contentOffset.y > -scrollView.adjustedContentInset.top + 1 { return false }

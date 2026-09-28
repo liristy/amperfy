@@ -579,7 +579,7 @@ final class FloatingPlayerDock: UIView {
       configuration.image = icons[index]
       configuration.title = index == 0 ? TabNavigatorItem.home.title : "Library".localized
       configuration.imagePlacement = .top
-      configuration.imagePadding = 2
+      configuration.imagePadding = 6
       configuration.contentInsets = .zero
       configuration.preferredSymbolConfigurationForImage = .init(pointSize: 25, weight: .medium)
       configuration.baseForegroundColor = index == selected ? tint : .label

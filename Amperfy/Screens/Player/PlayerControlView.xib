@@ -254,7 +254,7 @@
             <gestureRecognizers/>
             <constraints>
                 <constraint firstItem="6Pl-OT-ev0" firstAttribute="trailing" secondItem="iN0-l3-epB" secondAttribute="trailingMargin" id="volume-trailing"/>
-                <constraint firstItem="6Pl-OT-ev0" firstAttribute="top" secondItem="SoI-ny-Hw0" secondAttribute="bottom" constant="24" id="volume-top"/>
+                <constraint firstItem="6Pl-OT-ev0" firstAttribute="top" secondItem="SoI-ny-Hw0" secondAttribute="bottom" constant="31" id="volume-top"/>
                 <constraint firstItem="xXq-r4-gI6" firstAttribute="leading" secondItem="iN0-l3-epB" secondAttribute="leadingMargin" priority="750" id="options-leading"/>
                 <constraint firstItem="42q-l9-IXM" firstAttribute="trailing" secondItem="iN0-l3-epB" secondAttribute="trailingMargin" id="3yB-kd-VKC"/>
                 <constraint firstItem="42q-l9-IXM" firstAttribute="top" secondItem="vUN-kp-3ea" secondAttribute="top" id="4ed-LA-PXc"/>
@@ -270,12 +270,12 @@
                 <constraint firstItem="42q-l9-IXM" firstAttribute="leading" secondItem="iN0-l3-epB" secondAttribute="leadingMargin" id="msH-gV-d4u"/>
                 <constraint firstItem="xXq-r4-gI6" firstAttribute="centerX" secondItem="iN0-l3-epB" secondAttribute="centerX" id="nkB-6e-9fV"/>
                 <constraint firstItem="t1c-hF-UMw" firstAttribute="top" secondItem="42q-l9-IXM" secondAttribute="bottom" constant="-7" id="pOd-F6-MOG"/>
-                <constraint firstItem="SoI-ny-Hw0" firstAttribute="top" secondItem="42q-l9-IXM" secondAttribute="bottom" constant="26" id="rmF-Wl-3ol"/>
+                <constraint firstItem="SoI-ny-Hw0" firstAttribute="top" secondItem="42q-l9-IXM" secondAttribute="bottom" constant="41" id="rmF-Wl-3ol"/>
                 <constraint firstItem="t1c-hF-UMw" firstAttribute="leading" secondItem="iN0-l3-epB" secondAttribute="trailingMargin" constant="-60" id="sAk-2J-JEK"/>
                 <constraint firstItem="okd-ac-nGY" firstAttribute="leading" secondItem="iN0-l3-epB" secondAttribute="leadingMargin" id="tbM-wh-ia0"/>
                 <constraint firstAttribute="leadingMargin" secondItem="okd-ac-nGY" secondAttribute="trailing" constant="-60" id="vQu-6h-oG4"/>
                 <constraint firstItem="1aU-Ga-twf" firstAttribute="centerY" secondItem="fic-HG-erH" secondAttribute="centerY" id="xoa-iu-CiD"/>
-                <constraint firstItem="xXq-r4-gI6" firstAttribute="top" secondItem="SoI-ny-Hw0" secondAttribute="bottom" constant="76" id="zg3-MD-JbT"/>
+                <constraint firstItem="xXq-r4-gI6" firstAttribute="top" secondItem="SoI-ny-Hw0" secondAttribute="bottom" constant="83" id="zg3-MD-JbT"/>
             </constraints>
             <connections>
                 <outlet property="lyricsButton" destination="lyrics-button" id="lyrics-outlet"/>

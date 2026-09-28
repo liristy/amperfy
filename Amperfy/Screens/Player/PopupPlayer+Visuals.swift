@@ -152,10 +152,11 @@ extension PopupPlayerVC {
       var blue: CGFloat = 0
       var alpha: CGFloat = 0
       color.getRed(&red, green: &green, blue: &blue, alpha: &alpha)
+      let neutral = red * 0.2126 + green * 0.7152 + blue * 0.0722
       return UIColor(
-        red: red * brightness + 0.04,
-        green: green * brightness + 0.04,
-        blue: blue * brightness + 0.04,
+        red: (red * 0.4 + neutral * 0.6) * brightness + 0.16,
+        green: (green * 0.4 + neutral * 0.6) * brightness + 0.16,
+        blue: (blue * 0.4 + neutral * 0.6) * brightness + 0.16,
         alpha: 1
       ).cgColor
     }
@@ -166,9 +167,9 @@ extension PopupPlayerVC {
     CATransaction.setDisableActions(true)
     artworkGradientLayer.frame = backgroundImage.bounds
     artworkGradientLayer.colors = [
-      shaded(first, brightness: 0.38),
-      shaded(last, brightness: 0.26),
-      shaded(first, brightness: 0.14),
+      shaded(first, brightness: 0.55),
+      shaded(last, brightness: 0.45),
+      shaded(first, brightness: 0.34),
     ]
     artworkGradientLayer.locations = [0, 0.55, 1]
     artworkGradientLayer.startPoint = CGPoint(x: 0, y: 0)

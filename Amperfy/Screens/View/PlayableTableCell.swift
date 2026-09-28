@@ -406,6 +406,24 @@ class PlayableTableCell: BasicTableCell {
     if isDurationVisible {
       durationLabel.text = playable.duration.asColonDurationString
     }
+    if rootView is PopupPlayerVC {
+      // Queue rows have their own compact geometry; library rows retain their
+      // duration/cache/favourite columns and existing appearance.
+      contentView.layoutMargins = UIEdgeInsets(top: 6, left: 8, bottom: 6, right: 8)
+      entityImage.constraints.first { $0.firstAttribute == .width && $0.secondItem == nil }?.constant = 44
+      favoriteIconImage.superview?.constraints.first {
+        $0.firstAttribute == .width && $0.secondItem == nil
+      }?.constant = 0
+      favoriteIconImage.superview?.isHidden = true
+      titleContainerLeadingConstraint.constant = 52
+      labelTrailingCellConstraint.constant = 0
+      titleLabel.font = .systemFont(ofSize: 16)
+      artistLabel.font = .systemFont(ofSize: 12)
+      artistLabel.textColor = .white.withAlphaComponent(0.55)
+      durationLabel.isHidden = true
+      cacheIconImage.isHidden = true
+      accessoryView?.tintColor = .white.withAlphaComponent(0.3)
+    }
   }
 
   private func refreshSubtitleColor() {

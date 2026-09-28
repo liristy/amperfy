@@ -183,7 +183,7 @@ class LargeCurrentlyPlayingPlayerView: UIView {
     artworkShadowView.center = artworkImage.center
     artworkShadowView.layer.shadowPath = UIBezierPath(
       roundedRect: artworkShadowView.bounds,
-      cornerRadius: 12
+      cornerRadius: 8
     ).cgPath
 
     let headerHeight = CurrentlyPlayingTableCell.rowHeight
@@ -203,15 +203,15 @@ class LargeCurrentlyPlayingPlayerView: UIView {
     titleLabel.applyAmperfyStyle()
     albumLabel.applyAmperfyStyle()
     artistLabel.applyAmperfyStyle()
-    titleLabel.font = .systemFont(ofSize: 26, weight: .bold)
+    titleLabel.font = .systemFont(ofSize: 20, weight: .semibold)
     titleLabel.adjustsFontSizeToFitWidth = false
-    artistLabel.font = .systemFont(ofSize: 18, weight: .regular)
+    artistLabel.font = .systemFont(ofSize: 20, weight: .regular)
     albumLabel.font = .systemFont(ofSize: 13, weight: .medium)
     titleLabel.textColor = .white
     artistLabel.textColor = .white.withAlphaComponent(0.72)
     albumLabel.textColor = .white.withAlphaComponent(0.65)
     artworkImage.contentMode = .scaleAspectFit
-    artworkImage.layer.cornerRadius = 12
+    artworkImage.layer.cornerRadius = 8
     artworkImage.layer.cornerCurve = .continuous
     artworkImage.clipsToBounds = true
     artworkShadowView.isUserInteractionEnabled = false
@@ -231,6 +231,9 @@ class LargeCurrentlyPlayingPlayerView: UIView {
     }
     lyricsView!.onUpwardDrag = { [weak self] in
       self?.rootView?.setLyricsControlsHidden(true)
+    }
+    lyricsView!.onDownwardDrag = { [weak self] in
+      self?.rootView?.restoreLyricsControls()
     }
     addSubview(lyricsView!)
     lyricsArtwork.contentMode = .scaleAspectFit
@@ -510,6 +513,8 @@ class LargeCurrentlyPlayingPlayerView: UIView {
       albumContainerView: albumContainerView
     )
     lyricsTitle.text = titleLabel.text
+    // Keep the two-line song/artist hierarchy; album actions remain in the menu.
+    albumContainerView.isHidden = true
     lyricsArtist.text = artistLabel.text
     rootView?.playerHandler?.refreshArtwork(artworkImage: lyricsArtwork)
     rootView?.refreshOptionButton(button: lyricsOptions, rootView: rootView)
@@ -531,8 +536,8 @@ class LargeCurrentlyPlayingPlayerView: UIView {
       self.artworkShadowView.layer.shadowOpacity = playing ? 0.3 : 0.16
     }
     if animated && !UIAccessibility.isReduceMotionEnabled {
-      UIView.animate(withDuration: 0.5, delay: 0, usingSpringWithDamping: 0.76,
-                     initialSpringVelocity: 0, options: [.beginFromCurrentState, .allowUserInteraction],
+      UIView.animate(withDuration: 0.4, delay: 0,
+                     options: [.beginFromCurrentState, .allowUserInteraction, .curveEaseInOut],
                      animations: changes)
     } else {
       UIView.performWithoutAnimation(changes)

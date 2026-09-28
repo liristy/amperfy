@@ -329,6 +329,15 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
                   return
                 }
                 smokeLog("Navigation spans \(dock.navigationGlass.frame.width)pt with equal items; player gap \(nativeTop - playerBottom)")
+                for button in dock.navigationButtons {
+                  button.layoutIfNeeded()
+                  guard let image = button.imageView, let title = button.titleLabel,
+                        title.convert(title.bounds, to: button).minY -
+                        image.convert(image.bounds, to: button).maxY >= 5.5 else {
+                    smokeLog("Navigation title is too close to its icon")
+                    return
+                  }
+                }
                 guard abs(expandedFrame.height - 56) < 0.5,
                       abs(dock.navigationGlass.frame.minY - expandedFrame.maxY - 12) < 0.5,
                       abs(miniPlayer.bounds.height - 56) < 0.5,
@@ -523,6 +532,8 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
                 return
               }
               let miniCoverFrame = miniPlayer.artworkImage.convert(miniPlayer.artworkImage.bounds, to: coverHost)
+              let destinationCoverFrame = openingPopup.transitionArtwork!.convert(
+                openingPopup.transitionArtwork!.bounds, to: coverHost)
               guard coverFrame.width > miniCoverFrame.width + 1,
                     coverFrame.midY < miniCoverFrame.midY - 1 else {
                 smokeLog("Held opening gesture did not move and enlarge the mini-player cover: \(coverFrame)")
@@ -544,6 +555,8 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
               var sampledSpringOvershoot = false
               var sampledContentRebound = false
               var largestOpeningHeight: CGFloat = 0
+              var largestContentScale: CGFloat = 1
+              var previousCoverWidth = coverFrame.width
               var lastSample = "no transition surface"
               for _ in 0..<60 {
                 try await Task.sleep(for: .milliseconds(16))
@@ -565,7 +578,17 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
                 lastSample = "height \(animatedFrame.height), destination \(destinationHeight)"
                 largestOpeningHeight = max(largestOpeningHeight, animatedFrame.height)
                 if animatedFrame.height > destinationHeight + 0.5 { sampledSpringOvershoot = true }
-                if let layer = popup.view.layer.presentation(), layer.transform.m11 > 1.002 {
+                if let cover = flyingCover(), let frame = cover.layer.presentation()?.frame {
+                  guard frame.width >= previousCoverWidth - 0.5,
+                        frame.width <= destinationCoverFrame.width + 0.5,
+                        frame.minY >= destinationCoverFrame.minY - 0.5 else {
+                    smokeLog("Opening artwork bounced instead of travelling smoothly: \(frame), target \(destinationCoverFrame)")
+                    return
+                  }
+                  previousCoverWidth = frame.width
+                }
+                if let layer = popup.view.layer.presentation(), layer.transform.m11 > 1.012 {
+                  largestContentScale = max(largestContentScale, layer.transform.m11)
                   // Model alpha can be 1 while the rendered page is invisible.
                   // The rebound must be visible in both surface and content.
                   if layer.opacity > 0.98,
@@ -586,7 +609,7 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
                 smokeLog("Whole player did not rebound on opening: largest height \(largestOpeningHeight), \(lastSample)")
                 playerPolishChecksPassed = false
               } else {
-                smokeLog("Complete player surface and live content spring overshoot sampled before settling")
+                smokeLog("Complete player surface rebounded visibly (scale \(largestContentScale)); artwork travelled without overshoot")
               }
               try await Task.sleep(for: .seconds(1))
               guard popup.largePlayerPlaceholderView.transform == .identity,
@@ -736,6 +759,17 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
                 return
               }
               try screenshot("player-queue-from-lyrics.png")
+              if let header = popup.contextNextQueueSectionHeader {
+                header.layoutIfNeeded()
+                let buttons = [header.shuffleButton, header.repeatButton, header.autoplayButton].compactMap { $0 }
+                guard buttons.count == 3,
+                      buttons.allSatisfy({ $0.bounds.width > 80 && $0.bounds.height >= 44 }),
+                      header.queueNameLabel.frame.minY >= buttons[0].frame.maxY + 8,
+                      popup.tableView.rowHeight == 56 else {
+                  smokeLog("Queue mode controls or compact song rows do not match the player layout")
+                  return
+                }
+              }
               let queueOffset = popup.tableView.contentOffset
               popup.tableView.setContentOffset(CGPoint(x: 0, y: queueOffset.y + 60), animated: false)
               guard try await compactHeaderStayedFixed(samples: 3) else { return }
@@ -762,6 +796,7 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
               guard try await compactHeaderStayedFixed() else { return }
               smokeLog("Shared header identity, position and size stayed fixed through switching, reversal, queue scrolling and immersive controls")
               guard let lyricsView = descendants(of: popup.view).compactMap({ $0 as? LyricsView }).first else { return }
+              popup.setLyricsControlsHidden(true, animated: false)
               lyricsView.handleDrag(velocity: CGPoint(x: 0, y: 300))
               guard !popup.areLyricsControlsHidden else { return }
               lyricsView.handleDrag(velocity: CGPoint(x: 0, y: -300))
@@ -785,19 +820,28 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
               popup.beginInteractiveDismissal()
               try await Task.sleep(for: .milliseconds(80))
               popup.updateInteractiveDismissal(translation: 28)
+              let returningCoverStartWidth = popup.transitionArtwork?.bounds.width ?? 72
               popup.endInteractiveDismissal(translation: 28, velocity: 900)
               var sampledClosingRebound = false
               var sampledReturningCover = false
+              var previousReturningWidth = returningCoverStartWidth
               for _ in 0..<60 {
                 try await Task.sleep(for: .milliseconds(16))
                 guard let surface = popup.view.mask,
                       let animatedFrame = surface.layer.presentation()?.frame else { continue }
                 let destination = miniPlayer.glassContainer.bounds
                 if animatedFrame.height < destination.height - 0.25 { sampledClosingRebound = true }
-                if let cover = flyingCover(), let frame = cover.layer.presentation()?.frame,
-                   frame.width > miniPlayer.artworkImage.bounds.width + 1,
-                   frame.width < CurrentlyPlayingTableCell.artworkSide - 1 {
-                  sampledReturningCover = true
+                if let cover = flyingCover(), let frame = cover.layer.presentation()?.frame {
+                  guard frame.width <= previousReturningWidth + 0.5,
+                        frame.width >= miniPlayer.artworkImage.bounds.width - 0.5 else {
+                    smokeLog("Returning artwork bounced instead of travelling smoothly: \(frame)")
+                    return
+                  }
+                  previousReturningWidth = frame.width
+                  if frame.width > miniPlayer.artworkImage.bounds.width + 1,
+                     frame.width < CurrentlyPlayingTableCell.artworkSide - 1 {
+                    sampledReturningCover = true
+                  }
                 }
               }
               if !sampledClosingRebound {

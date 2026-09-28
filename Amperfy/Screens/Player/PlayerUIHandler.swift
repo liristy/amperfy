@@ -163,10 +163,10 @@ class PlayerUIHandler: NSObject {
       nextImg = nextImg.withConfiguration(UIImage.SymbolConfiguration(scale: .medium))
     case .popupPlayer:
       previouseImg = previouseImg.withConfiguration(
-        UIImage.SymbolConfiguration(pointSize: 30, weight: .semibold)
+        UIImage.SymbolConfiguration(pointSize: 26, weight: .regular)
       )
       nextImg = nextImg.withConfiguration(
-        UIImage.SymbolConfiguration(pointSize: 30, weight: .semibold)
+        UIImage.SymbolConfiguration(pointSize: 26, weight: .regular)
       )
     case .miniPlayeriOS:
       previouseImg = previouseImg

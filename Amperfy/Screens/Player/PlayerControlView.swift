@@ -28,7 +28,7 @@ import UIKit
 // MARK: - PlayerControlView
 
 class PlayerControlView: UIView {
-  static let frameHeight: CGFloat = 255
+  static let frameHeight: CGFloat = 268
   static private let margin = UIEdgeInsets(
     top: 0,
     left: 0,
@@ -39,7 +39,7 @@ class PlayerControlView: UIView {
   private var player: PlayerFacade!
   private var rootView: PopupPlayerVC?
   private var playerHandler: PlayerUIHandler?
-  private let volumeSlider = UISlider()
+  private let volumeSlider = PlayerTrackSlider()
   private var audioRouteTask: Task<Void, Never>?
   private static let audioIconPreferencesKey = "player.audioOutputIcons"
   private static var bluetoothIconCache = [String: String]()

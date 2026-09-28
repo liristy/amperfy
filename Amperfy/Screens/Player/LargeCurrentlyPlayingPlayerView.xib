@@ -92,7 +92,7 @@
                                                 <label opaque="NO" userInteractionEnabled="NO" contentMode="left" horizontalHuggingPriority="251" verticalHuggingPriority="251" text="Songs Title" lineBreakMode="tailTruncation" baselineAdjustment="alignBaselines" adjustsFontSizeToFit="NO" translatesAutoresizingMaskIntoConstraints="NO" id="B6V-RA-yV3" userLabel="Title Label" customClass="MarqueeLabel" customModule="MarqueeLabel">
                                                     <rect key="frame" x="0.0" y="0.0" width="265" height="20"/>
                                                     <constraints>
-                                                        <constraint firstAttribute="height" constant="33" id="aa9-9V-1Ow"/>
+                                                        <constraint firstAttribute="height" constant="25" id="aa9-9V-1Ow"/>
                                                     </constraints>
                                                     <fontDescription key="fontDescription" type="boldSystem" pointSize="26"/>
                                                     <nil key="textColor"/>
@@ -122,7 +122,7 @@
                                                 <label opaque="NO" userInteractionEnabled="NO" contentMode="left" horizontalHuggingPriority="251" verticalHuggingPriority="251" text="Artist Name" lineBreakMode="tailTruncation" baselineAdjustment="alignBaselines" adjustsFontSizeToFit="NO" translatesAutoresizingMaskIntoConstraints="NO" id="tbp-Kj-JSG" userLabel="Artist Label" customClass="MarqueeLabel" customModule="MarqueeLabel">
                                                     <rect key="frame" x="0.0" y="0.0" width="265" height="20"/>
                                                     <constraints>
-                                                        <constraint firstAttribute="height" constant="24" id="jBM-9F-b3k"/>
+                                                        <constraint firstAttribute="height" constant="25" id="jBM-9F-b3k"/>
                                                     </constraints>
                                                     <fontDescription key="fontDescription" type="system" pointSize="18"/>
                                                     <nil key="highlightedColor"/>
@@ -183,10 +183,10 @@
                                 <constraint firstItem="cYG-VG-BvQ" firstAttribute="centerY" secondItem="syN-Kp-zH0" secondAttribute="centerY" id="O2w-Ad-qzc"/>
                                 <constraint firstItem="cYG-VG-BvQ" firstAttribute="centerY" secondItem="5ux-aQ-e6U" secondAttribute="centerY" id="PmX-Eh-5p1"/>
                                 <constraint firstItem="b5r-cU-1SI" firstAttribute="centerY" secondItem="syN-Kp-zH0" secondAttribute="centerY" id="QYi-fb-3rA"/>
-                                <constraint firstAttribute="trailing" secondItem="cYG-VG-BvQ" secondAttribute="trailing" constant="0" id="Sp1-PC-4dC"/>
+                                <constraint firstAttribute="trailing" secondItem="cYG-VG-BvQ" secondAttribute="trailing" constant="8" id="Sp1-PC-4dC"/>
                                 <constraint firstItem="5ux-aQ-e6U" firstAttribute="leading" secondItem="b5r-cU-1SI" secondAttribute="trailing" constant="8" id="cGH-3U-IaS"/>
-                                <constraint firstItem="b5r-cU-1SI" firstAttribute="leading" secondItem="syN-Kp-zH0" secondAttribute="leading" constant="0" id="o4c-mq-T4g"/>
-                                <constraint firstAttribute="height" constant="94" id="rMT-3W-9ox"/>
+                                <constraint firstItem="b5r-cU-1SI" firstAttribute="leading" secondItem="syN-Kp-zH0" secondAttribute="leading" constant="8" id="o4c-mq-T4g"/>
+                                <constraint firstAttribute="height" constant="76" id="rMT-3W-9ox"/>
                             </constraints>
                         </view>
                     </subviews>

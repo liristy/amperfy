@@ -37,9 +37,10 @@ extension PopupPlayerVC: UITableViewDataSource, UITableViewDelegate {
   func setupTableView() {
     tableView.register(nibName: PlayableTableCell.typeName)
     tableView.register(nibName: CurrentlyPlayingTableCell.typeName)
-    tableView.rowHeight = PlayableTableCell.rowHeight
-    tableView.estimatedRowHeight = PlayableTableCell.rowHeight
+    tableView.rowHeight = 56
+    tableView.estimatedRowHeight = 56
     tableView.backgroundColor = UIColor.clear
+    tableView.separatorStyle = .none
     tableView.sectionHeaderTopPadding = 0.0
   }
 
@@ -139,8 +140,7 @@ extension PopupPlayerVC: UITableViewDataSource, UITableViewDelegate {
     case .currentlyPlaying, .none, .userQueue: return 0.0
     case .contextNext: // calculate footer height to keep currently playing row on top of table view
       let heightOfContextNextRows = tableView.frame.height - ContextQueueNextSectionHeader.frameHeight
-      let contextNextRowOccupiedHeight = CGFloat(player.nextQueueCount) * PlayableTableCell
-        .rowHeight
+      let contextNextRowOccupiedHeight = CGFloat(player.nextQueueCount) * tableView.rowHeight
       let offset = heightOfContextNextRows - contextNextRowOccupiedHeight
       return offset > 0.0 ? offset : 0.0
     }
@@ -160,7 +160,7 @@ extension PopupPlayerVC: UITableViewDataSource, UITableViewDelegate {
     let sectionCategors = PlayerSectionCategory(rawValue: indexPath.section)
     switch sectionCategors {
     case .contextNext, .contextPrev, .none, .userQueue:
-      return PlayableTableCell.rowHeight
+      return tableView.rowHeight
     case .currentlyPlaying:
       return CGFloat.leastNormalMagnitude
     }

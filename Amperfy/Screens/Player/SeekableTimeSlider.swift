@@ -20,7 +20,15 @@
 
 import UIKit
 
-class SeekableTimeSlider: UISlider {
+class PlayerTrackSlider: UISlider {
+  override func trackRect(forBounds bounds: CGRect) -> CGRect {
+    let track = super.trackRect(forBounds: bounds)
+    let height: CGFloat = isTracking ? 7 : 4
+    return CGRect(x: track.minX, y: bounds.midY - height / 2, width: track.width, height: height)
+  }
+}
+
+class SeekableTimeSlider: PlayerTrackSlider {
   static let verticalHitAreaExpansion: CGFloat = 20
   static let horizontalHitAreaExpansion: CGFloat = 8
 

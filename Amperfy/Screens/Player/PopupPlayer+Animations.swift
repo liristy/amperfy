@@ -51,7 +51,7 @@ final class PlayerSurfaceTransitionDelegate: NSObject, UIViewControllerTransitio
 
 @MainActor
 final class PlayerSurfaceAnimator: NSObject, UIViewControllerAnimatedTransitioning {
-  static var springDamping: CGFloat { UIAccessibility.isReduceMotionEnabled ? 1 : 0.68 }
+  static var springDamping: CGFloat { UIAccessibility.isReduceMotionEnabled ? 1 : 0.62 }
   private let isPresenting: Bool
   private weak var sourcePlayer: UIView?
   private weak var sourceArtwork: UIImageView?
@@ -64,7 +64,7 @@ final class PlayerSurfaceAnimator: NSObject, UIViewControllerAnimatedTransitioni
   }
 
   func transitionDuration(using transitionContext: UIViewControllerContextTransitioning?) -> TimeInterval {
-    UIAccessibility.isReduceMotionEnabled ? 0.15 : 0.72
+    UIAccessibility.isReduceMotionEnabled ? 0.15 : 0.78
   }
 
   func animateTransition(using context: UIViewControllerContextTransitioning) {
@@ -113,8 +113,8 @@ final class PlayerSurfaceAnimator: NSObject, UIViewControllerAnimatedTransitioni
     // Move the content with the growing surface, so the rebound is visible in
     // the whole page rather than only in a mask outside the screen edges.
     let collapsedTransform = reducedMotion ? originalTransform : originalTransform
-      .translatedBy(x: 0, y: playerView.bounds.height * 0.08)
-      .scaledBy(x: 0.82, y: 0.82)
+      .translatedBy(x: 0, y: playerView.bounds.height * 0.12)
+      .scaledBy(x: 0.72, y: 0.72)
     // Measure the capsule in the collapsed coordinate space so the live view's
     // elastic scale still lands precisely on the mini player in either direction.
     playerView.transform = collapsedTransform
@@ -140,10 +140,15 @@ final class PlayerSurfaceAnimator: NSObject, UIViewControllerAnimatedTransitioni
       return mask
     }
     var contentMasks = [UIView]()
+    var contentTransforms = [(view: UIView, original: CGAffineTransform)]()
     if !reducedMotion {
       // Keep the foreground visible through the spring's main travel/rebound.
       // Hide it only near the capsule, where full-size controls cannot fit.
       for content in playerView.subviews where content !== popup.backgroundImage {
+        contentTransforms.append((content, content.transform))
+        if isPresenting {
+          content.transform = content.transform.translatedBy(x: 0, y: playerView.bounds.height * 0.35)
+        }
         contentMasks.append(installMask(on: content, alpha: isPresenting ? 0 : 1,
                                         identifier: "player-transition-content-mask"))
       }
@@ -169,6 +174,10 @@ final class PlayerSurfaceAnimator: NSObject, UIViewControllerAnimatedTransitioni
       duration: transitionDuration(using: context), dampingRatio: Self.springDamping
     ) {
       playerView.transform = self.isPresenting ? originalTransform : collapsedTransform
+      for entry in contentTransforms {
+        entry.view.transform = self.isPresenting ? entry.original :
+          entry.original.translatedBy(x: 0, y: playerView.bounds.height * 0.35)
+      }
       surface.frame = self.isPresenting || reducedMotion ? playerView.bounds : localSmallFrame
       surface.layer.cornerRadius = self.isPresenting || reducedMotion ? 0 : localSmallFrame.height / 2
       if reducedMotion {
@@ -191,9 +200,14 @@ final class PlayerSurfaceAnimator: NSObject, UIViewControllerAnimatedTransitioni
         }
       }
       if let smallArtworkFrame, let largeArtworkFrame {
-        flyingArtwork?.frame = self.isPresenting ? largeArtworkFrame : smallArtworkFrame
-        flyingArtwork?.layer.cornerRadius = self.isPresenting ? (targetArtwork?.layer.cornerRadius ?? 0) :
-          (self.sourceArtwork?.layer.cornerRadius ?? 0)
+        // Share the interactive timeline, but explicitly replace the inherited
+        // spring: the cover travels smoothly while only the whole page rebounds.
+        UIView.animate(withDuration: self.transitionDuration(using: context), delay: 0,
+                       options: [.overrideInheritedOptions, .overrideInheritedCurve, .curveEaseInOut]) {
+          flyingArtwork?.frame = self.isPresenting ? largeArtworkFrame : smallArtworkFrame
+          flyingArtwork?.layer.cornerRadius = self.isPresenting ? (targetArtwork?.layer.cornerRadius ?? 0) :
+            (self.sourceArtwork?.layer.cornerRadius ?? 0)
+        }
       }
     }
     animator.scrubsLinearly = true
@@ -205,6 +219,7 @@ final class PlayerSurfaceAnimator: NSObject, UIViewControllerAnimatedTransitioni
       playerView.mask = originalMask
       playerView.alpha = originalAlpha
       playerView.transform = originalTransform
+      for entry in contentTransforms { entry.view.transform = entry.original }
       if presenting != completed { playerView.removeFromSuperview() }
       flyingArtwork?.removeFromSuperview()
       popup.surfaceTransition.presentationInteraction = nil
