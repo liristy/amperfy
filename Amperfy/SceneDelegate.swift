@@ -308,6 +308,7 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
               // throughout the transition instead of assuming one fixed scheduling delay.
               var sampledZoom = false
               var sampledSpringOvershoot = false
+              var openingImage: UIImage?
               var lastSample = "no transition view"
               for _ in 0..<60 {
                 try await Task.sleep(for: .milliseconds(16))
@@ -324,10 +325,9 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
                 if sampledZoom { continue }
                 guard animatedFrame.width > 60,
                       animatedFrame.width < finalCover.bounds.width - 1 else { continue }
-                let image = UIGraphicsImageRenderer(bounds: window.bounds).image { _ in
+                openingImage = UIGraphicsImageRenderer(bounds: window.bounds).image { _ in
                   window.drawHierarchy(in: window.bounds, afterScreenUpdates: false)
                 }
-                try image.pngData()?.write(to: URL.documentsDirectory.appendingPathComponent("player-opening.png"))
                 sampledZoom = true
               }
               guard sampledZoom, let popup = vc.presentedViewController as? PopupPlayerVC else {
@@ -340,6 +340,8 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
                 return
               }
               smokeLog("Opening spring overshoot sampled before settling")
+              // PNG encoding can block the main actor long enough to miss the rebound.
+              try openingImage?.pngData()?.write(to: URL.documentsDirectory.appendingPathComponent("player-opening.png"))
               try await Task.sleep(for: .seconds(1))
               guard popup.largePlayerPlaceholderView.transform == .identity,
                     popup.transitionArtwork?.isHidden == false else { return }
