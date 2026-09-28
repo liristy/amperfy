@@ -508,6 +508,7 @@ final class FloatingPlayerDock: UIView {
   private let compactNavigationButton = UIButton(type: .system)
   private var selection = -1
   private var theme: UIColor?
+  private var selectionAnimator: UIViewPropertyAnimator?
   var onCollapseChanged: ((Bool) -> Void)?
   var onSearch: (() -> Void)?
   var onNavigate: ((Int) -> Void)?
@@ -555,6 +556,9 @@ final class FloatingPlayerDock: UIView {
     guard selected != selection || theme != tint else { return }
     let animate = selection >= 0 && selected != selection && !isCollapsed && window != nil &&
       !UIAccessibility.isReduceMotionEnabled
+    let startingFrame = selectionContainer.layer.presentation()?.frame ?? selectionContainer.frame
+    selectionAnimator?.stopAnimation(true)
+    selectionAnimator = nil
     layoutIfNeeded()
     selection = selected
     theme = tint
@@ -588,18 +592,33 @@ final class FloatingPlayerDock: UIView {
       button.accessibilityTraits = index == selected ? [.button, .selected] : .button
     }
     setNeedsLayout()
-    if animate {
-      UIView.animate(withDuration: 0.46, delay: 0, usingSpringWithDamping: 0.72,
-                     initialSpringVelocity: 0, options: [.beginFromCurrentState, .allowUserInteraction]) {
-        self.layoutIfNeeded()
-      }
-    } else {
+    UIView.performWithoutAnimation {
       layoutIfNeeded()
+    }
+    if animate {
+      let destination = selectionContainer.frame
+      selectionContainer.frame = startingFrame
+      let animator = UIViewPropertyAnimator(duration: 0.46, dampingRatio: 0.72)
+      animator.addAnimations { [weak self] in self?.selectionContainer.frame = destination }
+      animator.addCompletion { [weak self, weak animator] _ in
+        guard let self, self.selectionAnimator === animator else { return }
+        self.selectionAnimator = nil
+        self.setNeedsLayout()
+      }
+      selectionAnimator = animator
+      // UIKit switches tabs inside a nonanimated layout transaction. Start
+      // afterwards, and let this animator exclusively own the moving frame.
+      DispatchQueue.main.async { [weak self, weak animator] in
+        guard let self, let animator, self.selectionAnimator === animator else { return }
+        animator.startAnimation()
+      }
     }
   }
 
   func setCollapsed(_ collapsed: Bool, animated: Bool) {
     guard isCollapsed != collapsed else { return }
+    selectionAnimator?.stopAnimation(true)
+    selectionAnimator = nil
     layoutIfNeeded()
     isCollapsed = collapsed
     onCollapseChanged?(animated)
@@ -634,8 +653,10 @@ final class FloatingPlayerDock: UIView {
       button.frame = CGRect(x: 4 + CGFloat(index) * itemWidth, y: 4, width: itemWidth, height: side - 8)
       button.isHidden = isCollapsed
     }
-    selectionContainer.frame = CGRect(x: 4 + CGFloat(max(0, min(1, selection))) * itemWidth,
-                                     y: 4, width: itemWidth, height: side - 8)
+    if selectionAnimator == nil {
+      selectionContainer.frame = CGRect(x: 4 + CGFloat(max(0, min(1, selection))) * itemWidth,
+                                       y: 4, width: itemWidth, height: side - 8)
+    }
     selectionGlass.frame = selectionContainer.bounds
     selectionContainer.isHidden = isCollapsed || selection == 2
     compactNavigationButton.alpha = isCollapsed ? 1 : 0
