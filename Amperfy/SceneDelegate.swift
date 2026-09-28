@@ -157,6 +157,13 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
                 self.appDelegate.storage.settings.accounts.getSetting(activeAccount).read
                   .initialSyncCompletionStatus == .completed else { return }
           if ProcessInfo.processInfo.arguments.contains("--smoke-player") {
+            defer {
+              let ready = URL.documentsDirectory.appendingPathComponent("player-smoke-ready")
+              if !FileManager.default.fileExists(atPath: ready.path) {
+                try? Data("Player checks failed\n".utf8).write(to:
+                  URL.documentsDirectory.appendingPathComponent("player-smoke-failed"))
+              }
+            }
             func smokeLog(_ message: String) {
               FileHandle.standardOutput.write(Data((message + "\n").utf8))
             }
@@ -333,9 +340,10 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
                   button.layoutIfNeeded()
                   let image = dock.navigationIcons[index]
                   let title = dock.navigationTitles[index]
-                  if title.convert(title.bounds, to: button).minY -
-                        image.convert(image.bounds, to: button).maxY < 7.5 {
-                    smokeLog("Navigation title is too close to its icon")
+                  let labelGap = title.convert(title.bounds, to: button).minY -
+                    image.convert(image.bounds, to: button).maxY
+                  if abs(labelGap - 4) > 0.5 {
+                    smokeLog("Navigation icon/title gap is incorrect: \(labelGap)")
                     playerPolishChecksPassed = false
                   }
                 }
@@ -367,10 +375,10 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
                     break
                   }
                 }
-                guard tabHost.selectedTab?.identifier.hasPrefix("Tabs.Library") == true,
-                      sampledNavigationMotion else {
+                guard tabHost.selectedTab?.identifier.hasPrefix("Tabs.Library") == true else { return }
+                if !sampledNavigationMotion {
                   smokeLog("Glass selection did not slide: tab=\(tabHost.selectedTab?.identifier ?? "nil"), rendered=\(navigationFrame), target=\(dock.selectionContainer.frame)")
-                  return
+                  playerPolishChecksPassed = false
                 }
                 dock.navigationButtons[0].sendActions(for: .touchUpInside)
                 try await Task.sleep(for: .milliseconds(600))

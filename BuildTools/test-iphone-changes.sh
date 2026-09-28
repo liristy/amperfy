@@ -41,6 +41,7 @@ xcodebuild "${test_arguments[@]}" \
   -destination "platform=iOS Simulator,id=$device_id" \
   -derivedDataPath build/validation/DerivedData \
   -onlyUsePackageVersionsFromResolvedFile \
+  ONLY_ACTIVE_ARCH=YES COMPILER_INDEX_STORE_ENABLE=NO \
   CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO \
   2>&1 | tee build/validation/test.log
 

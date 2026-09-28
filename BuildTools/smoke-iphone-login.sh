@@ -14,6 +14,10 @@ python3 -u BuildTools/subsonic-smoke-server.py > build/validation/server.log 2>&
 server_pid=$!
 cleanup() {
   kill "$server_pid" 2>/dev/null || true
+  if [[ -n "${motion_pid:-}" ]]; then
+    kill -INT "$motion_pid" 2>/dev/null || true
+    wait "$motion_pid" || true
+  fi
   # Preserve intermediate frames and the exact failing step even on a smoke failure.
   if [[ -n "${container:-}" ]]; then
     find "$container/Documents" -name 'player-*.png' -exec cp {} build/validation/ \; 2>/dev/null || true
@@ -85,16 +89,10 @@ done
 
 # Exercise real streaming, seeking, the server lyrics response, and the full player.
 xcrun simctl terminate "$device_id" "$bundle_id"
-# Keep a short recording of the real compositor output for transition review.
+# Keep a recording of the real compositor output for transition review.
 # It runs independently so frame sampling in the app is never stalled by captures.
-(
-  xcrun simctl io "$device_id" recordVideo --codec=h264 build/validation/player-motion.mp4 >build/validation/player-motion.log 2>&1 &
-  motion_pid=$!
-  sleep 35
-  kill -INT "$motion_pid" 2>/dev/null || true
-  wait "$motion_pid" || true
-) &
-motion_capture_pid=$!
+xcrun simctl io "$device_id" recordVideo --codec=h264 build/validation/player-motion.mp4 >build/validation/player-motion.log 2>&1 &
+motion_pid=$!
 xcrun simctl launch \
   --stdout="$PWD/build/validation/player.stdout.log" \
   --stderr="$PWD/build/validation/player.stderr.log" \
@@ -105,9 +103,12 @@ for attempt in {1..60}; do
     ready=true
     break
   fi
+  [[ -f "$container/Documents/player-smoke-failed" ]] && break
   sleep 2
 done
-wait "$motion_capture_pid" || true
+kill -INT "$motion_pid" 2>/dev/null || true
+wait "$motion_pid" || true
+motion_pid=
 xcrun simctl io "$device_id" screenshot build/validation/player-dismissed-zh-Hans.png
 for screenshot in player-opening player-opening-refreshed player-closing-capsule player-next-song player-paused-artwork player-mini-spacing player-mini-collapsed player-search-keyboard player-lyrics-controls player-queue-from-lyrics; do
   source="$container/Documents/$screenshot.png"

@@ -510,7 +510,7 @@ final class FloatingPlayerDock: UIView {
   private let compactNavigationButton = UIButton(type: .system)
   private var selection = -1
   private var theme: UIColor?
-  private var selectionAnimator: UIViewPropertyAnimator?
+  private let selectionAnimationKey = "dock-selection-position"
   var onCollapseChanged: ((Bool) -> Void)?
   var onSearch: (() -> Void)?
   var onNavigate: ((Int) -> Void)?
@@ -568,8 +568,7 @@ final class FloatingPlayerDock: UIView {
     let animate = selection >= 0 && selected != selection && !isCollapsed && window != nil &&
       !UIAccessibility.isReduceMotionEnabled
     let startingFrame = selectionContainer.layer.presentation()?.frame ?? selectionContainer.frame
-    selectionAnimator?.stopAnimation(true)
-    selectionAnimator = nil
+    selectionContainer.layer.removeAnimation(forKey: selectionAnimationKey)
     layoutIfNeeded()
     selection = selected
     theme = tint
@@ -602,28 +601,22 @@ final class FloatingPlayerDock: UIView {
     }
     if animate {
       let destination = selectionContainer.frame
-      selectionContainer.frame = startingFrame
-      let animator = UIViewPropertyAnimator(duration: 0.46, dampingRatio: 0.72)
-      animator.addAnimations { [weak self] in self?.selectionContainer.frame = destination }
-      animator.addCompletion { [weak self, weak animator] _ in
-        guard let self, self.selectionAnimator === animator else { return }
-        self.selectionAnimator = nil
-        self.setNeedsLayout()
-      }
-      selectionAnimator = animator
-      // UIKit switches tabs inside a nonanimated layout transaction. Start
-      // afterwards, and let this animator exclusively own the moving frame.
-      DispatchQueue.main.async { [weak self, weak animator] in
-        guard let self, let animator, self.selectionAnimator === animator else { return }
-        animator.startAnimation()
-      }
+      // Explicit layer motion survives UIKit's nonanimated tab-layout transaction.
+      // Keep the model at its destination; a reversal starts at the rendered point.
+      let motion = CASpringAnimation(keyPath: "position")
+      motion.fromValue = NSValue(cgPoint: CGPoint(x: startingFrame.midX, y: startingFrame.midY))
+      motion.toValue = NSValue(cgPoint: CGPoint(x: destination.midX, y: destination.midY))
+      motion.mass = 1
+      motion.stiffness = 200
+      motion.damping = 20
+      motion.duration = motion.settlingDuration
+      selectionContainer.layer.add(motion, forKey: selectionAnimationKey)
     }
   }
 
   func setCollapsed(_ collapsed: Bool, animated: Bool) {
     guard isCollapsed != collapsed else { return }
-    selectionAnimator?.stopAnimation(true)
-    selectionAnimator = nil
+    selectionContainer.layer.removeAnimation(forKey: selectionAnimationKey)
     layoutIfNeeded()
     isCollapsed = collapsed
     onCollapseChanged?(animated)
@@ -660,9 +653,9 @@ final class FloatingPlayerDock: UIView {
       // Own these two frames: system button configurations can compress their
       // image/title spacing when fitting inside a fixed-height glass capsule.
       navigationIcons[index].frame = CGRect(x: (itemWidth - 30) / 2, y: 3, width: 30, height: 28)
-      navigationTitles[index].frame = CGRect(x: 0, y: 39, width: itemWidth, height: 14)
+      navigationTitles[index].frame = CGRect(x: 0, y: 35, width: itemWidth, height: 14)
     }
-    if selectionAnimator == nil {
+    if selectionContainer.layer.animation(forKey: selectionAnimationKey) == nil {
       selectionContainer.frame = CGRect(x: 4 + CGFloat(max(0, min(1, selection))) * itemWidth,
                                        y: 4, width: itemWidth, height: side - 8)
     }
