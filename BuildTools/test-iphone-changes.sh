@@ -3,6 +3,15 @@ set -euo pipefail
 
 cd "$(dirname "$0")/.."
 mkdir -p build/validation
+# Older caches were touched by the project's recursive formatting build phase.
+# Restore only dependency checkout files; keep compiled products for reuse.
+for package in build/validation/DerivedData/SourcePackages/checkouts/*; do
+  if [[ -d "$package/.git" || -f "$package/.git" ]]; then
+    if ! git -C "$package" diff --quiet; then
+      git -C "$package" restore --worktree -- .
+    fi
+  fi
+done
 device_id=$(xcrun simctl list devices available -j | python3 -c '
 import json, sys
 devices = json.load(sys.stdin)["devices"]
@@ -41,6 +50,7 @@ xcodebuild "${test_arguments[@]}" \
   -destination "platform=iOS Simulator,id=$device_id" \
   -derivedDataPath build/validation/DerivedData \
   -onlyUsePackageVersionsFromResolvedFile \
+  -skipPackageUpdates \
   ONLY_ACTIVE_ARCH=YES COMPILER_INDEX_STORE_ENABLE=NO \
   CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO \
   2>&1 | tee build/validation/test.log
