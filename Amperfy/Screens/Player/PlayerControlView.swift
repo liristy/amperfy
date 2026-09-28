@@ -101,7 +101,7 @@ class PlayerControlView: UIView {
     rootView = toWorkOnRootView
 
     playerHandler = PlayerUIHandler(player: player, style: .popupPlayer)
-    configureGlassControls()
+    configureIconControls()
     configureVolumeSlider()
     timeSlider.minimumTrackTintColor = .white.withAlphaComponent(0.8)
     timeSlider.maximumTrackTintColor = .white.withAlphaComponent(0.18)
@@ -170,9 +170,8 @@ class PlayerControlView: UIView {
     ])
   }
 
-  private func configureGlassControls() {
-    // Use native button materials so highlights and touch deformation are handled by UIKit.
-    (playButton.superview as? UIStackView)?.spacing = 12
+  private func configureIconControls() {
+    // Keep the player controls as bare icons with their existing touch targets.
     for button in [playButton, previousButton, nextButton, skipBackwardButton,
                    skipForwardButton, airplayButton, playerModeButton, volumeButton] {
       guard let button else { continue }

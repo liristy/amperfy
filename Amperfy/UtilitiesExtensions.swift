@@ -134,21 +134,20 @@ extension UIColor {
 
 extension UIButton.Configuration {
   static func player(isSelected: Bool) -> UIButton.Configuration {
-    var config = isSelected ? UIButton.Configuration.prominentGlass() : .glass()
+    var config = UIButton.Configuration.plain()
     config.preferredSymbolConfigurationForImage = UIImage.SymbolConfiguration(scale: .medium)
     config.buttonSize = .small
-    config.baseForegroundColor = isSelected ? .systemBackground : .label
-    if isSelected { config.baseBackgroundColor = .label }
-    config.cornerStyle = .capsule
+    config.baseForegroundColor = isSelected ? .tintColor : .label
+    config.background = .clear()
     config.contentInsets = NSDirectionalEdgeInsets(top: 8, leading: 8, bottom: 8, trailing: 8)
     return config
   }
 
   static func playerRound() -> UIButton.Configuration {
-    var config = UIButton.Configuration.glass()
+    var config = UIButton.Configuration.plain()
     config.preferredSymbolConfigurationForImage = UIImage.SymbolConfiguration(scale: .medium)
     config.buttonSize = .small
-    config.cornerStyle = .capsule
+    config.background = .clear()
     return config
   }
 }

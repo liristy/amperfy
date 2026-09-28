@@ -172,9 +172,7 @@ class TabBarVC: UITabBarController {
     guard let container = miniPlayer?.glassContainer, let host = container.superview else { return }
     let regular = traitCollection.horizontalSizeClass == .regular
     let inline = container.traitCollection.tabAccessoryEnvironment == .inline
-    let bottomInset: CGFloat = inline ? 0 : 8
-    let height: CGFloat = (regular ? 60 : (inline ? 48 : 56)) + bottomInset
-    miniPlayer?.setAccessoryBottomInset(bottomInset)
+    let height: CGFloat = regular ? 60 : (inline ? 48 : 56)
     if heightConstraint?.constant != height { heightConstraint?.constant = height }
 
     // UIKit owns accessory placement and its scroll-to-inline transition.

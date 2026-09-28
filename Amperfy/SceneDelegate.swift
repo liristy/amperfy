@@ -284,9 +284,19 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
                 try await Task.sleep(for: .milliseconds(100))
                 tabHost.view.layoutIfNeeded()
                 miniPlayer.glassContainer.layoutIfNeeded()
-                if abs(miniPlayer.glassContainer.bounds.height - miniPlayer.bounds.height - 8) >= 0.5 {
-                  smokeLog("Expanded mini player did not restore its bottom spacing: container \(miniPlayer.glassContainer.bounds), content \(miniPlayer.bounds)")
+                let expectedHeight: CGFloat = tabHost.traitCollection.horizontalSizeClass == .regular ? 60 : 56
+                if abs(miniPlayer.glassContainer.bounds.height - miniPlayer.bounds.height) >= 0.5 ||
+                  abs(miniPlayer.glassContainer.bounds.height - expectedHeight) >= 0.5 {
+                  smokeLog("Expanded mini player retained extra height: container \(miniPlayer.glassContainer.bounds), content \(miniPlayer.bounds)")
                   playerPolishChecksPassed = false
+                }
+                if let window = miniPlayer.window {
+                  smokeLog("Tab bar frame: \(tabHost.tabBar.convert(tabHost.tabBar.bounds, to: window))")
+                  var ancestor: UIView? = miniPlayer.glassContainer
+                  while let current = ancestor, current !== window {
+                    smokeLog("Accessory geometry \(type(of: current)): \(current.convert(current.bounds, to: window))")
+                    ancestor = current.superview
+                  }
                 }
                 if playerPolishChecksPassed { smokeLog("Native mini player accessory and inline environment restored") }
                 let image = UIGraphicsImageRenderer(bounds: tabHost.view.bounds).image { _ in

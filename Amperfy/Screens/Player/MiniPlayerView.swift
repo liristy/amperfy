@@ -34,7 +34,6 @@ class MiniPlayerView: UIView, UIGestureRecognizerDelegate {
   private var trackPan: UIPanGestureRecognizer?
   private var expandPan: UIPanGestureRecognizer?
   private weak var expandingPlayer: PopupPlayerVC?
-  private var accessoryBottomInsetConstraint: NSLayoutConstraint?
   private var trackViewport: UIView?
   private var trackContent: UIView?
   private var trackDragOverlay: UIView?
@@ -599,7 +598,6 @@ class MiniPlayerView: UIView, UIGestureRecognizerDelegate {
   private func refreshForTabAccessoryTraitChange() {
     resetTrackDrag()
     let isInline = traitCollection.tabAccessoryEnvironment == .inline
-    setAccessoryBottomInset(isInline ? 0 : 8)
     playButtonTrailingConstraint?.isActive = false
     if isInline {
       nextButton.isHidden = true
@@ -970,11 +968,6 @@ class MiniPlayerView: UIView, UIGestureRecognizerDelegate {
     expandingPlayer = nil
   }
 
-  func setAccessoryBottomInset(_ inset: CGFloat) {
-    guard accessoryBottomInsetConstraint?.constant != inset else { return }
-    accessoryBottomInsetConstraint?.constant = inset
-  }
-
   @objc
   private func handleHoverContainerHover(_ recognizer: UIHoverGestureRecognizer) {
     switch recognizer.state {
@@ -1119,13 +1112,11 @@ class MiniPlayerView: UIView, UIGestureRecognizerDelegate {
     container.translatesAutoresizingMaskIntoConstraints = false
     self.translatesAutoresizingMaskIntoConstraints = false
 
-    let bottomInset = container.bottomAnchor.constraint(equalTo: bottomAnchor)
-    accessoryBottomInsetConstraint = bottomInset
     NSLayoutConstraint.activate([
       container.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 0),
       container.trailingAnchor.constraint(equalTo: trailingAnchor),
       container.topAnchor.constraint(equalTo: topAnchor, constant: 0),
-      bottomInset,
+      container.bottomAnchor.constraint(equalTo: bottomAnchor),
     ])
 
     return container
