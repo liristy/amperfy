@@ -82,9 +82,6 @@ final class PlayerSurfaceAnimator: NSObject, UIViewControllerAnimatedTransitioni
       context.completeTransition(false)
       return UIViewPropertyAnimator(duration: 0, curve: .linear)
     }
-    // Capture only the existing mini player before attaching the destination.
-    // afterScreenUpdates: true here can commit a full-screen destination frame.
-    let capsule = sourcePlayer?.snapshotView(afterScreenUpdates: false)
     if isPresenting {
       toView.frame = context.finalFrame(for: toVC)
       container.addSubview(toView)
@@ -102,15 +99,11 @@ final class PlayerSurfaceAnimator: NSObject, UIViewControllerAnimatedTransitioni
     let smallFrame = sourcePlayer.map { $0.convert($0.bounds, to: container) } ??
       CGRect(x: fullFrame.minX + 20, y: fullFrame.maxY - 140, width: fullFrame.width - 40, height: 56)
     let reducedMotion = UIAccessibility.isReduceMotionEnabled
-    let sourceOpacity = sourcePlayer?.layer.opacity ?? 1
     let originalMask = playerView.mask
     let originalAlpha = playerView.alpha
     let originalTransform = playerView.transform
     let targetArtwork = popup.transitionArtwork
-    let targetArtworkOpacity = targetArtwork?.layer.opacity ?? 1
-    let sourceArtworkOpacity = sourceArtwork?.layer.opacity ?? 1
     let artworkShadow = popup.largeCurrentlyPlayingView?.transitionArtworkShadow
-    let shadowOpacity = artworkShadow?.layer.opacity ?? 1
     let smallArtworkFrame = sourceArtwork.map { $0.convert($0.bounds, to: container) }
     let largeArtworkFrame = targetArtwork.map { $0.convert($0.bounds, to: container) }
     // A newly loaded destination may still be decoding its full-size image.
@@ -133,11 +126,27 @@ final class PlayerSurfaceAnimator: NSObject, UIViewControllerAnimatedTransitioni
     surface.layer.cornerCurve = .continuous
     surface.layer.cornerRadius = isPresenting && !reducedMotion ? localSmallFrame.height / 2 : 0
     playerView.mask = surface
-    if reducedMotion { playerView.alpha = isPresenting ? 0 : originalAlpha }
-    if let capsule, !reducedMotion {
-      capsule.frame = smallFrame
-      capsule.alpha = isPresenting ? 1 : 0
-      container.addSubview(capsule)
+    playerView.alpha = isPresenting ? 0 : originalAlpha
+    // Refresh and appearance callbacks legitimately write artwork/control alpha.
+    // A separate mask belongs to this transition and cannot be reset by them.
+    var maskedViews = [(view: UIView, original: UIView?)]()
+    func installMask(on view: UIView, alpha: CGFloat, identifier: String) -> UIView {
+      maskedViews.append((view, view.mask))
+      let mask = UIView(frame: view.bounds)
+      mask.backgroundColor = .black
+      mask.alpha = alpha
+      mask.accessibilityIdentifier = identifier
+      view.mask = mask
+      return mask
+    }
+    var contentMasks = [UIView]()
+    if !reducedMotion {
+      // Fade all foreground content before the surface reaches capsule height.
+      // Keep the background and the independently moving album cover separate.
+      for content in playerView.subviews where content !== popup.backgroundImage {
+        contentMasks.append(installMask(on: content, alpha: isPresenting ? 0 : 1,
+                                        identifier: "player-transition-content-mask"))
+      }
     }
     var flyingArtwork: UIImageView?
     if !reducedMotion, let sourceArtwork, let targetArtwork,
@@ -152,29 +161,33 @@ final class PlayerSurfaceAnimator: NSObject, UIViewControllerAnimatedTransitioni
       cover.layer.cornerRadius = isPresenting ? sourceArtwork.layer.cornerRadius : targetArtwork.layer.cornerRadius
       container.addSubview(cover)
       flyingArtwork = cover
-      sourceArtwork.layer.opacity = 0
-      targetArtwork.layer.opacity = 0
-      artworkShadow?.layer.opacity = 0
-      // The capsule snapshot already contains its cover. Cut that rectangle
-      // out so there is exactly one moving cover, even during a held gesture.
-      if let capsule, let sourcePlayer = self.sourcePlayer {
-        let cutout = UIBezierPath(rect: capsule.bounds)
-        cutout.append(UIBezierPath(rect: sourceArtwork.convert(sourceArtwork.bounds, to: sourcePlayer)))
-        let mask = CAShapeLayer()
-        mask.path = cutout.cgPath
-        mask.fillRule = .evenOdd
-        capsule.layer.mask = mask
+      for artwork in [sourceArtwork, targetArtwork, artworkShadow].compactMap({ $0 }) {
+        _ = installMask(on: artwork, alpha: 0, identifier: "player-transition-artwork-mask")
       }
     }
-    sourcePlayer?.layer.opacity = 0
     let animator = UIViewPropertyAnimator(
       duration: transitionDuration(using: context), dampingRatio: Self.springDamping
     ) {
       playerView.transform = self.isPresenting ? originalTransform : collapsedTransform
       surface.frame = self.isPresenting || reducedMotion ? playerView.bounds : localSmallFrame
       surface.layer.cornerRadius = self.isPresenting || reducedMotion ? 0 : localSmallFrame.height / 2
-      if reducedMotion { playerView.alpha = self.isPresenting ? originalAlpha : 0 }
-      capsule?.alpha = self.isPresenting ? 0 : 1
+      if reducedMotion {
+        playerView.alpha = self.isPresenting ? originalAlpha : 0
+      } else {
+        UIView.animateKeyframes(withDuration: self.transitionDuration(using: context), delay: 0,
+                                options: [.calculationModeLinear]) {
+          UIView.addKeyframe(withRelativeStartTime: self.isPresenting ? 0.55 : 0,
+                            relativeDuration: 0.45) {
+            contentMasks.forEach { $0.alpha = self.isPresenting ? 1 : 0 }
+          }
+          // Reveal the real mini player underneath, including its live glass
+          // and labels. A snapshot of offscreen glass can contain stale controls.
+          UIView.addKeyframe(withRelativeStartTime: self.isPresenting ? 0.1 : 0.65,
+                            relativeDuration: 0.25) {
+            playerView.alpha = self.isPresenting ? originalAlpha : 0
+          }
+        }
+      }
       if let smallArtworkFrame, let largeArtworkFrame {
         flyingArtwork?.frame = self.isPresenting ? largeArtworkFrame : smallArtworkFrame
         flyingArtwork?.layer.cornerRadius = self.isPresenting ? (targetArtwork?.layer.cornerRadius ?? 0) :
@@ -185,15 +198,12 @@ final class PlayerSurfaceAnimator: NSObject, UIViewControllerAnimatedTransitioni
     let presenting = isPresenting
     animator.addCompletion { [weak self] _ in
       let completed = !context.transitionWasCancelled
-      self?.sourcePlayer?.layer.opacity = sourceOpacity
-      self?.sourceArtwork?.layer.opacity = sourceArtworkOpacity
-      targetArtwork?.layer.opacity = targetArtworkOpacity
-      artworkShadow?.layer.opacity = shadowOpacity
+      // Restore nested artwork masks before their ancestor content masks.
+      for entry in maskedViews.reversed() { entry.view.mask = entry.original }
       playerView.mask = originalMask
       playerView.alpha = originalAlpha
       playerView.transform = originalTransform
       if presenting != completed { playerView.removeFromSuperview() }
-      capsule?.removeFromSuperview()
       flyingArtwork?.removeFromSuperview()
       popup.surfaceTransition.presentationInteraction = nil
       popup.surfaceTransition.interaction = nil

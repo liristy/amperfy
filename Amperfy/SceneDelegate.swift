@@ -392,6 +392,77 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
                 vc.dismiss(animated: false)
                 try await Task.sleep(for: .milliseconds(100))
               }
+              // Reproduce the reported paused/dark-mode frames, including a
+              // metadata refresh while the shared cover is still in flight.
+              let originalAppearance = vc.overrideUserInterfaceStyle
+              vc.overrideUserInterfaceStyle = .dark
+              self.appDelegate.player.pause()
+              try await Task.sleep(for: .milliseconds(550))
+              miniPlayer.beginPlayerExpansion()
+              try await Task.sleep(for: .milliseconds(80))
+              guard let pausedPopup = vc.presentedViewController as? PopupPlayerVC else { return }
+              let pausedDistance = (miniPlayer.window?.bounds.height ?? 800) * 0.6
+              miniPlayer.updatePlayerExpansion(translation: pausedDistance * 0.85)
+              pausedPopup.refreshCurrentlyPlayingInfoView()
+              try await Task.sleep(for: .milliseconds(100))
+              guard let hiddenCover = pausedPopup.transitionArtwork,
+                    hiddenCover.mask?.accessibilityIdentifier == "player-transition-artwork-mask",
+                    hiddenCover.mask?.alpha == 0,
+                    miniPlayer.artworkImage.mask?.alpha == 0, flyingCover() != nil else {
+                smokeLog("A refresh exposed the real cover during paused opening")
+                return
+              }
+              func transitionScreenshot(_ name: String) throws {
+                guard let window = miniPlayer.window else { return }
+                let image = UIGraphicsImageRenderer(bounds: window.bounds).image { _ in
+                  window.drawHierarchy(in: window.bounds, afterScreenUpdates: false)
+                }
+                try image.pngData()?.write(to: URL.documentsDirectory.appendingPathComponent(name))
+              }
+              try transitionScreenshot("player-opening-refreshed.png")
+              miniPlayer.endPlayerExpansion(translation: pausedDistance * 0.85, velocity: 850)
+              try await Task.sleep(for: .seconds(1))
+              guard hiddenCover.mask == nil, miniPlayer.artworkImage.mask == nil,
+                    abs(hiddenCover.transform.a - 0.82) < 0.01, flyingCover() == nil else {
+                smokeLog("Paused opening did not hand off to the real scaled cover")
+                return
+              }
+              pausedPopup.beginInteractiveDismissal()
+              try await Task.sleep(for: .milliseconds(80))
+              let closingDistance = pausedPopup.view.bounds.height
+              pausedPopup.updateInteractiveDismissal(translation: closingDistance * 0.93)
+              pausedPopup.refreshCurrentlyPlayingInfoView()
+              pausedPopup.controlView?.refreshView()
+              try await Task.sleep(for: .milliseconds(100))
+              guard let controlsMask = pausedPopup.controlPlaceholderView.mask,
+                    controlsMask.accessibilityIdentifier == "player-transition-content-mask",
+                    (controlsMask.layer.presentation()?.opacity ?? controlsMask.layer.opacity) < 0.01,
+                    (pausedPopup.view.layer.presentation()?.opacity ?? 1) < 0.01,
+                    miniPlayer.glassContainer.layer.opacity == 1,
+                    hiddenCover.mask?.alpha == 0, flyingCover() != nil else {
+                smokeLog("Fullscreen controls remained visible over the live mini player during closing")
+                return
+              }
+              try transitionScreenshot("player-closing-capsule.png")
+              pausedPopup.endInteractiveDismissal(translation: closingDistance * 0.93, velocity: -200, cancelled: true)
+              try await Task.sleep(for: .seconds(1))
+              guard pausedPopup.view.alpha == 1, pausedPopup.view.mask == nil,
+                    pausedPopup.controlPlaceholderView.mask == nil,
+                    hiddenCover.mask == nil, miniPlayer.artworkImage.mask == nil,
+                    flyingCover() == nil else {
+                smokeLog("Reversing the final closing phase did not restore all content masks")
+                return
+              }
+              smokeLog("Paused opening refresh kept one cover; closing hid fullscreen controls and restored live mini player; reversal restored masks")
+              pausedPopup.dismiss(animated: false)
+              try await Task.sleep(for: .milliseconds(150))
+              if vc.presentedViewController != nil {
+                vc.dismiss(animated: false)
+                try await Task.sleep(for: .milliseconds(100))
+              }
+              vc.overrideUserInterfaceStyle = originalAppearance
+              self.appDelegate.player.play()
+              try await Task.sleep(for: .milliseconds(550))
               miniPlayer.beginPlayerExpansion()
               try await Task.sleep(for: .milliseconds(80))
               miniPlayer.updatePlayerExpansion(translation: 160)
@@ -399,7 +470,7 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
               guard let cover = flyingCover(), let coverHost = cover.superview,
                     let coverFrame = cover.layer.presentation()?.frame,
                     let openingPopup = vc.presentedViewController as? PopupPlayerVC,
-                    openingPopup.transitionArtwork?.layer.opacity == 0 else {
+                    openingPopup.transitionArtwork?.mask?.alpha == 0 else {
                 smokeLog("Opening did not create a shared moving album cover")
                 return
               }
@@ -438,6 +509,11 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
                   smokeLog("Live player was hidden or resized during opening")
                   return
                 }
+                popup.refreshCurrentlyPlayingInfoView()
+                guard popup.transitionArtwork?.mask?.alpha == 0 else {
+                  smokeLog("Live metadata refresh exposed a second cover during the opening spring")
+                  return
+                }
                 lastSample = "height \(animatedFrame.height), destination \(destinationHeight)"
                 largestOpeningHeight = max(largestOpeningHeight, animatedFrame.height)
                 if animatedFrame.height > destinationHeight + 0.5 { sampledSpringOvershoot = true }
@@ -461,7 +537,8 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
               try await Task.sleep(for: .seconds(1))
               guard popup.largePlayerPlaceholderView.transform == .identity,
                     popup.transitionArtwork?.isHidden == false,
-                    popup.transitionArtwork?.layer.opacity == 1, flyingCover() == nil else { return }
+                    popup.transitionArtwork?.layer.opacity == 1, popup.transitionArtwork?.mask == nil,
+                    flyingCover() == nil else { return }
               popup.beginInteractiveDismissal()
               try await Task.sleep(for: .milliseconds(80))
               popup.updateInteractiveDismissal(translation: 70)

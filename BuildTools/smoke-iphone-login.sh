@@ -98,7 +98,7 @@ for attempt in {1..45}; do
   sleep 2
 done
 xcrun simctl io "$device_id" screenshot build/validation/player-dismissed-zh-Hans.png
-for screenshot in player-opening player-next-song player-paused-artwork player-mini-spacing player-mini-collapsed player-search-keyboard player-lyrics-controls player-queue-from-lyrics; do
+for screenshot in player-opening player-opening-refreshed player-closing-capsule player-next-song player-paused-artwork player-mini-spacing player-mini-collapsed player-search-keyboard player-lyrics-controls player-queue-from-lyrics; do
   source="$container/Documents/$screenshot.png"
   if [[ -f "$source" ]]; then
     sips -s format jpeg -s formatOptions 80 -Z 1000 "$source" --out "build/validation/$screenshot-preview.jpg" >/dev/null
