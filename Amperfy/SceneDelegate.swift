@@ -300,16 +300,26 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
               if let tabHost = vc as? TabBarVC {
                 tabHost.view.layoutIfNeeded()
                 guard let dock = tabHost.playerDock, tabHost.bottomAccessory == nil,
-                      tabHost.isTabBarHidden else {
+                      !tabHost.isTabBarHidden else {
                   smokeLog("Phone player is not using the custom floating dock")
                   return
                 }
                 dock.layoutIfNeeded()
-                guard dock.navigationBar.items?.count == 2, dock.navigationBar.bounds.height >= 64 else {
+                guard tabHost.tabBar.items?.count == 3,
+                      tabHost.tabBar.superview !== dock,
+                      dock.navigationGlass.isHidden, dock.searchGlass.isHidden else {
                   smokeLog("Dock did not restore a full-height system tab bar")
                   return
                 }
                 let expandedFrame = miniPlayer.glassContainer.frame
+                let nativeTop = tabHost.tabBar.convert(tabHost.tabBar.bounds, to: tabHost.view).minY
+                let playerBottom = miniPlayer.glassContainer.convert(miniPlayer.glassContainer.bounds, to: tabHost.view).maxY
+                guard abs(nativeTop - playerBottom - 12) < 0.5,
+                      !dock.point(inside: CGPoint(x: dock.bounds.midX, y: dock.bounds.maxY - 20), with: nil) else {
+                  smokeLog("System navigation gap or native tab touch passthrough is incorrect")
+                  return
+                }
+                smokeLog("Original system tab bar restored: \(tabHost.tabBar.frame), player gap \(nativeTop - playerBottom)")
                 guard abs(expandedFrame.height - 56) < 0.5,
                       abs(dock.navigationGlass.frame.minY - expandedFrame.maxY - 12) < 0.5,
                       abs(miniPlayer.bounds.height - 56) < 0.5,
@@ -327,7 +337,7 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
                 tabHost.updatePlayerDockForScroll(delta: -40, atTop: false)
                 try await Task.sleep(for: .milliseconds(650))
                 let compactFrame = miniPlayer.glassContainer.frame
-                guard dock.isCollapsed, abs(compactFrame.height - 48) < 0.5,
+                guard dock.isCollapsed, tabHost.isTabBarHidden, abs(compactFrame.height - 48) < 0.5,
                       abs(compactFrame.midY - dock.navigationGlass.frame.midY) < 0.5,
                       abs(compactFrame.minX - dock.navigationGlass.frame.maxX - 12) < 0.5,
                       abs(dock.searchGlass.frame.minX - compactFrame.maxX - 12) < 0.5,
@@ -343,7 +353,7 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
                 try await Task.sleep(for: .milliseconds(80))
                 tabHost.updatePlayerDockForScroll(delta: 0, atTop: true)
                 try await Task.sleep(for: .milliseconds(650))
-                guard !dock.isCollapsed, miniPlayer.glassContainer.frame == expandedFrame,
+                guard !dock.isCollapsed, !tabHost.isTabBarHidden, miniPlayer.glassContainer.frame == expandedFrame,
                       !miniPlayer.artworkImage.isHidden else {
                   smokeLog("Quick dock reversal or top-of-list expansion changed the player geometry")
                   return
