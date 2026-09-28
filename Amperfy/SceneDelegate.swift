@@ -176,6 +176,22 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
                 return
               }
               smokeLog("Lyrics highlight survived replacement-cell reuse")
+              newLyricCell.frame = CGRect(x: 0, y: 0, width: 360, height: 120)
+              newLyricCell.layoutIfNeeded()
+              lyricModel.isActiveLine = false
+              newLyricCell.refresh()
+              guard let blurredLyric = newLyricCell.contentView.subviews.compactMap({ $0 as? UIImageView }).first,
+                    blurredLyric.image != nil, blurredLyric.alpha > 0 else {
+                smokeLog("Inactive lyrics did not produce a visible blurred text layer")
+                return
+              }
+              lyricModel.isActiveLine = true
+              newLyricCell.refresh()
+              guard blurredLyric.alpha == 0 else {
+                smokeLog("Active lyric retained its blurred text layer")
+                return
+              }
+              smokeLog("Inactive lyrics blur and active-line clarity passed after cell replacement")
               smokeLog("Player smoke: preparing playback")
               let library = self.appDelegate.storage.main.library
               let account = library.getAccount(info: activeAccount)
