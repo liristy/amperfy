@@ -606,6 +606,10 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
                   smokeLog("Custom search navigation did not focus search and hide the dock for the keyboard")
                   return
                 }
+                let searchImage = UIGraphicsImageRenderer(bounds: tabHost.view.bounds).image { _ in
+                  tabHost.view.drawHierarchy(in: tabHost.view.bounds, afterScreenUpdates: true)
+                }
+                try searchImage.pngData()?.write(to: URL.documentsDirectory.appendingPathComponent("player-search-keyboard.png"))
                 tabHost.view.endEditing(true)
                 try await Task.sleep(for: .milliseconds(650))
                 tabHost.view.layoutIfNeeded()

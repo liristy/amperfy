@@ -285,8 +285,11 @@ class TabBarVC: UITabBarController {
         guard let self else { return }
         self.selectedTab = self.searchTab
         self.updateDockSelection()
-        let navigation = self.selectedViewController as? UINavigationController
-        (navigation?.topViewController as? SearchVC)?.activateSearchBar()
+        DispatchQueue.main.async { [weak self] in
+          guard let self, self.selectedTab === self.searchTab else { return }
+          let navigation = self.selectedViewController as? UINavigationController
+          (navigation?.topViewController as? SearchVC)?.activateSearchBar()
+        }
       }
       view.addSubview(dock)
       playerDock = dock

@@ -235,8 +235,12 @@ class SearchVC: BasicTableViewController {
 
   public func activateSearchBar() {
     if isViewLoaded {
-      // activate searchBar
-      searchController.searchBar.becomeFirstResponder()
+      searchController.isActive = true
+      // Let the search presentation attach its text field before requesting focus.
+      DispatchQueue.main.async { [weak self] in
+        guard let self, self.view.window != nil else { return }
+        self.searchController.searchBar.becomeFirstResponder()
+      }
     }
   }
 
@@ -248,6 +252,16 @@ class SearchVC: BasicTableViewController {
       placeholder: placeholder,
       scopeButtonTitles: scopeButtonTitles
     )
+
+    if (tabBarController as? TabBarVC)?.playerDock != nil {
+      // The system tab bar is hidden while the floating dock owns navigation.
+      // Keep the search field in a visible navigation bar instead of that tab bar.
+      navigationItem.searchBarPlacementAllowsExternalIntegration = false
+      navigationItem.searchBarPlacementAllowsToolbarIntegration = false
+      navigationController?.navigationItem.searchBarPlacementAllowsExternalIntegration = false
+      navigationItem.preferredSearchBarPlacement = .stacked
+      navigationItem.hidesSearchBarWhenScrolling = false
+    }
 
     // Install the options button
     optionsButton = UIBarButtonItem.createOptionsBarButton()
