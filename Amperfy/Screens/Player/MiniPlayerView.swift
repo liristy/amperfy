@@ -594,10 +594,17 @@ class MiniPlayerView: UIView, UIGestureRecognizerDelegate {
   }
 
   public var tabAccessoryTraitChangeCB: VoidFunctionCallback?
+  private var compactPresentationOverride: Bool?
+
+  func setCompactPresentation(_ compact: Bool?) {
+    guard compactPresentationOverride != compact else { return }
+    compactPresentationOverride = compact
+    refreshForTabAccessoryTraitChange()
+  }
 
   private func refreshForTabAccessoryTraitChange() {
     resetTrackDrag()
-    let isInline = traitCollection.tabAccessoryEnvironment == .inline
+    let isInline = compactPresentationOverride ?? (traitCollection.tabAccessoryEnvironment == .inline)
     playButtonTrailingConstraint?.isActive = false
     if isInline {
       nextButton.isHidden = true

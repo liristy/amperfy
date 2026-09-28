@@ -3565,6 +3565,17 @@
         }
       }
     },
+    "Show navigation": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "展开导航栏"
+          }
+        }
+      }
+    },
     "Show Lyrics": {
       "extractionState": "manual",
       "localizations": {

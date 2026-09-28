@@ -263,46 +263,54 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
               self.appDelegate.player.setRepeatMode(.off)
               smokeLog("Adjacent song previews, edge resistance, user queue priority and repeat wrapping passed")
               var playerPolishChecksPassed = true
-              if let tabHost = vc as? UITabBarController {
+              if let tabHost = vc as? TabBarVC {
                 tabHost.view.layoutIfNeeded()
-                guard tabHost.bottomAccessory != nil,
-                      tabHost.tabBarMinimizeBehavior == .onScrollDown,
-                      miniPlayer.glassContainer.superview !== tabHost.view else {
-                  smokeLog("Mini player is not using the system's collapsible tab accessory")
+                guard let dock = tabHost.playerDock, tabHost.bottomAccessory == nil,
+                      tabHost.isTabBarHidden else {
+                  smokeLog("Phone player is not using the custom floating dock")
                   return
                 }
-                miniPlayer.glassContainer.traitOverrides.tabAccessoryEnvironment = .inline
-                try await Task.sleep(for: .milliseconds(100))
-                tabHost.view.layoutIfNeeded()
-                miniPlayer.glassContainer.layoutIfNeeded()
-                if miniPlayer.traitCollection.tabAccessoryEnvironment != .inline ||
-                  abs(miniPlayer.glassContainer.bounds.height - miniPlayer.bounds.height) >= 0.5 {
-                  smokeLog("Inline mini player retained expanded bottom spacing: container \(miniPlayer.glassContainer.bounds), content \(miniPlayer.bounds)")
-                  playerPolishChecksPassed = false
+                dock.layoutIfNeeded()
+                let expandedFrame = miniPlayer.glassContainer.frame
+                guard abs(expandedFrame.height - 56) < 0.5,
+                      abs(dock.navigationGlass.frame.minY - expandedFrame.maxY - 12) < 0.5,
+                      abs(miniPlayer.bounds.height - 56) < 0.5,
+                      !dock.point(inside: CGPoint(x: dock.bounds.midX, y: expandedFrame.maxY + 6), with: nil) else {
+                  smokeLog("Player height, external 12pt gap or gap hit testing is incorrect")
+                  return
                 }
-                miniPlayer.glassContainer.traitOverrides.remove(UITraitTabAccessoryEnvironment.self)
-                try await Task.sleep(for: .milliseconds(100))
-                tabHost.view.layoutIfNeeded()
-                miniPlayer.glassContainer.layoutIfNeeded()
-                let expectedHeight: CGFloat = tabHost.traitCollection.horizontalSizeClass == .regular ? 60 : 56
-                if abs(miniPlayer.glassContainer.bounds.height - miniPlayer.bounds.height) >= 0.5 ||
-                  abs(miniPlayer.glassContainer.bounds.height - expectedHeight) >= 0.5 {
-                  smokeLog("Expanded mini player retained extra height: container \(miniPlayer.glassContainer.bounds), content \(miniPlayer.bounds)")
-                  playerPolishChecksPassed = false
-                }
-                if let window = miniPlayer.window {
-                  smokeLog("Tab bar frame: \(tabHost.tabBar.convert(tabHost.tabBar.bounds, to: window))")
-                  var ancestor: UIView? = miniPlayer.glassContainer
-                  while let current = ancestor, current !== window {
-                    smokeLog("Accessory geometry \(type(of: current)): \(current.convert(current.bounds, to: window))")
-                    ancestor = current.superview
+                func dockScreenshot(_ name: String) throws {
+                  let image = UIGraphicsImageRenderer(bounds: tabHost.view.bounds).image { _ in
+                    tabHost.view.drawHierarchy(in: tabHost.view.bounds, afterScreenUpdates: true)
                   }
+                  try image.pngData()?.write(to: URL.documentsDirectory.appendingPathComponent(name))
                 }
-                if playerPolishChecksPassed { smokeLog("Native mini player accessory and inline environment restored") }
-                let image = UIGraphicsImageRenderer(bounds: tabHost.view.bounds).image { _ in
-                  tabHost.view.drawHierarchy(in: tabHost.view.bounds, afterScreenUpdates: true)
+                try dockScreenshot("player-mini-spacing.png")
+                tabHost.updatePlayerDockForScroll(delta: -40, atTop: false)
+                try await Task.sleep(for: .milliseconds(650))
+                let compactFrame = miniPlayer.glassContainer.frame
+                guard dock.isCollapsed, abs(compactFrame.height - 48) < 0.5,
+                      abs(compactFrame.midY - dock.navigationGlass.frame.midY) < 0.5,
+                      abs(compactFrame.minX - dock.navigationGlass.frame.maxX - 12) < 0.5,
+                      abs(dock.searchGlass.frame.minX - compactFrame.maxX - 12) < 0.5,
+                      miniPlayer.glassContainer.superview === dock else {
+                  smokeLog("Sinking player did not settle between navigation and search")
+                  return
                 }
-                try image.pngData()?.write(to: URL.documentsDirectory.appendingPathComponent("player-mini-spacing.png"))
+                try dockScreenshot("player-mini-collapsed.png")
+                // Reverse while the spring is moving, then return to the top.
+                tabHost.updatePlayerDockForScroll(delta: 25, atTop: false)
+                try await Task.sleep(for: .milliseconds(80))
+                tabHost.updatePlayerDockForScroll(delta: -40, atTop: false)
+                try await Task.sleep(for: .milliseconds(80))
+                tabHost.updatePlayerDockForScroll(delta: 0, atTop: true)
+                try await Task.sleep(for: .milliseconds(650))
+                guard !dock.isCollapsed, miniPlayer.glassContainer.frame == expandedFrame,
+                      !miniPlayer.artworkImage.isHidden else {
+                  smokeLog("Quick dock reversal or top-of-list expansion changed the player geometry")
+                  return
+                }
+                smokeLog("Custom dock: 56pt player, 12pt external gap, 48pt sinking, reversal and gap hit testing passed")
               }
               miniPlayer.beginPlayerExpansion()
               try await Task.sleep(for: .milliseconds(80))
@@ -589,6 +597,26 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
                   tabHost.view.drawHierarchy(in: tabHost.view.bounds, afterScreenUpdates: true)
                 }
                 try image.pngData()?.write(to: URL.documentsDirectory.appendingPathComponent("player-library-defaults.png"))
+              }
+              if let tabHost = vc as? TabBarVC, let dock = tabHost.playerDock {
+                dock.onSearch?()
+                try await Task.sleep(for: .seconds(1))
+                tabHost.view.layoutIfNeeded()
+                guard tabHost.selectedTab is UISearchTab, dock.isHidden else {
+                  smokeLog("Custom search navigation did not focus search and hide the dock for the keyboard")
+                  return
+                }
+                tabHost.view.endEditing(true)
+                try await Task.sleep(for: .milliseconds(650))
+                tabHost.view.layoutIfNeeded()
+                guard !dock.isHidden else {
+                  smokeLog("Custom dock did not return after dismissing the keyboard")
+                  return
+                }
+                dock.onHome?()
+                tabHost.view.layoutIfNeeded()
+                guard tabHost.selectedTab?.identifier == "Tabs.Home", !dock.isCollapsed else { return }
+                smokeLog("Custom navigation, search keyboard hiding and restoration passed")
               }
               // Exercise the real Subsonic request without waiting half a long fixture track.
               song.playDuration = 2
