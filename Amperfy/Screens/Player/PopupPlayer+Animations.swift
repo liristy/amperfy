@@ -113,6 +113,10 @@ final class PlayerSurfaceAnimator: NSObject, UIViewControllerAnimatedTransitioni
     let shadowOpacity = artworkShadow?.layer.opacity ?? 1
     let smallArtworkFrame = sourceArtwork.map { $0.convert($0.bounds, to: container) }
     let largeArtworkFrame = targetArtwork.map { $0.convert($0.bounds, to: container) }
+    // A newly loaded destination may still be decoding its full-size image.
+    // Start with the cover the user can already see, never its placeholder.
+    let artworkImage = isPresenting ? (sourceArtwork?.image ?? targetArtwork?.image) :
+      (targetArtwork?.image ?? sourceArtwork?.image)
     // Move the content with the growing surface, so the rebound is visible in
     // the whole page rather than only in a mask outside the screen edges.
     let collapsedTransform = reducedMotion ? originalTransform : originalTransform
@@ -127,7 +131,7 @@ final class PlayerSurfaceAnimator: NSObject, UIViewControllerAnimatedTransitioni
     surface.accessibilityIdentifier = "player-transition-surface"
     surface.backgroundColor = .black
     surface.layer.cornerCurve = .continuous
-    surface.layer.cornerRadius = isPresenting && !reducedMotion ? smallFrame.height / 2 : 0
+    surface.layer.cornerRadius = isPresenting && !reducedMotion ? localSmallFrame.height / 2 : 0
     playerView.mask = surface
     if reducedMotion { playerView.alpha = isPresenting ? 0 : originalAlpha }
     if let capsule, !reducedMotion {
@@ -138,7 +142,7 @@ final class PlayerSurfaceAnimator: NSObject, UIViewControllerAnimatedTransitioni
     var flyingArtwork: UIImageView?
     if !reducedMotion, let sourceArtwork, let targetArtwork,
        let smallArtworkFrame, let largeArtworkFrame,
-       let image = targetArtwork.image ?? sourceArtwork.image {
+       let image = artworkImage {
       let cover = UIImageView(image: image)
       cover.accessibilityIdentifier = "player-surface-transition-artwork"
       cover.contentMode = .scaleAspectFit
@@ -168,7 +172,7 @@ final class PlayerSurfaceAnimator: NSObject, UIViewControllerAnimatedTransitioni
     ) {
       playerView.transform = self.isPresenting ? originalTransform : collapsedTransform
       surface.frame = self.isPresenting || reducedMotion ? playerView.bounds : localSmallFrame
-      surface.layer.cornerRadius = self.isPresenting || reducedMotion ? 0 : smallFrame.height / 2
+      surface.layer.cornerRadius = self.isPresenting || reducedMotion ? 0 : localSmallFrame.height / 2
       if reducedMotion { playerView.alpha = self.isPresenting ? originalAlpha : 0 }
       capsule?.alpha = self.isPresenting ? 0 : 1
       if let smallArtworkFrame, let largeArtworkFrame {
