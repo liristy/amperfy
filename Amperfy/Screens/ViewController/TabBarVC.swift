@@ -719,7 +719,7 @@ final class FloatingPlayerDock: UIView {
       selectionGlass.frame = head.insetBy(dx: -10 * stretch, dy: 2 * stretch)
       // The trailing lobe catches up inside the same glass container, making
       // the outline stretch and fuse instead of sliding a rigid second pill.
-      let tailTravel = max(0, travel - 0.28 * stretch)
+      let tailTravel = max(0, travel - 0.45 * stretch)
       selectionTrailGlass.frame = selectionStart.offsetBy(
         dx: (selectionEnd.minX - selectionStart.minX) * tailTravel, dy: 0)
         .insetBy(dx: head.width * 0.2, dy: 5)

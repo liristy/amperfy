@@ -70,6 +70,9 @@ final class PlayerArtworkMotion: NSObject {
   private let player: UIView
   private let surface: UIView
   private let progressView: UIView
+  private let foreground: [(view: UIView, transform: CGAffineTransform)]
+  private let handle: UIView?
+  private let handleTransform: CGAffineTransform
   private let cover: UIImageView?
   private let smallFrame: CGRect
   private let fullFrame: CGRect
@@ -83,10 +86,14 @@ final class PlayerArtworkMotion: NSObject {
   private var displayLink: CADisplayLink?
 
   init(player: UIView, surface: UIView, progressView: UIView, smallFrame: CGRect, fullFrame: CGRect,
-       presenting: Bool, cover: UIImageView?, endFrame: CGRect, endRadius: CGFloat) {
+       presenting: Bool, cover: UIImageView?, endFrame: CGRect, endRadius: CGFloat,
+       foreground: [UIView], handle: UIView?) {
     self.player = player
     self.surface = surface
     self.progressView = progressView
+    self.foreground = foreground.map { ($0, $0.transform) }
+    self.handle = handle
+    self.handleTransform = handle?.transform ?? .identity
     self.smallFrame = smallFrame
     self.fullFrame = fullFrame
     self.presenting = presenting
@@ -148,6 +155,20 @@ final class PlayerArtworkMotion: NSObject {
           width: startFrame.width + (endFrame.width - startFrame.width) * p,
           height: startFrame.height + (endFrame.height - startFrame.height) * p)
         cover.layer.cornerRadius = startRadius + (endRadius - startRadius) * p
+        let fullArtwork = presenting ? endFrame : startFrame
+        let projectedArtworkBottom = player.frame.minY + (fullArtwork.maxY - fullFrame.minY) * scale
+        let offset = max(0, cover.frame.maxY - projectedArtworkBottom) / scale
+        // Preserve the final gap below the flying cover. The controls follow
+        // the metadata, rather than appearing behind the cover halfway through.
+        for content in foreground {
+          content.view.transform = content.transform.translatedBy(x: 0, y: offset)
+        }
+      }
+      if let handle {
+        let fullCenter = handle.center.y
+        let inset = smallFrame.height / 2 + (fullCenter - smallFrame.height / 2) * expansion
+        let offset = (frame.minY + inset - player.frame.minY) / scale - fullCenter
+        handle.transform = handleTransform.translatedBy(x: 0, y: offset)
       }
     }
     CATransaction.commit()
@@ -164,6 +185,8 @@ final class PlayerArtworkMotion: NSObject {
   func stop() {
     displayLink?.invalidate()
     displayLink = nil
+    for content in foreground { content.view.transform = content.transform }
+    handle?.transform = handleTransform
   }
 }
 
@@ -284,7 +307,9 @@ final class PlayerSurfaceAnimator: NSObject, UIViewControllerAnimatedTransitioni
         smallFrame: smallFrame, fullFrame: fullFrame, presenting: isPresenting,
         cover: flyingArtwork,
         endFrame: (isPresenting ? largeArtworkFrame : smallArtworkFrame) ?? .zero,
-        endRadius: (isPresenting ? targetArtwork?.layer.cornerRadius : sourceArtwork?.layer.cornerRadius) ?? 0)
+        endRadius: (isPresenting ? targetArtwork?.layer.cornerRadius : sourceArtwork?.layer.cornerRadius) ?? 0,
+        foreground: [popup.largePlayerPlaceholderView, popup.tableView, popup.controlPlaceholderView],
+        handle: playerView.subviews.first(where: { $0 is UIButton }))
       popup.surfaceTransition.artworkMotion = motion
       if let destination = popup.surfaceTransition.artworkDestination {
         motion.settle(to: destination)

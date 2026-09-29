@@ -577,6 +577,14 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
                   return
                 }
               }
+              if let title = openingPopup.largeCurrentlyPlayingView?.titleLabel {
+                let titleFrame = title.convert(title.bounds, to: coverHost)
+                guard titleFrame.minY > coverFrame.maxY,
+                      abs(openingPopup.view.transform.a - openingPopup.view.transform.d) < 0.001 else {
+                  smokeLog("Opening cover overlapped metadata or distorted control proportions")
+                  return
+                }
+              }
               guard coverFrame.width > miniCoverFrame.width + 1,
                     coverFrame.midY < miniCoverFrame.midY - 1 else {
                 smokeLog("Held opening gesture did not move and enlarge the mini-player cover: \(coverFrame)")
