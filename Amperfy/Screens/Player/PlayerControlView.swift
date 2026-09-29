@@ -132,8 +132,6 @@ class PlayerControlView: UIView {
     displayPlaylistButton.accessibilityLabel = "Playing next".localized
     volumeButton.accessibilityLabel = "Volume options".localized
     lyricsButton.addTarget(self, action: #selector(lyricsPressed), for: .touchUpInside)
-    lyricsButton.tintColor = .white
-    displayPlaylistButton.tintColor = .white
 
     playButton.imageView?.tintColor = .label
     previousButton.tintColor = .label
@@ -200,6 +198,15 @@ class PlayerControlView: UIView {
       button.backgroundColor = .clear
       button.clipsToBounds = false
       button.configuration = configuration
+    }
+    for (button, symbol) in [(lyricsButton!, "quote.bubble"), (displayPlaylistButton!, "list.bullet")] {
+      button.configurationUpdateHandler = { button in
+        let color: UIColor = button.isSelected ? .black : .white
+        var configuration = UIButton.Configuration.playerAccessory(isSelected: button.isSelected)
+        configuration.image = UIImage(systemName: symbol)?.withTintColor(color, renderingMode: .alwaysOriginal)
+        button.tintColor = color
+        button.configuration = configuration
+      }
     }
     refreshAudioOutputButton()
   }
@@ -333,6 +340,7 @@ class PlayerControlView: UIView {
     var configuration = UIButton.Configuration.playerAccessory(isSelected: selected)
     configuration.image = UIImage(systemName: "quote.bubble")?
       .withTintColor(selected ? .black : .white, renderingMode: .alwaysOriginal)
+    lyricsButton.tintColor = selected ? .black : .white
     lyricsButton.isSelected = selected
     lyricsButton.configuration = configuration
     lyricsButton.isEnabled = playerHandler?.isLyricsButtonAllowedToDisplay ?? false

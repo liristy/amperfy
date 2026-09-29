@@ -908,23 +908,30 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
                 smokeLog("Unexpected modal after closing lyrics: \(String(describing: vc.presentedViewController)); player presenting=\(popup.presentingViewController != nil)"); return
               }
               miniPlayer.openPlayerView()
-              try await Task.sleep(for: .milliseconds(900))
+              for _ in 0..<30 {
+                try await Task.sleep(for: .milliseconds(100))
+                if let current = vc.presentedViewController as? PopupPlayerVC,
+                   current !== popup, !current.isBeingPresented, current.view.mask == nil { break }
+              }
               guard let reopened = vc.presentedViewController as? PopupPlayerVC,
-                    reopened !== popup, reopened.transitionCoordinator == nil,
-                    let lyricsButton = reopened.controlView?.lyricsButton,
-                    lyricsButton.isSelected,
-                    lyricsButton.configuration?.image?.renderingMode == .alwaysOriginal,
-                    let color = lyricsButton.configuration?.imageColorTransformer?(.white),
-                    color == UIColor.black else {
-                smokeLog("Lyrics symbol lost contrast after reopening")
-                return
+                    reopened !== popup, !reopened.isBeingPresented, reopened.view.mask == nil else {
+                smokeLog("Lyrics player did not finish reopening"); return
               }
               let reopenedImage = UIGraphicsImageRenderer(bounds: reopened.view.bounds).image { _ in
                 reopened.view.drawHierarchy(in: reopened.view.bounds, afterScreenUpdates: true)
               }
               try reopenedImage.pngData()?.write(to: URL.documentsDirectory.appendingPathComponent("player-lyrics-reopened.png"))
+              let lyricsButton = reopened.controlView?.lyricsButton
+              if lyricsButton?.isSelected == true,
+                 lyricsButton?.configuration?.baseForegroundColor == UIColor.black,
+                 lyricsButton?.configuration?.imageColorTransformer?(.white) == UIColor.black,
+                 lyricsButton?.tintColor == UIColor.black {
+                smokeLog("Selected lyrics symbol preserved its contrast after reopening")
+              } else {
+                smokeLog("Lyrics symbol contrast failed: selected=\(String(describing: lyricsButton?.isSelected)), base=\(String(describing: lyricsButton?.configuration?.baseForegroundColor)), image=\(String(describing: lyricsButton?.configuration?.imageColorTransformer?(.white))), tint=\(String(describing: lyricsButton?.tintColor))")
+                playerPolishChecksPassed = false
+              }
               popup = reopened
-              smokeLog("Selected lyrics symbol preserved its contrast after reopening")
 
               guard let lyricsView = descendants(of: popup.view).compactMap({ $0 as? LyricsView }).first else { return }
               popup.setLyricsControlsHidden(true, animated: false)

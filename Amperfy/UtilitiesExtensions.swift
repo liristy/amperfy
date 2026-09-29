@@ -150,7 +150,7 @@ extension UIButton.Configuration {
 
   static func playerAccessory(isSelected: Bool) -> UIButton.Configuration {
     var config = isSelected ? UIButton.Configuration.glass() : player(isSelected: false)
-    config.baseForegroundColor = .white
+    config.baseForegroundColor = isSelected ? .black : .white
     // Pin symbol contrast across UIKit's selected-state and presentation updates.
     config.imageColorTransformer = UIConfigurationColorTransformer { _ in
       isSelected ? .black : .white

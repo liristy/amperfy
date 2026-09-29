@@ -273,6 +273,7 @@ class PlayerUIHandler: NSObject {
       var config = UIButton.Configuration.playerAccessory(isSelected: isSelected)
       config.image = UIImage(systemName: "list.bullet")?
         .withTintColor(isSelected ? .black : .white, renderingMode: .alwaysOriginal)
+      displayPlaylistButton.tintColor = isSelected ? .black : .white
       displayPlaylistButton.isSelected = isSelected
       displayPlaylistButton.clipsToBounds = false
       displayPlaylistButton.configuration = config
