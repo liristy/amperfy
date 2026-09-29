@@ -905,7 +905,7 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
                 try await Task.sleep(for: .milliseconds(100))
               }
               guard vc.presentedViewController == nil else {
-                smokeLog("Lyrics player did not dismiss before reopening"); return
+                smokeLog("Unexpected modal after closing lyrics: \(String(describing: vc.presentedViewController)); player presenting=\(popup.presentingViewController != nil)"); return
               }
               miniPlayer.openPlayerView()
               try await Task.sleep(for: .milliseconds(900))

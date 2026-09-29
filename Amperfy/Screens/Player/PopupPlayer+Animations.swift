@@ -195,7 +195,7 @@ final class PlayerArtworkMotion: NSObject {
 
 @MainActor
 final class PlayerSurfaceAnimator: NSObject, UIViewControllerAnimatedTransitioning {
-  static var springDamping: CGFloat { UIAccessibility.isReduceMotionEnabled ? 1 : 0.76 }
+  static var springDamping: CGFloat { UIAccessibility.isReduceMotionEnabled ? 1 : 0.72 }
   private let isPresenting: Bool
   private weak var sourcePlayer: UIView?
   private weak var sourceArtwork: UIImageView?

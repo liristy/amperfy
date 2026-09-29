@@ -24,7 +24,13 @@ import Foundation
 
 @MainActor
 class WelcomePopupPresenter: NSObject {
+  private var hasCheckedInitialPresentation = false
+
   func displayInfoPopupsIfNeeded() {
+    // Returning from the full-screen player must restore the existing page,
+    // without inserting another onboarding modal into its dismissal transition.
+    guard !hasCheckedInitialPresentation else { return }
+    hasCheckedInitialPresentation = true
     if !appDelegate.storage.settings.app.isLibrarySyncInfoReadByUser {
       displaySyncInfo()
     } else {
