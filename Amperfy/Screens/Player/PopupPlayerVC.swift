@@ -95,6 +95,11 @@ class PopupPlayerVC: UIViewController, UIScrollViewDelegate, UIGestureRecognizer
     player = appDelegate.player
     player.addNotifier(notifier: self)
     playerHandler = PlayerUIHandler(player: player, style: .popupPlayer)
+    if appDelegate.storage.settings.user.playerDisplayStyle == .compact {
+      // Normalize queue state persisted by older versions that stacked lyrics behind it.
+      appDelegate.storage.settings.user.isPlayerLyricsDisplayed = false
+      appDelegate.storage.settings.user.isPlayerVisualizerDisplayed = false
+    }
 
     // Keep controls legible over every artwork palette, in either app appearance.
     overrideUserInterfaceStyle = .dark

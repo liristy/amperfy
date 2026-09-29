@@ -404,7 +404,7 @@ class TabBarVC: UITabBarController {
   override func viewIsAppearing(_ animated: Bool) {
     super.viewIsAppearing(animated)
     refresh()
-    selectedTab = homeTab
+    if selectedTab == nil { selectedTab = homeTab }
     welcomePopupPresenter.displayInfoPopupsIfNeeded()
   }
 

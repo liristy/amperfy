@@ -39,6 +39,11 @@ final class ListeningModel: ObservableObject {
   let account: Account
   private let settingsKey: String
   private var loadID = UUID()
+  private var artworkPaths: [String: String] = [:]
+  var accent: Color {
+    let app = UIApplication.shared.delegate as! AppDelegate
+    return Color(uiColor: app.storage.settings.accounts.getSetting(account.info).read.themePreference.asColor)
+  }
 
   init(account: Account) {
     self.account = account
@@ -56,6 +61,7 @@ final class ListeningModel: ObservableObject {
   func load(_ request: ListeningRequest) async {
     let id = UUID()
     loadID = id
+    artworkPaths.removeAll()
     snapshot = nil
     error = nil
     guard !request.address.isEmpty else { loading = false; return }
@@ -114,18 +120,44 @@ final class ListeningModel: ObservableObject {
   func play(_ entity: ListeningEntity) async {
     guard entity.kind == .tracks else { return }
     let app = UIApplication.shared.delegate as! AppDelegate
+    guard app.storage.settings.accounts.active == account.info else { return }
     do {
       var matches = matchingSongs(entity, app: app)
       if matches.isEmpty, !app.storage.settings.user.isOfflineMode {
         try await app.getMeta(account.info).librarySyncer.searchSongs(searchText: entity.name)
         matches = matchingSongs(entity, app: app)
       }
+      guard app.storage.settings.accounts.active == account.info else { return }
       guard let song = matches.first else {
         playbackError = "This track was not found in the current music library.".localized
         return
       }
       app.player.play(context: PlayContext(containable: song))
     } catch { playbackError = error.localizedDescription }
+  }
+
+  func artworkPath(_ entity: ListeningEntity) -> String? {
+    if let cached = artworkPaths[entity.id] { return cached.isEmpty ? nil : cached }
+    let app = UIApplication.shared.delegate as! AppDelegate
+    let library = app.storage.main.library
+    let preference = app.storage.settings.accounts.getSetting(account.info).read.artworkDisplayPreference
+    var path: String?
+    switch entity.kind {
+    case .tracks: path = matchingSongs(entity, app: app).first?.imagePath(setting: preference)
+    case .albums:
+      path = library.searchAlbums(for: account, searchText: entity.name, onlyCached: false, displayFilter: .all)
+        .first { album in
+          album.name.localizedCaseInsensitiveCompare(entity.name) == .orderedSame &&
+            (entity.artists.isEmpty || entity.artists.contains { $0.localizedCaseInsensitiveCompare(album.artist?.name ?? "") == .orderedSame })
+        }?.imagePath(setting: preference)
+    case .artists:
+      let artist = library.searchArtists(for: account, searchText: entity.name, onlyCached: false, displayFilter: .all)
+        .first { $0.name.localizedCaseInsensitiveCompare(entity.name) == .orderedSame }
+      path = artist?.imagePath(setting: preference) ?? artist?.songs.first?.imagePath(setting: preference)
+    }
+    if artworkPaths.count > 500 { artworkPaths.removeAll() }
+    artworkPaths[entity.id] = path ?? ""
+    return path
   }
 
   private func matchingSongs(_ entity: ListeningEntity, app: AppDelegate) -> [Song] {
@@ -173,6 +205,8 @@ struct ListeningStatisticsView: View {
   @State private var from = Calendar.current.date(byAdding: .day, value: -30, to: Date()) ?? Date()
   @State private var until = Date()
   @State private var entityPath: [ListeningEntity] = []
+  @State private var detailSearch: [ListeningKind: String] = [:]
+  @State private var detailPage: [ListeningKind: Int] = [:]
 
   init(model: ListeningModel, panel: ListeningPanel = .overview, entity: ListeningEntity? = nil) {
     self.model = model
@@ -190,7 +224,7 @@ struct ListeningStatisticsView: View {
 
   var body: some View {
     ScrollView {
-      VStack(alignment: .leading, spacing: 24) {
+      LazyVStack(alignment: .leading, spacing: 24) {
         if model.address.isEmpty { setup }
         else {
           toolbar
@@ -203,12 +237,18 @@ struct ListeningStatisticsView: View {
       .padding(.horizontal, 20).padding(.top, 12).padding(.bottom, 24)
     }
     .background(Color(uiColor: .systemBackground))
+    .tint(model.accent)
     .task(id: request) { await model.load(request) }
     .refreshable { await model.load(request) }
-    .onChange(of: panel) { _, _ in page = 0; search = "" }
+    .onChange(of: panel) { _, newPanel in
+      page = 0; search = ""
+      if newPanel == .top, filter.step == "day" { filter.step = "month" }
+    }
     .onChange(of: kind) { _, _ in page = 0; search = "" }
     .onChange(of: filter) { _, _ in page = 0 }
     .onChange(of: model.address) { _, _ in page = 0; entityPath = [] }
+    .onChange(of: entityPath) { _, _ in detailSearch = [:]; detailPage = [:] }
+    .onChange(of: filter) { _, _ in detailPage = [:] }
     .sheet(isPresented: $model.showSettings) { ListeningSettingsView(model: model) }
     .sheet(isPresented: $showDates) { datePicker }
     .alert("Unable to Play".localized, isPresented: Binding(get: { model.playbackError != nil }, set: { if !$0 { model.playbackError = nil } })) {
@@ -257,7 +297,9 @@ struct ListeningStatisticsView: View {
       if panel == .trend || panel == .top || !entityPath.isEmpty {
         VStack(spacing: 12) {
           Picker("Interval".localized, selection: $filter.step) {
-            ForEach(["day", "week", "month", "year"], id: \.self) { Text($0.capitalized.localized).tag($0) }
+            ForEach(panel == .top && entityPath.isEmpty ? ["week", "month", "year"] : ["day", "week", "month", "year"], id: \.self) {
+              Text($0.capitalized.localized).tag($0)
+            }
           }.pickerStyle(.segmented)
           if panel == .trend || !entityPath.isEmpty {
             Toggle("Cumulative".localized, isOn: $filter.cumulative).font(.subheadline)
@@ -324,7 +366,7 @@ struct ListeningStatisticsView: View {
       Label(title, systemImage: symbol).font(.caption).foregroundStyle(.secondary)
       Text(value).font(.system(.title, design: .rounded, weight: .bold)).minimumScaleFactor(0.6).lineLimit(1)
     }.frame(maxWidth: .infinity, alignment: .leading).padding(18)
-      .background(Color.accentColor.opacity(0.06), in: RoundedRectangle(cornerRadius: 22))
+      .background(model.accent.opacity(0.06), in: RoundedRectangle(cornerRadius: 22))
   }
 
   private func chart(_ periods: [ListeningPeriod]) -> some View {
@@ -335,7 +377,7 @@ struct ListeningStatisticsView: View {
         Chart(Array(periods.enumerated()), id: \.offset) { _, period in
           BarMark(x: .value("Date".localized, Date(timeIntervalSince1970: period.range.fromstamp)),
                   y: .value("Listens".localized, period.scrobbles ?? 0))
-            .foregroundStyle(Color.accentColor.gradient).cornerRadius(3)
+            .foregroundStyle(model.accent.gradient).cornerRadius(3)
             .accessibilityLabel(period.range.description)
             .accessibilityValue((period.scrobbles ?? 0).formatted())
         }.chartYAxis { AxisMarks(position: .leading) }.frame(height: 190)
@@ -366,7 +408,7 @@ struct ListeningStatisticsView: View {
     HStack(spacing: 12) {
       Button { entityPath.append(entity); page = 0 } label: {
         HStack(spacing: 12) {
-          ListeningArtwork(entity: entity, address: model.address)
+          ListeningArtwork(entity: entity, model: model)
           VStack(alignment: .leading, spacing: 4) {
             Text(entity.name).font(.subheadline.weight(.medium)).lineLimit(2).foregroundStyle(.primary)
             if !caption.isEmpty { Text(caption).font(.caption).foregroundStyle(.secondary).lineLimit(2) }
@@ -417,7 +459,7 @@ struct ListeningStatisticsView: View {
 
   private func entityHeader(_ entity: ListeningEntity) -> some View {
     HStack(spacing: 16) {
-      ListeningArtwork(entity: entity, address: model.address, size: 84)
+      ListeningArtwork(entity: entity, model: model, size: 84)
       VStack(alignment: .leading, spacing: 8) {
         Text(entity.kind.title).font(.caption).foregroundStyle(.secondary)
         Text(entity.name).font(.title2.bold())
@@ -461,7 +503,7 @@ struct ListeningStatisticsView: View {
       }
     }
     ForEach([ListeningKind.tracks, .albums], id: \.self) { kind in
-      if let rows = data.rankings[kind] { ranking(rows, kind: kind, compact: false) }
+      if let rows = data.rankings[kind] { detailRanking(rows, kind: kind) }
     }
     history(data.history)
     pagination(hasNext: data.history.count == 50 || data.periods.count == 60 || data.performance.count == 60)
@@ -518,18 +560,52 @@ struct ListeningStatisticsView: View {
 
 private struct ListeningArtwork: View {
   let entity: ListeningEntity
-  let address: String
+  @ObservedObject var model: ListeningModel
   var size: CGFloat = 48
+  @State private var localImage: UIImage?
   var body: some View {
-    AsyncImage(url: (try? ListeningAPI.normalizedURL(address)).flatMap { ListeningAPI(baseURL: $0).artwork(entity) }) { image in
-      image.resizable().scaledToFill()
-    } placeholder: {
-      ZStack {
-        Color.accentColor.opacity(0.09)
-        Image(systemName: entity.kind.symbol).foregroundStyle(.secondary)
+    Group {
+      if let localImage { Image(uiImage: localImage).resizable().scaledToFill() }
+      else {
+        AsyncImage(url: (try? ListeningAPI.normalizedURL(model.address)).flatMap { ListeningAPI(baseURL: $0).artwork(entity) }) { image in
+          image.resizable().scaledToFill()
+        } placeholder: {
+          ZStack {
+            model.accent.opacity(0.09)
+            Image(systemName: entity.kind.symbol).foregroundStyle(.secondary)
+          }
+        }
       }
     }.frame(width: size, height: size).clipShape(RoundedRectangle(cornerRadius: entity.kind == .artists ? size / 2 : 8))
       .accessibilityHidden(true)
+      .task(id: entity.id) {
+        localImage = nil
+        if let path = model.artworkPath(entity) {
+          let image = await LibraryEntityImage.loadPreparedImage(at: path)
+          if !Task.isCancelled { localImage = image }
+        }
+      }
+  }
+
+  private func detailRanking(_ rows: [ListeningRow], kind: ListeningKind) -> some View {
+    let query = detailSearch[kind] ?? ""
+    let filtered = rows.filter { query.isEmpty || ($0.entity.name + " " + $0.entity.artists.joined(separator: " ")).localizedCaseInsensitiveContains(query) }
+    let current = detailPage[kind] ?? 0
+    return VStack(spacing: 16) {
+      TextField("Search".localized, text: Binding(get: { detailSearch[kind] ?? "" }, set: {
+        detailSearch[kind] = $0; detailPage[kind] = 0
+      })).textFieldStyle(.roundedBorder)
+      ranking(Array(filtered.dropFirst(current * 50).prefix(50)), kind: kind, compact: false)
+      HStack {
+        Button { detailPage[kind] = max(0, current - 1) } label: { Image(systemName: "chevron.left") }
+          .disabled(current == 0).accessibilityLabel("Previous Page".localized)
+        Spacer()
+        Text("Page".localized + " \(current + 1)").font(.caption).foregroundStyle(.secondary)
+        Spacer()
+        Button { detailPage[kind] = current + 1 } label: { Image(systemName: "chevron.right") }
+          .disabled(filtered.count <= (current + 1) * 50).accessibilityLabel("Next Page".localized)
+      }.buttonStyle(.glass)
+    }
   }
 }
 

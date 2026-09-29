@@ -110,7 +110,7 @@ kill -INT "$motion_pid" 2>/dev/null || true
 wait "$motion_pid" || true
 motion_pid=
 xcrun simctl io "$device_id" screenshot build/validation/player-dismissed-zh-Hans.png
-for screenshot in player-opening player-opening-refreshed player-closing-capsule player-next-song player-paused-artwork player-mini-spacing player-native-library player-mini-collapsed player-search-keyboard player-lyrics-controls player-queue-from-lyrics player-queue-multiple player-mini-drag player-mini-drag-previous; do
+for screenshot in player-opening player-opening-refreshed player-closing-capsule player-next-song player-paused-artwork player-mini-spacing player-native-library player-mini-collapsed player-search-keyboard player-lyrics-controls player-queue-from-lyrics player-queue-multiple player-mini-drag player-mini-drag-previous player-lyrics-reopened player-queue-closed-artwork player-statistics-overview player-statistics-ranking player-statistics-trend player-statistics-top player-statistics-history; do
   source="$container/Documents/$screenshot.png"
   if [[ -f "$source" ]]; then
     sips -s format jpeg -s formatOptions 80 -Z 1000 "$source" --out "build/validation/$screenshot-preview.jpg" >/dev/null
