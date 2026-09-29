@@ -514,6 +514,27 @@ struct ListeningStatisticsView: View {
     pagination(hasNext: data.history.count == 50 || data.periods.count == 60 || data.performance.count == 60)
   }
 
+  private func detailRanking(_ rows: [ListeningRow], kind: ListeningKind) -> some View {
+    let query = detailSearch[kind] ?? ""
+    let filtered = rows.filter { query.isEmpty || ($0.entity.name + " " + $0.entity.artists.joined(separator: " ")).localizedCaseInsensitiveContains(query) }
+    let current = detailPage[kind] ?? 0
+    return VStack(spacing: 16) {
+      TextField("Search".localized, text: Binding(get: { detailSearch[kind] ?? "" }, set: {
+        detailSearch[kind] = $0; detailPage[kind] = 0
+      })).textFieldStyle(.roundedBorder)
+      ranking(Array(filtered.dropFirst(current * 50).prefix(50)), kind: kind, compact: false)
+      HStack {
+        Button { detailPage[kind] = max(0, current - 1) } label: { Image(systemName: "chevron.left") }
+          .disabled(current == 0).accessibilityLabel("Previous Page".localized)
+        Spacer()
+        Text("Page".localized + " \(current + 1)").font(.caption).foregroundStyle(.secondary)
+        Spacer()
+        Button { detailPage[kind] = current + 1 } label: { Image(systemName: "chevron.right") }
+          .disabled(filtered.count <= (current + 1) * 50).accessibilityLabel("Next Page".localized)
+      }.buttonStyle(.glass)
+    }
+  }
+
   private var empty: some View {
     Text("No listens in this period.".localized).font(.subheadline).foregroundStyle(.secondary).padding(.vertical, 20)
   }
@@ -590,27 +611,6 @@ private struct ListeningArtwork: View {
           if !Task.isCancelled { localImage = image }
         }
       }
-  }
-
-  private func detailRanking(_ rows: [ListeningRow], kind: ListeningKind) -> some View {
-    let query = detailSearch[kind] ?? ""
-    let filtered = rows.filter { query.isEmpty || ($0.entity.name + " " + $0.entity.artists.joined(separator: " ")).localizedCaseInsensitiveContains(query) }
-    let current = detailPage[kind] ?? 0
-    return VStack(spacing: 16) {
-      TextField("Search".localized, text: Binding(get: { detailSearch[kind] ?? "" }, set: {
-        detailSearch[kind] = $0; detailPage[kind] = 0
-      })).textFieldStyle(.roundedBorder)
-      ranking(Array(filtered.dropFirst(current * 50).prefix(50)), kind: kind, compact: false)
-      HStack {
-        Button { detailPage[kind] = max(0, current - 1) } label: { Image(systemName: "chevron.left") }
-          .disabled(current == 0).accessibilityLabel("Previous Page".localized)
-        Spacer()
-        Text("Page".localized + " \(current + 1)").font(.caption).foregroundStyle(.secondary)
-        Spacer()
-        Button { detailPage[kind] = current + 1 } label: { Image(systemName: "chevron.right") }
-          .disabled(filtered.count <= (current + 1) * 50).accessibilityLabel("Next Page".localized)
-      }.buttonStyle(.glass)
-    }
   }
 }
 
