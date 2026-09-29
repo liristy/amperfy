@@ -93,8 +93,28 @@ enum ListeningStatisticsSmoke {
     try check(app.player.currentlyPlaying?.title == "测试歌曲" && probe.playbackError == nil, "History track playback failed")
     await probe.play(.init(kind: .tracks, name: "Missing fixture song", artists: ["Nobody"]))
     try check(probe.playbackError != nil, "Missing song was silently ignored")
+    model.panel = .overview
+    try await Task.sleep(for: .milliseconds(600))
+    func descendants(_ view: UIView) -> [UIView] { view.subviews + view.subviews.flatMap { descendants($0) } }
+    guard let scroll = descendants(host.view).compactMap({ $0 as? UIScrollView }).first(where: {
+      $0.bounds.height > 250 && $0.contentSize.height > $0.bounds.height + 250
+    }) else { try check(false, "Statistics scroll view unavailable"); return }
+    scroll.setContentOffset(CGPoint(x: 0, y: 180), animated: false)
+    try await Task.sleep(for: .milliseconds(250))
+    let offset = scroll.contentOffset
+    let statisticsTab = tabHost.selectedTab
+    tabHost.miniPlayer?.openPlayerView()
+    try await Task.sleep(for: .milliseconds(800))
+    guard let popup = tabHost.presentedViewController as? PopupPlayerVC else {
+      try check(false, "Player did not open from statistics"); return
+    }
+    popup.dismiss(animated: true)
+    try await Task.sleep(for: .milliseconds(900))
+    try check(tabHost.selectedTab === statisticsTab && navigation.topViewController === host &&
+              abs(scroll.contentOffset.y - offset.y) < 1, "Closing the player changed the originating page or scroll position")
+    try capture(tabHost, name: "player-statistics-return")
     tabHost.selectedTab = previousTab
-    print("Listening statistics passed: URL validation, filters, count, three rankings, trends, winners, history paging, details, errors and playback; four native tabs verified")
+    print("Listening statistics passed: URL validation, filters, count, three rankings, trends, winners, history paging, details, errors and playback; four native tabs and exact return position verified")
   }
 
   private static func capture(_ host: UIViewController, name: String) throws {

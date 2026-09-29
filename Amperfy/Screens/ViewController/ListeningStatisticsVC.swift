@@ -39,6 +39,7 @@ final class ListeningModel: ObservableObject {
   let account: Account
   private let settingsKey: String
   private var loadID = UUID()
+  private var loadedRequest: ListeningRequest?
   private var artworkPaths: [String: String] = [:]
   var accent: Color {
     let app = UIApplication.shared.delegate as! AppDelegate
@@ -58,7 +59,10 @@ final class ListeningModel: ObservableObject {
     address = normalized
   }
 
-  func load(_ request: ListeningRequest) async {
+  func load(_ request: ListeningRequest, force: Bool = false) async {
+    // A full-screen player can make SwiftUI start its task again. Keep the
+    // existing content and scroll position unless the query actually changed.
+    if !force, loadedRequest == request, snapshot != nil { return }
     let id = UUID()
     loadID = id
     artworkPaths.removeAll()
@@ -109,6 +113,7 @@ final class ListeningModel: ObservableObject {
       try Task.checkCancellation()
       guard loadID == id else { return }
       snapshot = result
+      loadedRequest = request
       loading = false
     } catch {
       guard loadID == id else { return }
@@ -239,7 +244,7 @@ struct ListeningStatisticsView: View {
     .background(Color(uiColor: .systemBackground))
     .tint(model.accent)
     .task(id: request) { await model.load(request) }
-    .refreshable { await model.load(request) }
+    .refreshable { await model.load(request, force: true) }
     .onChange(of: panel) { _, newPanel in
       page = 0; search = ""
       if newPanel == .top, filter.step == "day" { filter.step = "month" }
