@@ -896,12 +896,16 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
               popup.controlView?.lyricsButton.sendActions(for: .touchUpInside)
               guard try await compactHeaderStayedFixed() else { return }
               smokeLog("Shared header identity, position and size stayed fixed through switching, reversal, queue scrolling and immersive controls")
-              popup.dismiss(animated: false)
               let reopened = PopupPlayerVC()
               reopened.configurePresentation(sourcePlayer: miniPlayer.glassContainer, sourceArtwork: miniPlayer.artworkImage)
-              vc.present(reopened, animated: false)
+              await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+                popup.dismiss(animated: false) {
+                  vc.present(reopened, animated: false) { continuation.resume() }
+                }
+              }
               try await Task.sleep(for: .milliseconds(600))
-              guard let lyricsButton = reopened.controlView?.lyricsButton,
+              guard vc.presentedViewController === reopened,
+                    let lyricsButton = reopened.controlView?.lyricsButton,
                     lyricsButton.isSelected,
                     lyricsButton.configuration?.image?.renderingMode == .alwaysOriginal,
                     let color = lyricsButton.configuration?.imageColorTransformer?(.white),
@@ -913,8 +917,11 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
                 reopened.view.drawHierarchy(in: reopened.view.bounds, afterScreenUpdates: true)
               }
               try reopenedImage.pngData()?.write(to: URL.documentsDirectory.appendingPathComponent("player-lyrics-reopened.png"))
-              reopened.dismiss(animated: false)
-              vc.present(popup, animated: false)
+              await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+                reopened.dismiss(animated: false) {
+                  vc.present(popup, animated: false) { continuation.resume() }
+                }
+              }
               try await Task.sleep(for: .milliseconds(500))
               smokeLog("Selected lyrics symbol preserved its contrast after reopening")
 
@@ -932,7 +939,7 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
                     !self.appDelegate.storage.settings.user.isPlayerLyricsDisplayed,
                     !popup.areLyricsControlsHidden,
                     vc.presentedViewController === popup else {
-                smokeLog("Lyrics artwork tap did not return to the cover and restore controls")
+                smokeLog("Lyrics artwork tap did not return to the cover and restore controls: lyrics=\(String(describing: popup.largeCurrentlyPlayingView?.isDisplayingLyrics)), setting=\(self.appDelegate.storage.settings.user.isPlayerLyricsDisplayed), hidden=\(popup.areLyricsControlsHidden), presented=\(vc.presentedViewController === popup)")
                 return
               }
               smokeLog("Lyrics artwork tap returned to the full cover")
