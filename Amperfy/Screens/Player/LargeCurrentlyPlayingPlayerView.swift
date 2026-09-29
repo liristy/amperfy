@@ -279,49 +279,8 @@ class LargeCurrentlyPlayingPlayerView: UIView {
       )
     }
 
-    addSwipeGesturesToArtwork()
-
     displayElement = getDisplayElementBasedOnConfig()
     refresh()
-  }
-
-  private func addSwipeGesturesToArtwork() {
-    func createLeftSwipe() -> UISwipeGestureRecognizer {
-      let swipeLeft = UISwipeGestureRecognizer(
-        target: self,
-        action: #selector(handleSwipe(_:))
-      )
-      swipeLeft.direction = .left
-      return swipeLeft
-    }
-
-    func createRightSwipe() -> UISwipeGestureRecognizer {
-      let swipeRight = UISwipeGestureRecognizer(
-        target: self,
-        action: #selector(handleSwipe(_:))
-      )
-      swipeRight.direction = .right
-      return swipeRight
-    }
-
-    artworkImage.isUserInteractionEnabled = true
-    artworkImage.addGestureRecognizer(createLeftSwipe())
-    artworkImage.addGestureRecognizer(createRightSwipe())
-    visualizerHostingView?.hostingController?.view.isUserInteractionEnabled = true
-    visualizerHostingView?.hostingController?.view.addGestureRecognizer(createRightSwipe())
-    visualizerHostingView?.hostingController?.view.addGestureRecognizer(createLeftSwipe())
-  }
-
-  @objc
-  private func handleSwipe(_ gesture: UISwipeGestureRecognizer) {
-    switch gesture.direction {
-    case .left:
-      rootView?.controlView?.nextButtonPushed(self)
-    case .right:
-      rootView?.controlView?.previousButtonPushed(self)
-    default:
-      break
-    }
   }
 
   func refreshLyricsTime(time: CMTime) {

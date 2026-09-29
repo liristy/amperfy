@@ -105,6 +105,9 @@ final class PlayerArtworkMotion: NSObject {
     super.init()
     render(transition: 0)
     let link = CADisplayLink(target: self, selector: #selector(tick(_:)))
+    let maximumRate = Float(player.window?.screen.maximumFramesPerSecond ?? 60)
+    link.preferredFrameRateRange = CAFrameRateRange(minimum: 60, maximum: maximumRate,
+                                                   preferred: maximumRate)
     displayLink = link
     link.add(to: .main, forMode: .common)
   }
@@ -134,17 +137,17 @@ final class PlayerArtworkMotion: NSObject {
       width: smallFrame.width + (fullFrame.width - smallFrame.width) * expansion,
       height: max(1, smallFrame.height + (fullFrame.height - smallFrame.height) * expansion))
     let scale = frame.width / fullFrame.width + max(0, expansion - 1)
-    let radius = smallFrame.height / 2 * min(1, max(0, (1 - expansion) / 0.12))
+    let radius = smallFrame.height / 2 * min(1, max(0, (1 - expansion) / 0.35))
     CATransaction.begin()
     CATransaction.setDisableActions(true)
     UIView.performWithoutAnimation {
-      // Keep typography and controls uniformly scaled. The reveal grows upward
-      // from the capsule while the page's bottom edge follows the same rectangle.
+      // Carry the content with the card's top edge, instead of uncovering a
+      // bottom-anchored full-height page like a vertical curtain.
       player.transform = CGAffineTransform(a: scale, b: 0, c: 0, d: scale,
         tx: frame.midX - fullFrame.midX,
-        ty: frame.maxY - (fullFrame.midY + fullFrame.height * scale / 2))
+        ty: frame.minY - (fullFrame.midY - fullFrame.height * scale / 2))
       surface.frame = CGRect(x: (player.bounds.width - frame.width / scale) / 2,
-                             y: player.bounds.height - frame.height / scale,
+                             y: 0,
                              width: frame.width / scale, height: frame.height / scale)
       surface.layer.cornerRadius = radius / scale
       if let cover {
@@ -157,7 +160,7 @@ final class PlayerArtworkMotion: NSObject {
         cover.layer.cornerRadius = startRadius + (endRadius - startRadius) * p
         let fullArtwork = presenting ? endFrame : startFrame
         let projectedArtworkBottom = player.frame.minY + (fullArtwork.maxY - fullFrame.minY) * scale
-        let offset = max(0, cover.frame.maxY - projectedArtworkBottom) / scale
+        let offset = (cover.frame.maxY - projectedArtworkBottom) / scale
         // Preserve the final gap below the flying cover. The controls follow
         // the metadata, rather than appearing behind the cover halfway through.
         for content in foreground {
@@ -192,7 +195,7 @@ final class PlayerArtworkMotion: NSObject {
 
 @MainActor
 final class PlayerSurfaceAnimator: NSObject, UIViewControllerAnimatedTransitioning {
-  static var springDamping: CGFloat { UIAccessibility.isReduceMotionEnabled ? 1 : 0.72 }
+  static var springDamping: CGFloat { UIAccessibility.isReduceMotionEnabled ? 1 : 0.76 }
   private let isPresenting: Bool
   private weak var sourcePlayer: UIView?
   private weak var sourceArtwork: UIImageView?
@@ -205,7 +208,7 @@ final class PlayerSurfaceAnimator: NSObject, UIViewControllerAnimatedTransitioni
   }
 
   func transitionDuration(using transitionContext: UIViewControllerContextTransitioning?) -> TimeInterval {
-    UIAccessibility.isReduceMotionEnabled ? 0.15 : 0.72
+    UIAccessibility.isReduceMotionEnabled ? 0.15 : 0.62
   }
 
   func animateTransition(using context: UIViewControllerContextTransitioning) {

@@ -666,6 +666,8 @@ class MiniPlayerView: UIView, UIGestureRecognizerDelegate {
 
   public func configureForiOS() {
     playerHandler = PlayerUIHandler(player: player, style: .miniPlayeriOS)
+    clipsToBounds = true
+    layer.cornerCurve = .continuous
     titleLabel.textAlignment = .natural
     subtitleLabel.textAlignment = .natural
     artworkImage.layer.cornerRadius = 7
@@ -673,6 +675,10 @@ class MiniPlayerView: UIView, UIGestureRecognizerDelegate {
     artworkImage.clipsToBounds = true
     timeSlider.minimumTrackTintColor = .secondaryLabel
     timeSlider.maximumTrackTintColor = .clear
+    timeSlider.sliderStyle = .thumbless
+    timeSlider.restingTrackHeight = 2
+    timeSlider.activeTrackHeight = 2
+    timeSlider.isUserInteractionEnabled = false
     let miniPlayerGotTouchedView = UIView()
     miniPlayerGotTouchedView.clipsToBounds = true
     let content = UIView()
@@ -730,10 +736,10 @@ class MiniPlayerView: UIView, UIGestureRecognizerDelegate {
         constant: -8
       ),
 
-      timeSlider.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 6),
+      timeSlider.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 28),
       timeSlider.heightAnchor.constraint(equalToConstant: 3),
-      timeSlider.bottomAnchor.constraint(equalTo: bottomAnchor),
-      timeSlider.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -6),
+      timeSlider.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -3),
+      timeSlider.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -28),
 
       liveLabel.centerXAnchor.constraint(equalTo: timeSlider.centerXAnchor, constant: 0),
       liveLabel.centerYAnchor.constraint(equalTo: timeSlider.centerYAnchor, constant: 0),
@@ -741,7 +747,7 @@ class MiniPlayerView: UIView, UIGestureRecognizerDelegate {
       liveLabel.heightAnchor.constraint(equalTo: liveLabel.widthAnchor),
 
       artworkImage.topAnchor.constraint(equalTo: topAnchor, constant: 7),
-      artworkImage.bottomAnchor.constraint(equalTo: timeSlider.topAnchor, constant: -4),
+      artworkImage.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -7),
       artworkImage.widthAnchor.constraint(equalTo: artworkImage.heightAnchor),
       artworkImage.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 10),
 
@@ -751,7 +757,7 @@ class MiniPlayerView: UIView, UIGestureRecognizerDelegate {
       titleLabel.trailingAnchor.constraint(equalTo: playButton.leadingAnchor, constant: -8),
 
       subtitleLabel.topAnchor.constraint(equalTo: playButton.centerYAnchor, constant: 1),
-      subtitleLabel.bottomAnchor.constraint(equalTo: timeSlider.topAnchor, constant: -5),
+      subtitleLabel.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -8),
       subtitleLabel.leadingAnchor.constraint(equalTo: artworkImage.trailingAnchor, constant: 12),
       subtitleLabel.trailingAnchor.constraint(equalTo: playButton.leadingAnchor, constant: -8),
 
@@ -781,6 +787,12 @@ class MiniPlayerView: UIView, UIGestureRecognizerDelegate {
     case .cancelled, .failed: endTrackDrag(velocity: 0, cancelled: true)
     default: break
     }
+  }
+
+  override func layoutSubviews() {
+    super.layoutSubviews()
+    // Clip only the content; clipping the effect view would cut off native glass.
+    if trackViewport != nil { layer.cornerRadius = bounds.height / 2 }
   }
 
   override func gestureRecognizerShouldBegin(_ gestureRecognizer: UIGestureRecognizer) -> Bool {

@@ -215,8 +215,23 @@ class PlayableTableCell: BasicTableCell {
     #else
       singleTapGestureRecognizer.isEnabled = (displayMode == .normal)
     #endif
-    backgroundColor = .systemBackground
+    backgroundColor = rootView is PopupPlayerVC ? .clear : .systemBackground
+    if rootView is PopupPlayerVC {
+      backgroundConfiguration = .clear()
+      contentView.backgroundColor = .clear
+    } else {
+      backgroundConfiguration = nil
+    }
     refresh()
+  }
+
+  override func updateConfiguration(using state: UICellConfigurationState) {
+    super.updateConfiguration(using: state)
+    if rootView is PopupPlayerVC {
+      backgroundConfiguration = .clear()
+      backgroundColor = .clear
+      contentView.backgroundColor = .clear
+    }
   }
 
   private func configureStyle(playable: AbstractPlayable, newStyle: PlayableTableCellStyle) {

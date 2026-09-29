@@ -850,7 +850,7 @@ class EntityPreviewVC: UIViewController {
 
   override func viewDidLoad() {
     super.viewDidLoad()
-    view.setBackgroundBlur(style: .prominent)
+    view.setBackgroundGlass()
     titleLabel.applyAmperfyStyle()
     artistLabel.applyAmperfyStyle()
     infoLabel.applyAmperfyStyle()

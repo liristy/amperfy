@@ -250,11 +250,10 @@ class TabBarVC: UITabBarController {
     let margin: CGFloat = 20
     let availableWidth = view.bounds.width - view.safeAreaInsets.left - view.safeAreaInsets.right
     let dockWidth = min(600, availableWidth - margin * 2)
-    // Use public item sizing to lengthen Home/Library while UIKit retains its
-    // native glass rendering, label layout and prominent search item.
-    let itemWidth = max(0, (dockWidth - FloatingPlayerDock.navigationHeight - FloatingPlayerDock.gap - 8) / 2)
-    if tabBar.itemPositioning != .centered { tabBar.itemPositioning = .centered }
-    if abs(tabBar.itemWidth - itemWidth) > 0.5 { tabBar.itemWidth = itemWidth }
+    // Ask UIKit to distribute the native tabs across the available space.
+    // Do not stretch the rendered bar or replace its interactive glass lens.
+    if tabBar.itemPositioning != .fill { tabBar.itemPositioning = .fill }
+    if tabBar.itemWidth != 0 { tabBar.itemWidth = 0 }
     if tabBar.itemSpacing != 0 { tabBar.itemSpacing = 0 }
     if !isTabBarHidden, tabBar.bounds.height > 0 {
       dockNavigationTop = tabBar.convert(tabBar.bounds, to: view).minY

@@ -106,13 +106,12 @@ class ContextQueueNextSectionHeader: UIView {
     guard usesPlayerLayout else { return }
     for button in [shuffleButton, repeatButton, autoplayButton] {
       guard let button else { continue }
-      var config = button.configuration ?? .plain()
+      let image = button.configuration?.image
+      var config = button.isSelected ? UIButton.Configuration.prominentGlass() : .glass()
+      config.image = image
       config.preferredSymbolConfigurationForImage = .init(pointSize: 17, weight: .medium)
       config.baseForegroundColor = button.isSelected ? UIColor(white: 0.2, alpha: 1) : .white
-      config.background = .clear()
-      config.background.backgroundInsets = NSDirectionalEdgeInsets(top: 5, leading: 0, bottom: 5, trailing: 0)
-      config.background.backgroundColor = .white.withAlphaComponent(button.isSelected ? 0.7 : 0.12)
-      config.background.cornerRadius = 17
+      if button.isSelected { config.baseBackgroundColor = .white.withAlphaComponent(0.7) }
       config.cornerStyle = .capsule
       button.configuration = config
     }

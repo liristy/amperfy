@@ -149,7 +149,9 @@ extension UIButton.Configuration {
   }
 
   static func playerAccessory(isSelected: Bool) -> UIButton.Configuration {
-    var config = player(isSelected: isSelected)
+    var config = isSelected ? UIButton.Configuration.glass() : player(isSelected: false)
+    config.baseForegroundColor = .white
+    config.cornerStyle = .capsule
     config.preferredSymbolConfigurationForImage = .init(pointSize: 24, weight: .regular, scale: .medium)
     config.contentInsets = NSDirectionalEdgeInsets(top: 6, leading: 6, bottom: 6, trailing: 6)
     return config
@@ -194,14 +196,15 @@ extension UIView {
       .forceTouchCapability ?? .unknown
   }
 
-  public func setBackgroundBlur(style: UIBlurEffect.Style, alpha: CGFloat = 1.0) {
+  public func setBackgroundGlass() {
     backgroundColor = UIColor.clear
-    let blurEffect = UIBlurEffect(style: style)
-    let blurEffectView = UIVisualEffectView(effect: blurEffect)
-    blurEffectView.alpha = alpha
-    blurEffectView.frame = bounds
-    blurEffectView.autoresizingMask = [.flexibleWidth, .flexibleHeight]
-    insertSubview(blurEffectView, at: 0)
+    let effect = UIGlassEffect(style: .regular)
+    effect.isInteractive = false
+    let material = UIVisualEffectView(effect: effect)
+    material.frame = bounds
+    material.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+    material.isUserInteractionEnabled = false
+    insertSubview(material, at: 0)
   }
 
   func addLeftSideBorder() {

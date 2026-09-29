@@ -21,9 +21,12 @@
 import UIKit
 
 class PlayerTrackSlider: UISlider {
+  var restingTrackHeight: CGFloat = 7
+  var activeTrackHeight: CGFloat = 11
+
   override func trackRect(forBounds bounds: CGRect) -> CGRect {
     let track = super.trackRect(forBounds: bounds)
-    let height: CGFloat = isTracking ? 7 : 4
+    let height = min(bounds.height, isTracking ? activeTrackHeight : restingTrackHeight)
     return CGRect(x: track.minX, y: bounds.midY - height / 2, width: track.width, height: height)
   }
 }

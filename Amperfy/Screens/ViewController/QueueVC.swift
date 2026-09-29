@@ -85,7 +85,6 @@ class QueueVC: UIViewController {
         width: view.bounds.size.width,
         height: ContextQueuePrevSectionHeader.frameHeight
       )) {
-      sectionView.setBackgroundBlur(style: .prominent)
       sectionView.backgroundColor = .clear
       // Workaround for an OS bug, where the cell is suddenly rendered above the section header after reorder
       sectionView.layer.zPosition = scrollbarZPosition - 1
@@ -99,7 +98,6 @@ class QueueVC: UIViewController {
         width: view.bounds.size.width,
         height: UserQueueSectionHeader.frameHeight
       )) {
-      sectionView.setBackgroundBlur(style: .prominent)
       sectionView.backgroundColor = .clear
       sectionView.layer.zPosition = scrollbarZPosition - 1
       userQueueSectionHeader = sectionView
@@ -112,7 +110,6 @@ class QueueVC: UIViewController {
         width: view.bounds.size.width,
         height: ContextQueueNextSectionHeader.frameHeight
       )) {
-      sectionView.setBackgroundBlur(style: .prominent)
       sectionView.backgroundColor = .clear
       sectionView.layer.zPosition = scrollbarZPosition - 1
       contextNextQueueSectionHeader = sectionView

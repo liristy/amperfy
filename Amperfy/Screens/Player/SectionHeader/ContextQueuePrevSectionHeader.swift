@@ -44,6 +44,9 @@ class ContextQueuePrevSectionHeader: UIView {
   }
 
   func display(name: String) {
+    backgroundColor = .clear
+    isOpaque = false
+    nameLabel.backgroundColor = .clear
     nameLabel.text = name
     nameLabel.isHidden = name.isEmpty
     nameLabel.applyAmperfyStyle()

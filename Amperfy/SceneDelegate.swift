@@ -220,6 +220,16 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
               guard self.appDelegate.player.elapsedTime > 0 else { return }
               vc.dismiss(animated: false)
               guard let miniPlayer = (vc as? MainSceneHostingViewController)?.miniPlayer else { return }
+              miniPlayer.layoutIfNeeded()
+              guard miniPlayer.clipsToBounds,
+                    abs(miniPlayer.layer.cornerRadius - miniPlayer.bounds.height / 2) < 0.5,
+                    let miniProgress = miniPlayer.subviews.compactMap({ $0 as? SeekableTimeSlider }).first,
+                    miniProgress.sliderStyle == .thumbless,
+                    miniProgress.frame.maxY <= miniPlayer.bounds.maxY - 2,
+                    miniProgress.trackRect(forBounds: miniProgress.bounds).height <= miniProgress.bounds.height else {
+                smokeLog("Mini player content or progress escaped its capsule")
+                return
+              }
               miniPlayer.beginTrackDrag()
               miniPlayer.updateTrackDrag(translation: -120)
               guard self.appDelegate.player.currentlyPlaying == song,
@@ -321,8 +331,7 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
                       tabHost.tabBar.alpha == 1, tabHost.tabBar.isUserInteractionEnabled,
                       !tabHost.tabBar.accessibilityElementsHidden,
                       dock.navigationSlot.isHidden, dock.searchSlot.isHidden,
-                      tabHost.tabBar.itemPositioning == .centered,
-                      tabHost.tabBar.itemWidth > 120 else {
+                      tabHost.tabBar.itemPositioning == .fill else {
                   smokeLog("Native tab bar was hidden, disabled or covered by custom navigation")
                   return
                 }
@@ -792,6 +801,7 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
               }
               // Keep real upcoming rows visible for queue layout review.
               self.appDelegate.player.appendContextQueue(playables: [song, nextSong, song])
+              self.appDelegate.player.insertUserQueue(playables: [nextSong, song, nextSong])
               popup.controlView?.displayPlaylistPressed()
               guard try await compactHeaderStayedFixed(),
                     self.appDelegate.storage.settings.user.playerDisplayStyle == .compact else {
@@ -799,6 +809,42 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
                 return
               }
               try screenshot("player-queue-from-lyrics.png")
+              // Exercise both sections and state updates, not just a single next row.
+              for style in [UIUserInterfaceStyle.light, .dark] {
+                popup.overrideUserInterfaceStyle = style
+                for section in [PlayerSectionCategory.userQueue, .contextNext] {
+                  popup.tableView.scrollToRow(at: IndexPath(row: 1, section: section.rawValue),
+                                              at: .middle, animated: false)
+                  popup.tableView.layoutIfNeeded()
+                  let cells = popup.tableView.visibleCells.compactMap { $0 as? PlayableTableCell }
+                  guard cells.count >= 2 else { return }
+                  for cell in cells {
+                    cell.setSelected(true, animated: false)
+                    cell.updateConfiguration(using: cell.configurationState)
+                    cell.refresh()
+                    guard cell.backgroundColor == .clear,
+                          cell.contentView.backgroundColor == .clear,
+                          cell.backgroundConfiguration?.backgroundColor == .clear else {
+                      smokeLog("Multi-song queue gained an opaque cell background after state update")
+                      return
+                    }
+                    cell.setSelected(false, animated: false)
+                  }
+                }
+              }
+              popup.overrideUserInterfaceStyle = .dark
+              popup.scrollToCurrentlyPlayingRow()
+              popup.tableView.layoutIfNeeded()
+              try screenshot("player-queue-multiple.png")
+              guard (largeView.artworkImage.gestureRecognizers ?? []).allSatisfy({ !($0 is UISwipeGestureRecognizer) }),
+                    let controls = popup.controlView,
+                    descendants(of: controls).compactMap({ $0 as? PlayerTrackSlider }).allSatisfy({
+                      $0.trackRect(forBounds: $0.bounds).height >= 7
+                    }) else {
+                smokeLog("Full player retained artwork swiping or thin slider tracks")
+                return
+              }
+              smokeLog("Multiple queue rows stayed clear across reuse, selection and appearance; artwork swiping disabled; 7pt tracks verified")
               if let header = popup.contextNextQueueSectionHeader {
                 header.layoutIfNeeded()
                 let buttons = [header.shuffleButton, header.repeatButton, header.autoplayButton].compactMap { $0 }

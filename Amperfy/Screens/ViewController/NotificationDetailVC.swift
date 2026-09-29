@@ -36,7 +36,8 @@ class NotificationDetailVC: UIViewController {
 
   override func viewDidLoad() {
     super.viewDidLoad()
-    view.setBackgroundBlur(style: .prominent)
+    // Let the native sheet provide its material without a second blur layer.
+    view.backgroundColor = .clear
 
     if let presentationController = presentationController as? UISheetPresentationController {
       presentationController.detents = [

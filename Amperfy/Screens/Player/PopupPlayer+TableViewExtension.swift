@@ -40,6 +40,7 @@ extension PopupPlayerVC: UITableViewDataSource, UITableViewDelegate {
     tableView.rowHeight = 56
     tableView.estimatedRowHeight = 56
     tableView.backgroundColor = UIColor.clear
+    tableView.backgroundView = nil
     tableView.isOpaque = false
     tableView.separatorStyle = .none
     tableView.sectionHeaderTopPadding = 0.0

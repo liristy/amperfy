@@ -55,6 +55,9 @@ class UserQueueSectionHeader: UIView {
   }
 
   func display(name: String, buttonPressAction: @escaping (() -> ())) {
+    backgroundColor = .clear
+    isOpaque = false
+    nameLabel.backgroundColor = .clear
     nameLabel.text = name
     nameLabel.isHidden = false
     nameLabel.applyAmperfyStyle()

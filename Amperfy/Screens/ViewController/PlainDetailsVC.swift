@@ -41,7 +41,8 @@ class PlainDetailsVC: UIViewController {
 
   override func viewDidLoad() {
     super.viewDidLoad()
-    view.setBackgroundBlur(style: .prominent)
+    // Let the native sheet provide its material without a second blur layer.
+    view.backgroundColor = .clear
     detailsTextView.textAlignment = .center
 
     if let presentationController = presentationController as? UISheetPresentationController {
