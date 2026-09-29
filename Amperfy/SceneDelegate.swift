@@ -643,7 +643,7 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
                    animatedFrame.height > miniPlayer.glassContainer.bounds.height + 10,
                    animatedFrame.height < destinationHeight - 1 { sampledSurfaceExpansion = true }
               }
-              guard sampledSurfaceExpansion, let popup = vc.presentedViewController as? PopupPlayerVC else {
+              guard sampledSurfaceExpansion, var popup = vc.presentedViewController as? PopupPlayerVC else {
                 smokeLog("Whole-player expansion did not interpolate: \(lastSample)")
                 return
               }
@@ -896,15 +896,21 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
               popup.controlView?.lyricsButton.sendActions(for: .touchUpInside)
               guard try await compactHeaderStayedFixed() else { return }
               smokeLog("Shared header identity, position and size stayed fixed through switching, reversal, queue scrolling and immersive controls")
-              let reopened = PopupPlayerVC()
-              reopened.configurePresentation(sourcePlayer: miniPlayer.glassContainer, sourceArtwork: miniPlayer.artworkImage)
-              await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
-                popup.dismiss(animated: false) {
-                  vc.present(reopened, animated: false) { continuation.resume() }
-                }
+              // Use the same animated dismissal and mini-player entry point as a user.
+              // Bounded state checks report a failed transition instead of hanging on
+              // a completion callback UIKit may discard during a modal handoff.
+              popup.dismiss(animated: true)
+              for _ in 0..<30 {
+                if vc.presentedViewController == nil && popup.transitionCoordinator == nil { break }
+                try await Task.sleep(for: .milliseconds(100))
               }
-              try await Task.sleep(for: .milliseconds(600))
-              guard vc.presentedViewController === reopened,
+              guard vc.presentedViewController == nil else {
+                smokeLog("Lyrics player did not dismiss before reopening"); return
+              }
+              miniPlayer.openPlayerView()
+              try await Task.sleep(for: .milliseconds(900))
+              guard let reopened = vc.presentedViewController as? PopupPlayerVC,
+                    reopened !== popup, reopened.transitionCoordinator == nil,
                     let lyricsButton = reopened.controlView?.lyricsButton,
                     lyricsButton.isSelected,
                     lyricsButton.configuration?.image?.renderingMode == .alwaysOriginal,
@@ -917,12 +923,7 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
                 reopened.view.drawHierarchy(in: reopened.view.bounds, afterScreenUpdates: true)
               }
               try reopenedImage.pngData()?.write(to: URL.documentsDirectory.appendingPathComponent("player-lyrics-reopened.png"))
-              await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
-                reopened.dismiss(animated: false) {
-                  vc.present(popup, animated: false) { continuation.resume() }
-                }
-              }
-              try await Task.sleep(for: .milliseconds(500))
+              popup = reopened
               smokeLog("Selected lyrics symbol preserved its contrast after reopening")
 
               guard let lyricsView = descendants(of: popup.view).compactMap({ $0 as? LyricsView }).first else { return }

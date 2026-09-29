@@ -105,7 +105,8 @@ enum ListeningStatisticsSmoke {
     let statisticsTab = tabHost.selectedTab
     tabHost.miniPlayer?.openPlayerView()
     try await Task.sleep(for: .milliseconds(800))
-    guard let popup = tabHost.presentedViewController as? PopupPlayerVC else {
+    guard let presenter = AppDelegate.mainWindowHostVC as? UIViewController,
+          let popup = presenter.presentedViewController as? PopupPlayerVC else {
       try check(false, "Player did not open from statistics"); return
     }
     popup.dismiss(animated: true)
