@@ -204,7 +204,7 @@ class PlayerControlView: UIView {
         let color: UIColor = button.isSelected ? .black : .white
         var configuration = UIButton.Configuration.playerAccessory(isSelected: button.isSelected)
         configuration.image = UIImage(systemName: symbol)?.withTintColor(color, renderingMode: .alwaysOriginal)
-        button.tintColor = color
+        if button.tintColor != color { button.tintColor = color }
         button.configuration = configuration
       }
     }
