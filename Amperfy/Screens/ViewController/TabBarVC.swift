@@ -26,7 +26,7 @@ import UIKit
 
 class TabBarVC: UITabBarController {
   private var libraryGroup: UITabGroup?
-  private var searchTab: UISearchTab?
+  private var searchTab: UITab?
   private(set) weak var searchViewController: SearchVC?
   private var homeTab: UITab?
   private let account: Account
@@ -62,12 +62,12 @@ class TabBarVC: UITabBarController {
     super.viewDidLoad()
     var fixTabs = [UITab]()
 
-    searchTab = UISearchTab { _ in
+    searchTab = UITab(title: TabNavigatorItem.search.title,
+      image: TabNavigatorItem.search.icon, identifier: "Tabs.Search") { _ in
       let search = AppStoryboard.Main.segueToSearch(account: self.account)
       self.searchViewController = search
       return UINavigationController(rootViewController: search)
     }
-    searchTab!.automaticallyActivatesSearch = true
 
     homeTab = UITab(
       title: TabNavigatorItem.home.title,
@@ -126,6 +126,10 @@ class TabBarVC: UITabBarController {
     libraryGroup!.managingNavigationController = UINavigationController()
     libraryGroup!.allowsReordering = true
     fixTabs.append(libraryGroup!)
+    fixTabs.append(UITab(title: "Listening Statistics".localized,
+      image: UIImage(systemName: "chart.bar.xaxis"), identifier: "Tabs.Listening") { _ in
+      UINavigationController(rootViewController: ListeningStatisticsVC(account: self.account))
+    })
     fixTabs.append(searchTab!)
 
     delegate = self
@@ -322,7 +326,8 @@ class TabBarVC: UITabBarController {
   private func updateDockSelection() {
     guard let dock = playerDock else { return }
     let identifier = selectedTab?.identifier ?? "Tabs.Home"
-    let selection = selectedTab === searchTab ? 2 : (identifier.hasPrefix("Tabs.Library") ? 1 : 0)
+    let selection = selectedTab === searchTab ? 3 :
+      (identifier == "Tabs.Listening" ? 2 : (identifier.hasPrefix("Tabs.Library") ? 1 : 0))
     let theme = appDelegate.storage.settings.accounts.getSetting(account.info).read.themePreference.asColor
     tabBar.tintColor = theme
     dock.updateSelection(selection, tint: theme)
@@ -330,7 +335,7 @@ class TabBarVC: UITabBarController {
       dockSelectionIdentifier = identifier
       dockScrollDistance = 0
       dock.setCollapsed(false, animated: false)
-      if selection == 2 {
+      if selection == 3 {
         DispatchQueue.main.async { [weak self] in self?.searchViewController?.activateSearchBar() }
       }
       updateDockContentInset(visible: !dockKeyboardVisible)
@@ -522,12 +527,13 @@ final class FloatingPlayerDock: UIView {
     guard selected != selection || theme != tint else { return }
     selection = selected
     theme = tint
-    let icons = [TabNavigatorItem.home.icon, UIImage.musicLibrary, TabNavigatorItem.search.icon]
+    let icons = [TabNavigatorItem.home.icon, UIImage.musicLibrary,
+                 UIImage(systemName: "chart.bar.xaxis"), TabNavigatorItem.search.icon]
     var search = UIButton.Configuration.glass()
     search.cornerStyle = .capsule
-    search.image = icons[2]
+    search.image = icons[3]
     search.preferredSymbolConfigurationForImage = .init(pointSize: 27, weight: .medium)
-    search.baseForegroundColor = selected == 2 ? tint : .label
+    search.baseForegroundColor = selected == 3 ? tint : .label
     searchButton.configuration = search
     var compact = UIButton.Configuration.glass()
     compact.cornerStyle = .capsule

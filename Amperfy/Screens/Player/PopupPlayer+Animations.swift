@@ -377,6 +377,11 @@ extension PopupPlayerVC {
     appDelegate.userStatistics.usedAction(.changePlayerDisplayStyle)
     var displayStyle = appDelegate.storage.settings.user.playerDisplayStyle
     displayStyle.switchToNextStyle()
+    if displayStyle == .compact {
+      // Queue and lyrics are mutually exclusive pages, not stacked overlays.
+      appDelegate.storage.settings.user.isPlayerLyricsDisplayed = false
+      appDelegate.storage.settings.user.isPlayerVisualizerDisplayed = false
+    }
     appDelegate.storage.settings.user.playerDisplayStyle = displayStyle
     changeDisplayStyleVisually(to: displayStyle, animated: true)
   }

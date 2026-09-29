@@ -223,10 +223,7 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
               miniPlayer.layoutIfNeeded()
               guard miniPlayer.clipsToBounds,
                     abs(miniPlayer.layer.cornerRadius - miniPlayer.bounds.height / 2) < 0.5,
-                    let miniProgress = miniPlayer.subviews.compactMap({ $0 as? SeekableTimeSlider }).first,
-                    miniProgress.sliderStyle == .thumbless,
-                    miniProgress.frame.maxY <= miniPlayer.bounds.maxY - 2,
-                    miniProgress.trackRect(forBounds: miniProgress.bounds).height <= miniProgress.bounds.height else {
+                    !miniPlayer.subviews.contains(where: { $0 is SeekableTimeSlider }) else {
                 smokeLog("Mini player content or progress escaped its capsule")
                 return
               }
@@ -326,7 +323,7 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
                   return
                 }
                 dock.layoutIfNeeded()
-                guard tabHost.tabBar.items?.count == 3,
+                guard tabHost.tabBar.items?.count == 4,
                       tabHost.tabBar.superview !== dock,
                       tabHost.tabBar.alpha == 1, tabHost.tabBar.isUserInteractionEnabled,
                       !tabHost.tabBar.accessibilityElementsHidden,
@@ -870,6 +867,22 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
                 return
               }
               try screenshot("player-lyrics-from-queue.png")
+              popup.controlView?.displayPlaylistPressed()
+              try await Task.sleep(for: .milliseconds(300))
+              popup.controlView?.displayPlaylistPressed()
+              try await Task.sleep(for: .milliseconds(500))
+              guard !largeView.isDisplayingLyrics,
+                    !self.appDelegate.storage.settings.user.isPlayerLyricsDisplayed,
+                    popup.controlView?.lyricsButton.isSelected == false,
+                    self.appDelegate.storage.settings.user.playerDisplayStyle == .large else {
+                smokeLog("Closing queue unexpectedly restored lyrics")
+                return
+              }
+              try screenshot("player-queue-closed-artwork.png")
+              popup.controlView?.lyricsButton.sendActions(for: .touchUpInside)
+              try await Task.sleep(for: .milliseconds(500))
+              smokeLog("Lyrics to queue to cover regression passed")
+
               for _ in 0..<3 {
                 popup.controlView?.displayPlaylistPressed()
                 guard try await compactHeaderStayedFixed(samples: 3) else { return }
@@ -883,6 +896,28 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
               popup.controlView?.lyricsButton.sendActions(for: .touchUpInside)
               guard try await compactHeaderStayedFixed() else { return }
               smokeLog("Shared header identity, position and size stayed fixed through switching, reversal, queue scrolling and immersive controls")
+              popup.dismiss(animated: false)
+              let reopened = PopupPlayerVC()
+              reopened.configurePresentation(sourcePlayer: miniPlayer.glassContainer, sourceArtwork: miniPlayer.artworkImage)
+              vc.present(reopened, animated: false)
+              try await Task.sleep(for: .milliseconds(600))
+              guard let lyricsButton = reopened.controlView?.lyricsButton,
+                    lyricsButton.isSelected,
+                    lyricsButton.configuration?.image?.renderingMode == .alwaysOriginal,
+                    let color = lyricsButton.configuration?.imageColorTransformer?(.white),
+                    color == UIColor.black else {
+                smokeLog("Lyrics symbol lost contrast after reopening")
+                return
+              }
+              let reopenedImage = UIGraphicsImageRenderer(bounds: reopened.view.bounds).image { _ in
+                reopened.view.drawHierarchy(in: reopened.view.bounds, afterScreenUpdates: true)
+              }
+              try reopenedImage.pngData()?.write(to: URL.documentsDirectory.appendingPathComponent("player-lyrics-reopened.png"))
+              reopened.dismiss(animated: false)
+              vc.present(popup, animated: false)
+              try await Task.sleep(for: .milliseconds(500))
+              smokeLog("Selected lyrics symbol preserved its contrast after reopening")
+
               guard let lyricsView = descendants(of: popup.view).compactMap({ $0 as? LyricsView }).first else { return }
               popup.setLyricsControlsHidden(true, animated: false)
               lyricsView.handleDrag(velocity: CGPoint(x: 0, y: 300))
@@ -968,7 +1003,7 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
                 }
                 let search = tabHost.searchViewController
                 let searchFocused = search?.searchController.searchBar.searchTextField.isFirstResponder == true
-                guard tabHost.selectedTab is UISearchTab, searchFocused, dock.isHidden else {
+                guard tabHost.selectedTab?.identifier == "Tabs.Search", searchFocused, dock.isHidden else {
                   smokeLog("Custom search navigation failed: controller=\(String(describing: search)), loaded=\(search?.isViewLoaded == true), active=\(search?.searchController.isActive == true), focused=\(searchFocused), dockHidden=\(dock.isHidden)")
                   return
                 }
@@ -1034,6 +1069,7 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
               try await Task.sleep(for: .milliseconds(350))
               guard !self.appDelegate.player.isPlaying, self.appDelegate.sleepTimer == nil else { return }
               smokeLog("Favorites shuffle and sleep timer shortcuts passed; cancellation and replacement preserved playback")
+              if let tabHost = vc as? TabBarVC { try await ListeningStatisticsSmoke.run(on: tabHost) }
               guard playerPolishChecksPassed else { return }
               let marker = URL.documentsDirectory.appendingPathComponent("player-smoke-ready")
               try "ready".write(to: marker, atomically: true, encoding: .utf8)

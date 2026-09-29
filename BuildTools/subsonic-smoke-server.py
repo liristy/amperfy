@@ -54,6 +54,16 @@ class Handler(BaseHTTPRequestHandler):
         url = urlparse(self.path)
         action = url.path.rsplit('/', 1)[-1].removesuffix('.view')
         query = parse_qs(url.query)
+        if '/apis/mlj_1/' in url.path:
+            endpoint = url.path.split('/apis/mlj_1/', 1)[1]
+            status, response = maloja_response(endpoint, query)
+            body = json.dumps(response, ensure_ascii=False).encode('utf-8')
+            self.send_response(status)
+            self.send_header('Content-Type', 'application/json')
+            self.send_header('Content-Length', str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+            return
         if action in ('stream', 'download'):
             if action == 'stream' and (query.get('format') != ['raw'] or 'maxBitRate' in query):
                 self.send_error(400, 'Expected original audio without transcoding')
@@ -79,7 +89,7 @@ class Handler(BaseHTTPRequestHandler):
         if action == 'scrobble':
             # Only fixture identifiers and protocol fields; never authentication data.
             print('SCROBBLE ' + json.dumps({key: query.get(key, []) for key in ('id', 'submission', 'time')}), flush=True)
-        if action == 'getCoverArt':
+        if action in ('getCoverArt', 'image'):
             body = COVERS[1 if query.get('id') == ['al-2'] else 0]
             mime = 'image/png'
         else:
@@ -119,6 +129,47 @@ class Handler(BaseHTTPRequestHandler):
     def log_message(self, fmt, *args):
         # Never log auth query parameters, even for the fixed fixture account.
         print(urlparse(self.path).path, flush=True)
+
+
+def maloja_response(endpoint, query):
+    """Deterministic Maloja contract, including paging and error/empty states."""
+    if query.get('in') == ['invalid']:
+        return 200, {'status': 'error', 'amount': 99, 'list': []}
+    if query.get('in') == ['unauthorized']:
+        return 401, {'error': 'Unauthorized'}
+    if query.get('in') == ['empty']:
+        return 200, {'status': 'ok', 'amount': 0, 'list': []}
+    page = int(query.get('page', ['0'])[0])
+    album = {'albumtitle': '测试专辑', 'artists': ['测试歌手']}
+    track = {'title': '测试歌曲', 'artists': ['测试歌手'], 'album': album}
+    def entry(kind, i=0):
+        common = {'scrobbles': 120 - i, 'rank': i + 1}
+        if kind == 'artists':
+            return {**common, 'artist': '测试歌手' if i == 0 else f'歌手 {i + 1}', 'artist_id': i + 1}
+        if kind == 'albums':
+            return {**common, 'album': {**album, 'albumtitle': '测试专辑' if i == 0 else f'专辑 {i + 1}'}, 'album_id': str(i + 1)}
+        return {**common, 'track': track if i == 0 else {**track, 'title': f'歌曲 {i + 1}'}, 'track_id': i + 1}
+    def period(i):
+        return {'description': f'2026/09/{i + 1:02}', 'fromstamp': 1788220800 + i * 86400,
+                'tostamp': 1788307199 + i * 86400, 'fromstring': f'2026/09/{i + 1:02}', 'tostr': f'2026/09/{i + 1:02}'}
+    if endpoint == 'numscrobbles':
+        return 200, {'status': 'ok', 'amount': 328}
+    if endpoint.startswith('charts/'):
+        return 200, {'status': 'ok', 'list': [entry(endpoint.split('/')[1], i) for i in range(55 if endpoint.endswith('tracks') else 4)]}
+    if endpoint in ('pulse', 'performance'):
+        key = 'scrobbles' if endpoint == 'pulse' else 'rank'
+        return 200, {'status': 'ok', 'list': [{ 'range': period(i), key: (i * 7 + 13) % 48 } for i in reversed(range(12))] if page == 0 else []}
+    if endpoint.startswith('top/'):
+        return 200, {'status': 'ok', 'list': [{'range': period(i), 'top': [entry(endpoint.split('/')[1])]} for i in range(4)]}
+    if endpoint.endswith('info'):
+        return 200, {'status': 'ok', 'scrobbles': 512, 'position': 2, 'topweeks': 3,
+                     'certification': 'gold', 'medals': {'gold': ['2026/09'], 'silver': [], 'bronze': []},
+                     'associated': ['合作歌手'] if endpoint == 'artistinfo' else [], 'id': 1}
+    if endpoint == 'scrobbles':
+        return 200, {'status': 'ok', 'list': [{'time': 1790614800 - (i + page * 50) * 3600,
+                      'duration': 180, 'origin': 'qMusic', 'track': {**track, 'album': album if i % 2 == 0 else '测试专辑'},
+                      'track_id': '1' if i % 2 == 0 else 1} for i in range(50 if page == 0 else 1)]}
+    return 404, {'status': 'error'}
 
 
 if __name__ == '__main__':

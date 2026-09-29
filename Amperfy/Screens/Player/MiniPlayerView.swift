@@ -718,8 +718,6 @@ class MiniPlayerView: UIView, UIGestureRecognizerDelegate {
     content.addSubview(artworkImage)
     content.addSubview(titleLabel)
     content.addSubview(subtitleLabel)
-    addSubview(timeSlider)
-    addSubview(liveLabel)
     addSubview(playButton)
     addSubview(nextButton)
 
@@ -736,29 +734,19 @@ class MiniPlayerView: UIView, UIGestureRecognizerDelegate {
         constant: -8
       ),
 
-      timeSlider.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 28),
-      timeSlider.heightAnchor.constraint(equalToConstant: 3),
-      timeSlider.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -3),
-      timeSlider.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -28),
-
-      liveLabel.centerXAnchor.constraint(equalTo: timeSlider.centerXAnchor, constant: 0),
-      liveLabel.centerYAnchor.constraint(equalTo: timeSlider.centerYAnchor, constant: 0),
-      liveLabel.widthAnchor.constraint(equalToConstant: 0),
-      liveLabel.heightAnchor.constraint(equalTo: liveLabel.widthAnchor),
-
-      artworkImage.topAnchor.constraint(equalTo: topAnchor, constant: 7),
-      artworkImage.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -7),
+      artworkImage.topAnchor.constraint(equalTo: topAnchor, constant: 8),
+      artworkImage.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -8),
       artworkImage.widthAnchor.constraint(equalTo: artworkImage.heightAnchor),
       artworkImage.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 10),
 
-      titleLabel.topAnchor.constraint(equalTo: topAnchor, constant: 6),
+      titleLabel.topAnchor.constraint(equalTo: topAnchor, constant: 8),
       titleLabel.bottomAnchor.constraint(equalTo: playButton.centerYAnchor, constant: 1),
-      titleLabel.leadingAnchor.constraint(equalTo: artworkImage.trailingAnchor, constant: 12),
+      titleLabel.leadingAnchor.constraint(equalTo: artworkImage.trailingAnchor, constant: 10),
       titleLabel.trailingAnchor.constraint(equalTo: playButton.leadingAnchor, constant: -8),
 
       subtitleLabel.topAnchor.constraint(equalTo: playButton.centerYAnchor, constant: 1),
       subtitleLabel.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -8),
-      subtitleLabel.leadingAnchor.constraint(equalTo: artworkImage.trailingAnchor, constant: 12),
+      subtitleLabel.leadingAnchor.constraint(equalTo: artworkImage.trailingAnchor, constant: 10),
       subtitleLabel.trailingAnchor.constraint(equalTo: playButton.leadingAnchor, constant: -8),
 
       playButton.centerYAnchor.constraint(equalTo: artworkImage.centerYAnchor, constant: 0),
@@ -931,8 +919,8 @@ class MiniPlayerView: UIView, UIGestureRecognizerDelegate {
   }
 
   public func refreshForTraitChange(horizontalSizeClass: UIUserInterfaceSizeClass) {
-    titleLabel.font = .systemFont(ofSize: 15, weight: .semibold)
-    subtitleLabel.font = .systemFont(ofSize: 12, weight: .regular)
+    titleLabel.font = .systemFont(ofSize: 15, weight: .medium)
+    subtitleLabel.font = .systemFont(ofSize: 13, weight: .regular)
   }
 
   private var playButtonTrailingConstraint: NSLayoutConstraint?

@@ -37,7 +37,7 @@ enum PlayerUIStyle {
 class PlayerUIHandler: NSObject {
   public static let playButtonImagePointSize: CGFloat = 25
   public static let bigButtonImagePointSize: CGFloat = 17
-  public static let playAndNextiOSButtonImagePointSize: CGFloat = 15
+  public static let playAndNextiOSButtonImagePointSize: CGFloat = 20
 
   private var player: PlayerFacade
   private var style: PlayerUIStyle
@@ -271,7 +271,8 @@ class PlayerUIHandler: NSObject {
       displayPlaylistButton.tintColor = isSelected ? .tintColor : .label
     case .popupPlayer:
       var config = UIButton.Configuration.playerAccessory(isSelected: isSelected)
-      config.image = UIImage(systemName: "list.bullet")
+      config.image = UIImage(systemName: "list.bullet")?
+        .withTintColor(isSelected ? .black : .white, renderingMode: .alwaysOriginal)
       displayPlaylistButton.isSelected = isSelected
       displayPlaylistButton.clipsToBounds = false
       displayPlaylistButton.configuration = config

@@ -331,9 +331,10 @@ class PlayerControlView: UIView {
     let selected = appDelegate.storage.settings.user.isPlayerLyricsDisplayed &&
       appDelegate.storage.settings.user.playerDisplayStyle == .large
     var configuration = UIButton.Configuration.playerAccessory(isSelected: selected)
-    configuration.image = UIImage(systemName: "quote.bubble")
-    lyricsButton.configuration = configuration
+    configuration.image = UIImage(systemName: "quote.bubble")?
+      .withTintColor(selected ? .black : .white, renderingMode: .alwaysOriginal)
     lyricsButton.isSelected = selected
+    lyricsButton.configuration = configuration
     lyricsButton.isEnabled = playerHandler?.isLyricsButtonAllowedToDisplay ?? false
     lyricsButton.accessibilityLabel = selected ? "Hide Lyrics".localized : "Show Lyrics".localized
   }
