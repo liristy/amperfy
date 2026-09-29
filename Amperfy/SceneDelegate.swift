@@ -318,37 +318,32 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
                 dock.layoutIfNeeded()
                 guard tabHost.tabBar.items?.count == 3,
                       tabHost.tabBar.superview !== dock,
-                      tabHost.tabBar.alpha == 0,
-                      !dock.navigationGlass.isHidden, !dock.searchGlass.isHidden,
-                      dock.navigationGlass.effect is UIGlassEffect,
-                      (dock.selectionGlass.effect as? UIGlassEffect)?.isInteractive == true,
-                      abs(dock.navigationGlass.frame.width - (dock.bounds.width - 76)) < 0.5,
-                      dock.navigationButtons.allSatisfy({ $0.bounds.width > 120 }) else {
-                  smokeLog("Navigation did not fill the horizontal space with two glass items")
+                      tabHost.tabBar.alpha == 1, tabHost.tabBar.isUserInteractionEnabled,
+                      !tabHost.tabBar.accessibilityElementsHidden,
+                      dock.navigationSlot.isHidden, dock.searchSlot.isHidden,
+                      tabHost.tabBar.itemPositioning == .centered,
+                      tabHost.tabBar.itemWidth > 120 else {
+                  smokeLog("Native tab bar was hidden, disabled or covered by custom navigation")
                   return
                 }
                 let expandedFrame = miniPlayer.glassContainer.frame
                 let nativeTop = tabHost.tabBar.convert(tabHost.tabBar.bounds, to: tabHost.view).minY
                 let playerBottom = miniPlayer.glassContainer.convert(miniPlayer.glassContainer.bounds, to: tabHost.view).maxY
                 guard abs(nativeTop - playerBottom - 12) < 0.5,
-                      dock.point(inside: CGPoint(x: dock.bounds.midX, y: dock.bounds.maxY - 20), with: nil) else {
-                  smokeLog("Navigation gap or glass tab hit testing is incorrect")
+                      !dock.point(inside: CGPoint(x: dock.bounds.midX, y: dock.bounds.maxY - 20), with: nil) else {
+                  smokeLog("Player gap or native tab touch passthrough is incorrect")
                   return
                 }
-                smokeLog("Navigation spans \(dock.navigationGlass.frame.width)pt with equal items; player gap \(nativeTop - playerBottom)")
-                for (index, button) in dock.navigationButtons.enumerated() {
-                  button.layoutIfNeeded()
-                  let image = dock.navigationIcons[index]
-                  let title = dock.navigationTitles[index]
-                  let labelGap = title.convert(title.bounds, to: button).minY -
-                    image.convert(image.bounds, to: button).maxY
-                  if abs(labelGap - 4) > 0.5 {
-                    smokeLog("Navigation icon/title gap is incorrect: \(labelGap)")
-                    playerPolishChecksPassed = false
-                  }
+                let nativePoint = tabHost.tabBar.convert(CGPoint(x: tabHost.tabBar.bounds.width * 0.25,
+                  y: 25), to: tabHost.view)
+                guard let hit = tabHost.view.hitTest(nativePoint, with: nil),
+                      hit === tabHost.tabBar || hit.isDescendant(of: tabHost.tabBar) else {
+                  smokeLog("Navigation touches do not reach the system tab bar")
+                  return
                 }
+                smokeLog("Native glass tab bar receives navigation touches; item width \(tabHost.tabBar.itemWidth), player gap \(nativeTop - playerBottom)")
                 guard abs(expandedFrame.height - 56) < 0.5,
-                      abs(dock.navigationGlass.frame.minY - expandedFrame.maxY - 12) < 0.5,
+                      abs(dock.navigationSlot.frame.minY - expandedFrame.maxY - 12) < 0.5,
                       abs(miniPlayer.bounds.height - 56) < 0.5,
                       !dock.point(inside: CGPoint(x: dock.bounds.midX, y: expandedFrame.maxY + 6), with: nil) else {
                   smokeLog("Player height, external 12pt gap or gap hit testing is incorrect")
@@ -361,45 +356,26 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
                   try image.pngData()?.write(to: URL.documentsDirectory.appendingPathComponent(name))
                 }
                 try dockScreenshot("player-mini-spacing.png")
-                let homeSelectionX = dock.selectionContainer.frame.minX
-                dock.navigationButtons[1].sendActions(for: .touchUpInside)
-                var sampledNavigationMotion = false
-                var sampledGlassStretch = false
-                var navigationFrame = CGRect.zero
-                for _ in 0..<30 {
-                  try await Task.sleep(for: .milliseconds(16))
-                  guard let movingSelection = dock.selectionContainer.layer.presentation() else { continue }
-                  navigationFrame = movingSelection.frame
-                  if dock.selectionGlass.frame.width > dock.selectionContainer.frame.width + 1,
-                     !dock.selectionTrailGlass.isHidden,
-                     dock.selectionGlassGroup.effect is UIGlassContainerEffect,
-                     dock.selectionGlass.superview === dock.selectionGlassGroup.contentView,
-                     dock.selectionTrailGlass.superview === dock.selectionGlassGroup.contentView {
-                    sampledGlassStretch = true
-                  }
-                  if navigationFrame.minX > homeSelectionX + 1,
-                     navigationFrame.minX < dock.navigationButtons[1].frame.minX - 1 {
-                    sampledNavigationMotion = true
-                    if sampledGlassStretch { break }
-                  }
-                }
-                guard tabHost.selectedTab?.identifier.hasPrefix("Tabs.Library") == true else { return }
-                if !sampledNavigationMotion || !sampledGlassStretch {
-                  smokeLog("Glass selection did not slide: tab=\(tabHost.selectedTab?.identifier ?? "nil"), rendered=\(navigationFrame), target=\(dock.selectionContainer.frame)")
-                  playerPolishChecksPassed = false
-                }
-                dock.navigationButtons[0].sendActions(for: .touchUpInside)
+                guard let home = tabHost.tabs.first(where: { $0.identifier == "Tabs.Home" }),
+                      let library = tabHost.tabs.first(where: { $0.identifier == "Tabs.Library" }) else { return }
+                tabHost.selectedTab = library
+                tabHost.view.layoutIfNeeded()
                 try await Task.sleep(for: .milliseconds(900))
-                guard tabHost.selectedTab?.identifier == "Tabs.Home",
-                      abs(dock.selectionContainer.frame.minX - homeSelectionX) < 0.5 else { return }
-                smokeLog("Full-length glass navigation selection animated and reversed without changing height")
+                guard tabHost.selectedTab === library, tabHost.tabBar.alpha == 1,
+                      !dock.point(inside: CGPoint(x: dock.bounds.midX, y: dock.bounds.maxY - 20), with: nil) else { return }
+                try dockScreenshot("player-native-library.png")
+                tabHost.selectedTab = home
+                tabHost.view.layoutIfNeeded()
+                try await Task.sleep(for: .milliseconds(900))
+                guard tabHost.selectedTab === home, tabHost.tabBar.alpha == 1 else { return }
+                smokeLog("Home and Library selection uses the visible native tab bar without a custom glass overlay")
                 tabHost.updatePlayerDockForScroll(delta: -40, atTop: false)
                 try await Task.sleep(for: .milliseconds(650))
                 let compactFrame = miniPlayer.glassContainer.frame
                 guard dock.isCollapsed, tabHost.isTabBarHidden, abs(compactFrame.height - 48) < 0.5,
-                      abs(compactFrame.midY - dock.navigationGlass.frame.midY) < 0.5,
-                      abs(compactFrame.minX - dock.navigationGlass.frame.maxX - 12) < 0.5,
-                      abs(dock.searchGlass.frame.minX - compactFrame.maxX - 12) < 0.5,
+                      abs(compactFrame.midY - dock.navigationSlot.frame.midY) < 0.5,
+                      abs(compactFrame.minX - dock.navigationSlot.frame.maxX - 12) < 0.5,
+                      abs(dock.searchSlot.frame.minX - compactFrame.maxX - 12) < 0.5,
                       miniPlayer.glassContainer.superview === dock else {
                   smokeLog("Sinking player did not settle between navigation and search")
                   return
@@ -971,7 +947,7 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
                 tabHost.selectedTab = tabHost.tabs.first(where: { $0.identifier == "Tabs.Home" })
                 tabHost.view.layoutIfNeeded()
                 guard tabHost.selectedTab?.identifier == "Tabs.Home", !dock.isCollapsed else { return }
-                smokeLog("Custom navigation, search keyboard hiding and restoration passed")
+                smokeLog("Native navigation, search keyboard hiding and restoration passed")
               }
               // Exercise the real Subsonic request without waiting half a long fixture track.
               song.playDuration = 2

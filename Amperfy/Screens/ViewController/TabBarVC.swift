@@ -250,6 +250,12 @@ class TabBarVC: UITabBarController {
     let margin: CGFloat = 20
     let availableWidth = view.bounds.width - view.safeAreaInsets.left - view.safeAreaInsets.right
     let dockWidth = min(600, availableWidth - margin * 2)
+    // Use public item sizing to lengthen Home/Library while UIKit retains its
+    // native glass rendering, label layout and prominent search item.
+    let itemWidth = max(0, (dockWidth - FloatingPlayerDock.navigationHeight - FloatingPlayerDock.gap - 8) / 2)
+    if tabBar.itemPositioning != .centered { tabBar.itemPositioning = .centered }
+    if abs(tabBar.itemWidth - itemWidth) > 0.5 { tabBar.itemWidth = itemWidth }
+    if tabBar.itemSpacing != 0 { tabBar.itemSpacing = 0 }
     if !isTabBarHidden, tabBar.bounds.height > 0 {
       dockNavigationTop = tabBar.convert(tabBar.bounds, to: view).minY
     }
@@ -280,17 +286,6 @@ class TabBarVC: UITabBarController {
       glass.isInteractive = true
       miniPlayer.glassContainer.effect = glass
       let dock = FloatingPlayerDock(miniPlayer: miniPlayer)
-      dock.onNavigate = { [weak self] index in
-        guard let self else { return }
-        // Start the glass motion before UIKit's tab switch performs its
-        // nonanimated layout pass. That pass must not become the first update.
-        let tint = self.appDelegate.storage.settings.accounts
-          .getSetting(self.account.info).read.themePreference.asColor
-        self.playerDock?.updateSelection(index, tint: tint)
-        self.selectedTab = index == 0 ? self.homeTab : self.libraryGroup
-        self.updateDockSelection()
-        self.view.setNeedsLayout()
-      }
       dock.onSearch = { [weak self] in
         guard let self else { return }
         self.tabBar.alpha = 1
@@ -318,13 +313,11 @@ class TabBarVC: UITabBarController {
     // Hiding that bar would detach its first responder and dismiss the keyboard.
     let hidden = dock.isCollapsed || top?.hidesBottomBarWhenPushed == true
     if isTabBarHidden != hidden { setTabBarHidden(hidden, animated: animated) }
-    // Keep the system search host mounted. The fixed-length glass navigation
-    // covers ordinary tabs; the native bar is visible only for active search.
-    let nativeSearch = selectedTab === searchTab &&
-      (dockKeyboardVisible || searchViewController?.searchController.isActive == true)
-    tabBar.alpha = nativeSearch ? 1 : 0
-    tabBar.isUserInteractionEnabled = nativeSearch
-    tabBar.accessibilityElementsHidden = !nativeSearch
+    // The real system tab bar owns the glass lens, touch tracking and tab
+    // selection. The player dock must never cover it with a replica.
+    tabBar.alpha = 1
+    tabBar.isUserInteractionEnabled = true
+    tabBar.accessibilityElementsHidden = false
   }
 
   private func updateDockSelection() {
@@ -487,8 +480,8 @@ extension TabBarVC: UIGestureRecognizerDelegate {
   }
 }
 
-// The phone's navigation and player share one layout, without depending on
-// UIKit's private tab accessory hierarchy or changing the player's own height.
+// Only the player floats above the native tab bar. When sunken, the player
+// sits between two system glass buttons; no custom tab selection material exists.
 @MainActor
 final class FloatingPlayerDock: UIView {
   static let playerHeight: CGFloat = 56
@@ -497,77 +490,27 @@ final class FloatingPlayerDock: UIView {
   static let expandedHeight = playerHeight + gap + navigationHeight
   private(set) var isCollapsed = false
   let miniPlayer: MiniPlayerView
-  let navigationGlass = UIVisualEffectView(effect: UIGlassEffect(style: .regular))
-  let searchGlass = UIVisualEffectView(effect: UIGlassEffect(style: .regular))
-  let selectionGlass = UIVisualEffectView(effect: UIGlassEffect(style: .regular))
-  let selectionTrailGlass = UIVisualEffectView(effect: UIGlassEffect(style: .regular))
-  let selectionGlassGroup = UIVisualEffectView(effect: UIGlassContainerEffect())
-  // Geometry marker for the selected item. The two material views are direct
-  // children of a system glass container, which blends their moving contours.
-  let selectionContainer = UIView()
-  let navigationButtons = [UIButton(type: .system), UIButton(type: .system)]
-  let navigationIcons = [UIImageView(), UIImageView()]
-  let navigationTitles = [UILabel(), UILabel()]
+  let navigationSlot = UIView()
+  let searchSlot = UIView()
   private let searchButton = UIButton(type: .system)
   private let compactNavigationButton = UIButton(type: .system)
   private var selection = -1
   private var theme: UIColor?
-  private var selectionDisplayLink: CADisplayLink?
-  private var selectionStart = CGRect.zero
-  private var selectionEnd = CGRect.zero
-  private var selectionElapsed: TimeInterval = 0
-  private var selectionLastTime: TimeInterval = 0
   var onCollapseChanged: ((Bool) -> Void)?
   var onSearch: (() -> Void)?
-  var onNavigate: ((Int) -> Void)?
 
   init(miniPlayer: MiniPlayerView) {
     self.miniPlayer = miniPlayer
     super.init(frame: .zero)
     accessibilityIdentifier = "floating-player-dock"
     miniPlayer.setCompactPresentation(false)
-    addSubview(navigationGlass)
-    addSubview(searchGlass)
+    addSubview(navigationSlot)
+    addSubview(searchSlot)
     addSubview(miniPlayer.glassContainer)
-    for glass in [navigationGlass, searchGlass, selectionGlass, selectionTrailGlass] {
-      glass.cornerConfiguration = .capsule()
-    }
-    let interactive = UIGlassEffect(style: .regular)
-    interactive.isInteractive = true
-    selectionGlass.effect = interactive
-    selectionGlass.isUserInteractionEnabled = false
-    selectionTrailGlass.isUserInteractionEnabled = false
-    selectionTrailGlass.isHidden = true
-    let fusion = UIGlassContainerEffect()
-    fusion.spacing = 24
-    selectionGlassGroup.effect = fusion
-    selectionGlassGroup.isUserInteractionEnabled = false
-    for glass in [navigationGlass, searchGlass] {
-      let effect = UIGlassEffect(style: .regular)
-      effect.isInteractive = true
-      glass.effect = effect
-    }
-    selectionContainer.isUserInteractionEnabled = false
-    navigationGlass.contentView.addSubview(selectionGlassGroup)
-    navigationGlass.contentView.addSubview(selectionContainer)
-    selectionGlassGroup.contentView.addSubview(selectionTrailGlass)
-    selectionGlassGroup.contentView.addSubview(selectionGlass)
-    for (index, button) in navigationButtons.enumerated() {
-      navigationGlass.contentView.addSubview(button)
-      button.accessibilityIdentifier = index == 0 ? "dock-home" : "dock-library"
-      button.isAccessibilityElement = true
-      navigationIcons[index].contentMode = .scaleAspectFit
-      navigationTitles[index].font = .systemFont(ofSize: 11, weight: .semibold)
-      navigationTitles[index].textAlignment = .center
-      for content in [navigationIcons[index] as UIView, navigationTitles[index]] {
-        content.isUserInteractionEnabled = false
-        content.isAccessibilityElement = false
-        button.addSubview(content)
-      }
-      button.addAction(UIAction { [weak self] _ in self?.onNavigate?(index) }, for: .touchUpInside)
-    }
-    navigationGlass.contentView.addSubview(compactNavigationButton)
-    searchGlass.contentView.addSubview(searchButton)
+    navigationSlot.addSubview(compactNavigationButton)
+    searchSlot.addSubview(searchButton)
+    navigationSlot.isHidden = true
+    searchSlot.isHidden = true
     searchButton.accessibilityLabel = TabNavigatorItem.search.title
     compactNavigationButton.accessibilityLabel = "Show navigation".localized
     searchButton.addAction(UIAction { [weak self] _ in self?.onSearch?() }, for: .touchUpInside)
@@ -578,59 +521,25 @@ final class FloatingPlayerDock: UIView {
 
   func updateSelection(_ selected: Int, tint: UIColor) {
     guard selected != selection || theme != tint else { return }
-    let animate = selection >= 0 && selected != selection && !isCollapsed && window != nil &&
-      !UIAccessibility.isReduceMotionEnabled
-    let startingFrame = selectionContainer.layer.presentation()?.frame ?? selectionContainer.frame
-    stopSelectionMotion()
-    layoutIfNeeded()
     selection = selected
     theme = tint
     let icons = [TabNavigatorItem.home.icon, UIImage.musicLibrary, TabNavigatorItem.search.icon]
-    var search = UIButton.Configuration.plain()
+    var search = UIButton.Configuration.glass()
+    search.cornerStyle = .capsule
     search.image = icons[2]
     search.preferredSymbolConfigurationForImage = .init(pointSize: 27, weight: .medium)
     search.baseForegroundColor = selected == 2 ? tint : .label
     searchButton.configuration = search
-    searchButton.accessibilityTraits = selected == 2 ? [.button, .selected] : .button
-    var compact = UIButton.Configuration.plain()
+    var compact = UIButton.Configuration.glass()
+    compact.cornerStyle = .capsule
     compact.image = icons[selected]
     compact.preferredSymbolConfigurationForImage = .init(pointSize: 23, weight: .medium)
     compact.baseForegroundColor = tint
     compactNavigationButton.configuration = compact
-    for (index, button) in navigationButtons.enumerated() {
-      var configuration = UIButton.Configuration.plain()
-      configuration.contentInsets = .zero
-      button.configuration = configuration
-      navigationIcons[index].image = icons[index].withConfiguration(UIImage.SymbolConfiguration(pointSize: 25, weight: .medium))
-      navigationIcons[index].tintColor = index == selected ? tint : .label
-      navigationTitles[index].text = index == 0 ? TabNavigatorItem.home.title : "Library".localized
-      navigationTitles[index].textColor = index == selected ? tint : .label
-      button.accessibilityLabel = navigationTitles[index].text
-      button.accessibilityTraits = index == selected ? [.button, .selected] : .button
-    }
-    setNeedsLayout()
-    UIView.performWithoutAnimation {
-      layoutIfNeeded()
-    }
-    if animate {
-      let destination = selectionContainer.frame
-      selectionStart = startingFrame
-      selectionEnd = destination
-      selectionElapsed = 0
-      selectionLastTime = 0
-      selectionContainer.frame = startingFrame
-      selectionGlass.frame = startingFrame
-      selectionTrailGlass.frame = startingFrame.insetBy(dx: startingFrame.width * 0.2, dy: 5)
-      selectionTrailGlass.isHidden = false
-      let link = CADisplayLink(target: self, selector: #selector(stepSelectionMotion(_:)))
-      selectionDisplayLink = link
-      link.add(to: .main, forMode: .common)
-    }
   }
 
   func setCollapsed(_ collapsed: Bool, animated: Bool) {
     guard isCollapsed != collapsed else { return }
-    stopSelectionMotion()
     layoutIfNeeded()
     isCollapsed = collapsed
     onCollapseChanged?(animated)
@@ -649,82 +558,24 @@ final class FloatingPlayerDock: UIView {
     super.layoutSubviews()
     let side = Self.navigationHeight
     let rowY = Self.playerHeight + Self.gap
-    let navigationWidth = isCollapsed ? side : max(side, bounds.width - side - Self.gap)
-    navigationGlass.frame = CGRect(x: 0, y: rowY, width: navigationWidth, height: side)
-    searchGlass.frame = CGRect(x: bounds.width - side, y: rowY, width: side, height: side)
+    navigationSlot.frame = CGRect(x: 0, y: rowY, width: isCollapsed ? side : max(side, bounds.width - side - Self.gap), height: side)
+    searchSlot.frame = CGRect(x: bounds.width - side, y: rowY, width: side, height: side)
     miniPlayer.glassContainer.frame = isCollapsed ?
       CGRect(x: side + Self.gap, y: rowY + (side - 48) / 2, width: max(0, bounds.width - (side + Self.gap) * 2), height: 48) :
       CGRect(x: 0, y: 0, width: bounds.width, height: Self.playerHeight)
-    navigationGlass.layoutIfNeeded()
-    searchGlass.layoutIfNeeded()
     miniPlayer.glassContainer.layoutIfNeeded()
     searchButton.frame = CGRect(x: 0, y: 0, width: side, height: side)
     compactNavigationButton.frame = CGRect(x: 0, y: 0, width: side, height: side)
-    let itemWidth = (navigationWidth - 8) / 2
-    for (index, button) in navigationButtons.enumerated() {
-      button.frame = CGRect(x: 4 + CGFloat(index) * itemWidth, y: 4, width: itemWidth, height: side - 8)
-      button.isHidden = isCollapsed
-      // Own these two frames: system button configurations can compress their
-      // image/title spacing when fitting inside a fixed-height glass capsule.
-      navigationIcons[index].frame = CGRect(x: (itemWidth - 30) / 2, y: 3, width: 30, height: 28)
-      navigationTitles[index].frame = CGRect(x: 0, y: 35, width: itemWidth, height: 14)
-    }
-    if selectionDisplayLink == nil {
-      selectionContainer.frame = CGRect(x: 4 + CGFloat(max(0, min(1, selection))) * itemWidth,
-                                       y: 4, width: itemWidth, height: side - 8)
-    }
-    selectionGlassGroup.frame = navigationGlass.bounds
-    if selectionDisplayLink == nil { selectionGlass.frame = selectionContainer.frame }
-    selectionContainer.isHidden = isCollapsed || selection == 2
-    selectionGlassGroup.isHidden = isCollapsed || selection == 2
-    compactNavigationButton.alpha = isCollapsed ? 1 : 0
-    compactNavigationButton.isUserInteractionEnabled = isCollapsed
-    compactNavigationButton.accessibilityElementsHidden = !isCollapsed
+    navigationSlot.isHidden = !isCollapsed
+    searchSlot.isHidden = !isCollapsed
   }
 
   override func point(inside point: CGPoint, with event: UIEvent?) -> Bool {
-    // Empty space above a sunken player and the 12pt gap remain scrollable.
-    [miniPlayer.glassContainer, navigationGlass, searchGlass].contains {
+    // In the expanded layout, every navigation touch passes through to the
+    // system tab bar underneath, including its native press-and-drag gesture.
+    [miniPlayer.glassContainer, navigationSlot, searchSlot].contains {
       !$0.isHidden && $0.point(inside: convert(point, to: $0), with: event)
     }
-  }
-
-  private func stopSelectionMotion() {
-    selectionDisplayLink?.invalidate()
-    selectionDisplayLink = nil
-    selectionTrailGlass.isHidden = true
-    selectionGlass.frame = selectionContainer.frame
-  }
-
-  override func didMoveToWindow() {
-    super.didMoveToWindow()
-    if window == nil { stopSelectionMotion() }
-  }
-
-  @objc private func stepSelectionMotion(_ link: CADisplayLink) {
-    // Start on the first rendered frame, after the destination tab's initial
-    // layout. Bound long frame gaps so loading a tab cannot consume the motion.
-    if selectionLastTime > 0 {
-      selectionElapsed += min(link.timestamp - selectionLastTime, 1.0 / 30.0)
-    }
-    selectionLastTime = link.timestamp
-    let t = selectionElapsed
-    let progress = t >= 0.7 ? 1 : 1 - exp(-10 * t) * (cos(10 * t) + sin(10 * t))
-    let travel = min(1, max(0, progress))
-    let stretch = CGFloat(sin(travel * .pi))
-    UIView.performWithoutAnimation {
-      selectionContainer.frame = selectionEnd.offsetBy(
-        dx: (selectionStart.minX - selectionEnd.minX) * (1 - progress), dy: 0)
-      let head = selectionContainer.frame
-      selectionGlass.frame = head.insetBy(dx: -10 * stretch, dy: 2 * stretch)
-      // The trailing lobe catches up inside the same glass container, making
-      // the outline stretch and fuse instead of sliding a rigid second pill.
-      let tailTravel = max(0, travel - 0.45 * stretch)
-      selectionTrailGlass.frame = selectionStart.offsetBy(
-        dx: (selectionEnd.minX - selectionStart.minX) * tailTravel, dy: 0)
-        .insetBy(dx: head.width * 0.2, dy: 5)
-    }
-    if t >= 0.7 { stopSelectionMotion() }
   }
 }
 
