@@ -822,10 +822,12 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
                     cell.setSelected(true, animated: false)
                     cell.updateConfiguration(using: cell.configurationState)
                     cell.refresh()
-                    guard cell.backgroundColor == .clear,
-                          cell.contentView.backgroundColor == .clear,
-                          cell.backgroundConfiguration?.backgroundColor == .clear else {
-                      smokeLog("Multi-song queue gained an opaque cell background after state update")
+                    // UIKit may normalize a clear color to nil or a different
+                    // color space. Compare effective opacity, not UIColor identity.
+                    let backgrounds = [cell.backgroundColor, cell.contentView.backgroundColor,
+                                       cell.backgroundConfiguration?.backgroundColor].compactMap { $0 }
+                    guard backgrounds.allSatisfy({ $0.resolvedColor(with: cell.traitCollection).cgColor.alpha < 0.001 }) else {
+                      smokeLog("Multi-song queue gained an opaque cell background: \(backgrounds)")
                       return
                     }
                     cell.setSelected(false, animated: false)
