@@ -41,6 +41,10 @@ extension PopupPlayerVC: UITableViewDataSource, UITableViewDelegate {
     tableView.estimatedRowHeight = 56
     tableView.backgroundColor = UIColor.clear
     tableView.backgroundView = nil
+    // The full player already supplies a continuous artwork background.
+    // A scroll-edge backdrop here creates a rectangular patch behind headers.
+    tableView.topEdgeEffect.isHidden = true
+    tableView.bottomEdgeEffect.isHidden = true
     tableView.isOpaque = false
     tableView.separatorStyle = .none
     tableView.sectionHeaderTopPadding = 0.0

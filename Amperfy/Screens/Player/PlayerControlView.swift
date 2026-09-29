@@ -132,6 +132,8 @@ class PlayerControlView: UIView {
     displayPlaylistButton.accessibilityLabel = "Playing next".localized
     volumeButton.accessibilityLabel = "Volume options".localized
     lyricsButton.addTarget(self, action: #selector(lyricsPressed), for: .touchUpInside)
+    lyricsButton.tintColor = .white
+    displayPlaylistButton.tintColor = .white
 
     playButton.imageView?.tintColor = .label
     previousButton.tintColor = .label

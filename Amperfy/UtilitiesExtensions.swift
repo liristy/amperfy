@@ -151,6 +151,7 @@ extension UIButton.Configuration {
   static func playerAccessory(isSelected: Bool) -> UIButton.Configuration {
     var config = isSelected ? UIButton.Configuration.glass() : player(isSelected: false)
     config.baseForegroundColor = .white
+    if isSelected { config.baseBackgroundColor = .white.withAlphaComponent(0.16) }
     config.cornerStyle = .capsule
     config.preferredSymbolConfigurationForImage = .init(pointSize: 24, weight: .regular, scale: .medium)
     config.contentInsets = NSDirectionalEdgeInsets(top: 6, leading: 6, bottom: 6, trailing: 6)

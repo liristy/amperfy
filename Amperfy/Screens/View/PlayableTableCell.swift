@@ -217,8 +217,7 @@ class PlayableTableCell: BasicTableCell {
     #endif
     backgroundColor = rootView is PopupPlayerVC ? .clear : .systemBackground
     if rootView is PopupPlayerVC {
-      backgroundConfiguration = .clear()
-      contentView.backgroundColor = .clear
+      configurePlayerBackground()
     } else {
       backgroundConfiguration = nil
     }
@@ -228,10 +227,17 @@ class PlayableTableCell: BasicTableCell {
   override func updateConfiguration(using state: UICellConfigurationState) {
     super.updateConfiguration(using: state)
     if rootView is PopupPlayerVC {
-      backgroundConfiguration = .clear()
-      backgroundColor = .clear
-      contentView.backgroundColor = .clear
+      configurePlayerBackground()
     }
+  }
+
+  private func configurePlayerBackground() {
+    var background = UIBackgroundConfiguration.clear()
+    // Keep transparency explicit when selection and reuse update the cell state.
+    background.backgroundColor = .clear
+    backgroundConfiguration = background
+    backgroundColor = .clear
+    contentView.backgroundColor = .clear
   }
 
   private func configureStyle(playable: AbstractPlayable, newStyle: PlayableTableCellStyle) {

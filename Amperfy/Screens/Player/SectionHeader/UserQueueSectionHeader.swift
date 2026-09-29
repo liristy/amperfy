@@ -67,6 +67,7 @@ class UserQueueSectionHeader: UIView {
     configuration.title = "Clear".localized
     configuration.buttonSize = .small
     configuration.background = .clear()
+    configuration.baseForegroundColor = .label
     rightButton.configuration = configuration
     self.buttonPressAction = buttonPressAction
   }
