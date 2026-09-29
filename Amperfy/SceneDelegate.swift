@@ -427,6 +427,15 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
                   descendants(of: window).first { $0.accessibilityIdentifier == "player-surface-transition-artwork" }
                 }
               }
+              func renderedSurface(_ popup: PopupPlayerVC) -> CGRect? {
+                guard let page = popup.view.layer.presentation(),
+                      let mask = popup.view.mask?.layer.presentation() else { return nil }
+                let sx = page.frame.width / popup.view.bounds.width
+                let sy = page.frame.height / popup.view.bounds.height
+                return CGRect(x: page.frame.minX + mask.frame.minX * sx,
+                              y: page.frame.minY + mask.frame.minY * sy,
+                              width: mask.frame.width * sx, height: mask.frame.height * sy)
+              }
               miniPlayer.beginPlayerExpansion()
               try await Task.sleep(for: .milliseconds(80))
               guard let cancelledPopup = vc.presentedViewController as? PopupPlayerVC else {
@@ -463,9 +472,7 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
               let pausedDistance = (miniPlayer.window?.bounds.height ?? 800) * 0.6
               miniPlayer.updatePlayerExpansion(translation: pausedDistance * 0.30)
               try await Task.sleep(for: .milliseconds(100))
-              guard let earlySurface = pausedPopup.view.mask?.layer.presentation(),
-                    let earlyFrame = pausedPopup.view.layer.presentation()?.frame,
-                    earlySurface.frame.size == pausedPopup.view.bounds.size,
+              guard let earlyFrame = renderedSurface(pausedPopup),
                     earlyFrame.height > miniPlayer.glassContainer.bounds.height + 20,
                     earlyFrame.height < pausedPopup.view.bounds.height - 20,
                     earlyFrame.width > miniPlayer.glassContainer.bounds.width + 1,
@@ -553,10 +560,9 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
                 return
               }
               let miniCoverFrame = miniPlayer.artworkImage.convert(miniPlayer.artworkImage.bounds, to: coverHost)
-              let destinationCoverFrame = openingPopup.transitionArtwork!.convert(
-                openingPopup.transitionArtwork!.bounds, to: coverHost)
+              guard let destinationCoverFrame = openingPopup.surfaceTransition.artworkMotion?.endFrame else { return }
               let sourceSurface = miniPlayer.glassContainer.convert(miniPlayer.glassContainer.bounds, to: coverHost)
-              if let held = openingPopup.view.layer.presentation()?.frame {
+              if let held = renderedSurface(openingPopup) {
                 let heightProgress = (held.height - sourceSurface.height) /
                   (openingPopup.view.bounds.height - sourceSurface.height)
                 let widthProgress = (held.width - sourceSurface.width) /
@@ -600,7 +606,7 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
                 guard let popup = vc.presentedViewController as? PopupPlayerVC,
                       let surface = popup.view.mask,
                       surface.accessibilityIdentifier == "player-transition-surface",
-                      let animatedFrame = popup.view.layer.presentation()?.frame else { continue }
+                      let animatedFrame = renderedSurface(popup) else { continue }
                 let destinationHeight = popup.view.bounds.height
                 guard popup.view.layer.opacity == 1, popup.view.alpha == 1,
                       popup.view.bounds.size == popup.view.window?.bounds.size else {
@@ -620,7 +626,7 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
                     (destinationHeight - sourceSurface.height)))
                   let coverProgress = (frame.width - miniCoverFrame.width) /
                     (destinationCoverFrame.width - miniCoverFrame.width)
-                  if pageProgress - coverProgress > 0.12 {
+                  if pageProgress - coverProgress > 0.025 {
                     smokeLog("Artwork lagged behind the expanding surface: page \(pageProgress), cover \(coverProgress)")
                     playerPolishChecksPassed = false
                   }
@@ -878,7 +884,7 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
               for _ in 0..<60 {
                 try await Task.sleep(for: .milliseconds(16))
                 guard popup.view.mask != nil,
-                      let animatedFrame = popup.view.layer.presentation()?.frame else { continue }
+                      let animatedFrame = renderedSurface(popup) else { continue }
                 let destination = miniPlayer.glassContainer.bounds
                 if animatedFrame.height < destination.height - 0.25 { sampledClosingRebound = true }
                 if let cover = flyingCover(), let frame = cover.layer.presentation()?.frame {

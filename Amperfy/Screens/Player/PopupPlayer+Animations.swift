@@ -68,22 +68,25 @@ final class PlayerSurfaceTransitionDelegate: NSObject, UIViewControllerTransitio
 @MainActor
 final class PlayerArtworkMotion: NSObject {
   private let player: UIView
-  private let shape = CAShapeLayer()
+  private let surface: UIView
+  private let progressView: UIView
   private let cover: UIImageView?
   private let smallFrame: CGRect
   private let fullFrame: CGRect
   private let presenting: Bool
   private let startFrame: CGRect
-  private let endFrame: CGRect
+  let endFrame: CGRect
   private let startRadius: CGFloat
   private let endRadius: CGFloat
   private var progress: CGFloat = 0
   private var destination: CGFloat?
   private var displayLink: CADisplayLink?
 
-  init(player: UIView, surface: UIView, smallFrame: CGRect, fullFrame: CGRect,
+  init(player: UIView, surface: UIView, progressView: UIView, smallFrame: CGRect, fullFrame: CGRect,
        presenting: Bool, cover: UIImageView?, endFrame: CGRect, endRadius: CGFloat) {
     self.player = player
+    self.surface = surface
+    self.progressView = progressView
     self.smallFrame = smallFrame
     self.fullFrame = fullFrame
     self.presenting = presenting
@@ -93,48 +96,61 @@ final class PlayerArtworkMotion: NSObject {
     self.startRadius = cover?.layer.cornerRadius ?? 0
     self.endRadius = endRadius
     super.init()
-    shape.fillColor = UIColor.black.cgColor
-    surface.layer.mask = shape
-    render()
+    render(transition: 0)
     let link = CADisplayLink(target: self, selector: #selector(tick(_:)))
     displayLink = link
     link.add(to: .main, forMode: .common)
   }
 
   func update(_: CGFloat) {
-    render()
+    sample()
   }
 
-  private func render() {
-    let frame = player.layer.presentation()?.frame ?? player.frame
-    let expansion = (frame.height - smallFrame.height) / max(1, fullFrame.height - smallFrame.height)
-    let current = min(1, max(0, presenting ? expansion : 1 - expansion))
+  private func sample() {
+    // Read only the timing probe. Applying the page AND cover below in one
+    // transaction avoids the extra frame caused by following the rendered page.
+    guard let timing = progressView.layer.presentation() else { return }
+    render(transition: timing.transform.m41)
+  }
+
+  private func render(transition: CGFloat) {
+    let expansion = presenting ? transition : 1 - transition
+    let current = min(1, max(0, transition))
     if let destination {
       progress = destination == 1 ? max(progress, current) : min(progress, current)
     } else {
       progress = current
     }
-    // Compensate for the nonuniform surface scale: a 28pt capsule must remain
-    // round on screen even when its full-height content is compressed into 56pt.
+    let frame = CGRect(
+      x: smallFrame.minX + (fullFrame.minX - smallFrame.minX) * expansion,
+      y: smallFrame.minY + (fullFrame.minY - smallFrame.minY) * expansion,
+      width: smallFrame.width + (fullFrame.width - smallFrame.width) * expansion,
+      height: max(1, smallFrame.height + (fullFrame.height - smallFrame.height) * expansion))
+    let scale = frame.width / fullFrame.width + max(0, expansion - 1)
     let radius = smallFrame.height / 2 * min(1, max(0, (1 - expansion) / 0.12))
-    let sx = max(0.001, frame.width / player.bounds.width)
-    let sy = max(0.001, frame.height / player.bounds.height)
     CATransaction.begin()
     CATransaction.setDisableActions(true)
-    shape.frame = player.bounds
-    shape.path = UIBezierPath(roundedRect: player.bounds, byRoundingCorners: .allCorners,
-      cornerRadii: CGSize(width: radius / sx, height: radius / sy)).cgPath
-    CATransaction.commit()
-    guard let cover else { return }
-    let p = progress
     UIView.performWithoutAnimation {
-      cover.frame = CGRect(
-        x: startFrame.minX + (endFrame.minX - startFrame.minX) * p,
-        y: startFrame.minY + (endFrame.minY - startFrame.minY) * p,
-        width: startFrame.width + (endFrame.width - startFrame.width) * p,
-        height: startFrame.height + (endFrame.height - startFrame.height) * p)
-      cover.layer.cornerRadius = startRadius + (endRadius - startRadius) * p
+      // Keep typography and controls uniformly scaled. The reveal grows upward
+      // from the capsule while the page's bottom edge follows the same rectangle.
+      player.transform = CGAffineTransform(a: scale, b: 0, c: 0, d: scale,
+        tx: frame.midX - fullFrame.midX,
+        ty: frame.maxY - (fullFrame.midY + fullFrame.height * scale / 2))
+      surface.frame = CGRect(x: (player.bounds.width - frame.width / scale) / 2,
+                             y: player.bounds.height - frame.height / scale,
+                             width: frame.width / scale, height: frame.height / scale)
+      surface.layer.cornerRadius = radius / scale
+      if let cover {
+        let p = progress
+        cover.frame = CGRect(
+          x: startFrame.minX + (endFrame.minX - startFrame.minX) * p,
+          y: startFrame.minY + (endFrame.minY - startFrame.minY) * p,
+          width: startFrame.width + (endFrame.width - startFrame.width) * p,
+          height: startFrame.height + (endFrame.height - startFrame.height) * p)
+        cover.layer.cornerRadius = startRadius + (endRadius - startRadius) * p
+      }
     }
+    CATransaction.commit()
   }
 
   func settle(to target: CGFloat) {
@@ -142,7 +158,7 @@ final class PlayerArtworkMotion: NSObject {
   }
 
   @objc private func tick(_ link: CADisplayLink) {
-    render()
+    sample()
   }
 
   func stop() {
@@ -213,14 +229,12 @@ final class PlayerSurfaceAnimator: NSObject, UIViewControllerAnimatedTransitioni
     // Start with the cover the user can already see, never its placeholder.
     let artworkImage = isPresenting ? (sourceArtwork?.image ?? targetArtwork?.image) :
       (targetArtwork?.image ?? sourceArtwork?.image)
-    // Map the full page onto the actual mini-player rectangle, including its
-    // horizontal inset and bottom position. A vertical slide plus a moving mask
-    // cannot reproduce the two-axis expansion/contraction of the whole surface.
-    let collapsedTransform = reducedMotion ? originalTransform : CGAffineTransform(
-      a: smallFrame.width / fullFrame.width, b: 0, c: 0,
-      d: smallFrame.height / fullFrame.height,
-      tx: smallFrame.midX - fullFrame.midX, ty: smallFrame.midY - fullFrame.midY)
-    playerView.transform = isPresenting ? collapsedTransform : originalTransform
+    // UIKit owns the spring/interactive timeline. A transparent timing probe
+    // lets one display update apply the surface and artwork geometry together.
+    let progressView = UIView(frame: CGRect(x: 0, y: 0, width: 1, height: 1))
+    progressView.alpha = 0
+    progressView.isUserInteractionEnabled = false
+    container.addSubview(progressView)
     let surface = UIView(frame: playerView.bounds)
     surface.accessibilityIdentifier = "player-transition-surface"
     surface.backgroundColor = .black
@@ -266,7 +280,7 @@ final class PlayerSurfaceAnimator: NSObject, UIViewControllerAnimatedTransitioni
       }
     }
     if !reducedMotion {
-      let motion = PlayerArtworkMotion(player: playerView, surface: surface,
+      let motion = PlayerArtworkMotion(player: playerView, surface: surface, progressView: progressView,
         smallFrame: smallFrame, fullFrame: fullFrame, presenting: isPresenting,
         cover: flyingArtwork,
         endFrame: (isPresenting ? largeArtworkFrame : smallArtworkFrame) ?? .zero,
@@ -281,7 +295,7 @@ final class PlayerSurfaceAnimator: NSObject, UIViewControllerAnimatedTransitioni
     let animator = UIViewPropertyAnimator(
       duration: duration, dampingRatio: Self.springDamping
     ) { [contentMasks] in
-      playerView.transform = self.isPresenting ? originalTransform : collapsedTransform
+      progressView.transform = CGAffineTransform(translationX: 1, y: 0)
       if reducedMotion {
         playerView.alpha = self.isPresenting ? originalAlpha : 0
       } else {
@@ -313,6 +327,7 @@ final class PlayerSurfaceAnimator: NSObject, UIViewControllerAnimatedTransitioni
       playerView.transform = originalTransform
       if presenting != completed { playerView.removeFromSuperview() }
       flyingArtwork?.removeFromSuperview()
+      progressView.removeFromSuperview()
       popup.surfaceTransition.artworkMotion?.stop()
       popup.surfaceTransition.artworkMotion = nil
       popup.surfaceTransition.artworkProgress = 0
