@@ -40,6 +40,7 @@ extension PopupPlayerVC: UITableViewDataSource, UITableViewDelegate {
     tableView.rowHeight = 56
     tableView.estimatedRowHeight = 56
     tableView.backgroundColor = UIColor.clear
+    tableView.isOpaque = false
     tableView.separatorStyle = .none
     tableView.sectionHeaderTopPadding = 0.0
   }
@@ -77,6 +78,11 @@ extension PopupPlayerVC: UITableViewDataSource, UITableViewDelegate {
     forSection section: Int
   ) {
     guard let category = PlayerSectionCategory(rawValue: section) else { return }
+    view.backgroundColor = .clear
+    view.isOpaque = false
+    if let header = view as? UITableViewHeaderFooterView {
+      header.backgroundConfiguration = .clear()
+    }
     activeDisplayedSectionHeader.insert(category)
   }
 

@@ -23,7 +23,7 @@ import AmperfyKit
 import UIKit
 
 // The complete player expands from, and contracts into, the mini-player capsule.
-// Keep the live content at its final layout size inside a springing mask.
+// Keep the live content laid out at full size while its surface morphs in both axes.
 // Never swap a rendered screenshot for the real player at the end of the animation.
 @MainActor
 final class PlayerSurfaceTransitionDelegate: NSObject, UIViewControllerTransitioningDelegate {
@@ -62,34 +62,70 @@ final class PlayerSurfaceTransitionDelegate: NSObject, UIViewControllerTransitio
     -> UIViewControllerInteractiveTransitioning? { interaction }
 }
 
-// UIKit retimes all animations owned by an interactive transition with its
-// surface spring. Render the cover separately, using the same gesture progress,
-// so finishing or cancelling cannot inject an overshoot into the cover's path.
+// One rendered surface drives the mask and the shared cover. There is no second
+// animation clock: the cover arrives when the surface first reaches its endpoint,
+// then stays there while the page settles (the cover itself must not bounce).
 @MainActor
 final class PlayerArtworkMotion: NSObject {
-  private let cover: UIImageView
+  private let player: UIView
+  private let shape = CAShapeLayer()
+  private let cover: UIImageView?
+  private let smallFrame: CGRect
+  private let fullFrame: CGRect
+  private let presenting: Bool
   private let startFrame: CGRect
   private let endFrame: CGRect
   private let startRadius: CGFloat
   private let endRadius: CGFloat
   private var progress: CGFloat = 0
-  private var startProgress: CGFloat = 0
-  private var destination: CGFloat = 1
-  private var startedAt: TimeInterval = 0
-  private var duration: TimeInterval = 0
+  private var destination: CGFloat?
   private var displayLink: CADisplayLink?
 
-  init(cover: UIImageView, endFrame: CGRect, endRadius: CGFloat) {
+  init(player: UIView, surface: UIView, smallFrame: CGRect, fullFrame: CGRect,
+       presenting: Bool, cover: UIImageView?, endFrame: CGRect, endRadius: CGFloat) {
+    self.player = player
+    self.smallFrame = smallFrame
+    self.fullFrame = fullFrame
+    self.presenting = presenting
     self.cover = cover
-    self.startFrame = cover.frame
+    self.startFrame = cover?.frame ?? .zero
     self.endFrame = endFrame
-    self.startRadius = cover.layer.cornerRadius
+    self.startRadius = cover?.layer.cornerRadius ?? 0
     self.endRadius = endRadius
     super.init()
+    shape.fillColor = UIColor.black.cgColor
+    surface.layer.mask = shape
+    render()
+    let link = CADisplayLink(target: self, selector: #selector(tick(_:)))
+    displayLink = link
+    link.add(to: .main, forMode: .common)
   }
 
-  func update(_ value: CGFloat) {
-    progress = min(1, max(0, value))
+  func update(_: CGFloat) {
+    render()
+  }
+
+  private func render() {
+    let frame = player.layer.presentation()?.frame ?? player.frame
+    let expansion = (frame.height - smallFrame.height) / max(1, fullFrame.height - smallFrame.height)
+    let current = min(1, max(0, presenting ? expansion : 1 - expansion))
+    if let destination {
+      progress = destination == 1 ? max(progress, current) : min(progress, current)
+    } else {
+      progress = current
+    }
+    // Compensate for the nonuniform surface scale: a 28pt capsule must remain
+    // round on screen even when its full-height content is compressed into 56pt.
+    let radius = smallFrame.height / 2 * min(1, max(0, (1 - expansion) / 0.12))
+    let sx = max(0.001, frame.width / player.bounds.width)
+    let sy = max(0.001, frame.height / player.bounds.height)
+    CATransaction.begin()
+    CATransaction.setDisableActions(true)
+    shape.frame = player.bounds
+    shape.path = UIBezierPath(roundedRect: player.bounds, byRoundingCorners: .allCorners,
+      cornerRadii: CGSize(width: radius / sx, height: radius / sy)).cgPath
+    CATransaction.commit()
+    guard let cover else { return }
     let p = progress
     UIView.performWithoutAnimation {
       cover.frame = CGRect(
@@ -102,21 +138,11 @@ final class PlayerArtworkMotion: NSObject {
   }
 
   func settle(to target: CGFloat) {
-    stop()
-    startProgress = progress
     destination = target
-    duration = max(0.06, 0.45 * Double(abs(target - progress)))
-    startedAt = CACurrentMediaTime()
-    let link = CADisplayLink(target: self, selector: #selector(tick(_:)))
-    displayLink = link
-    link.add(to: .main, forMode: .common)
   }
 
   @objc private func tick(_ link: CADisplayLink) {
-    let t = min(1, max(0, (link.timestamp - startedAt) / duration))
-    let eased = CGFloat(t * t * (3 - 2 * t))
-    update(startProgress + (destination - startProgress) * eased)
-    if t >= 1 { stop() }
+    render()
   }
 
   func stop() {
@@ -127,7 +153,7 @@ final class PlayerArtworkMotion: NSObject {
 
 @MainActor
 final class PlayerSurfaceAnimator: NSObject, UIViewControllerAnimatedTransitioning {
-  static var springDamping: CGFloat { UIAccessibility.isReduceMotionEnabled ? 1 : 0.62 }
+  static var springDamping: CGFloat { UIAccessibility.isReduceMotionEnabled ? 1 : 0.72 }
   private let isPresenting: Bool
   private weak var sourcePlayer: UIView?
   private weak var sourceArtwork: UIImageView?
@@ -140,7 +166,7 @@ final class PlayerSurfaceAnimator: NSObject, UIViewControllerAnimatedTransitioni
   }
 
   func transitionDuration(using transitionContext: UIViewControllerContextTransitioning?) -> TimeInterval {
-    UIAccessibility.isReduceMotionEnabled ? 0.15 : 0.78
+    UIAccessibility.isReduceMotionEnabled ? 0.15 : 0.72
   }
 
   func animateTransition(using context: UIViewControllerContextTransitioning) {
@@ -187,21 +213,18 @@ final class PlayerSurfaceAnimator: NSObject, UIViewControllerAnimatedTransitioni
     // Start with the cover the user can already see, never its placeholder.
     let artworkImage = isPresenting ? (sourceArtwork?.image ?? targetArtwork?.image) :
       (targetArtwork?.image ?? sourceArtwork?.image)
-    // Move the content with the growing surface, so the rebound is visible in
-    // the whole page rather than only in a mask outside the screen edges.
-    let collapsedTransform = reducedMotion ? originalTransform : originalTransform
-      .translatedBy(x: 0, y: playerView.bounds.height * 0.12)
-      .scaledBy(x: 0.72, y: 0.72)
-    // Measure the capsule in the collapsed coordinate space so the live view's
-    // elastic scale still lands precisely on the mini player in either direction.
-    playerView.transform = collapsedTransform
-    let localSmallFrame = playerView.convert(smallFrame, from: container)
+    // Map the full page onto the actual mini-player rectangle, including its
+    // horizontal inset and bottom position. A vertical slide plus a moving mask
+    // cannot reproduce the two-axis expansion/contraction of the whole surface.
+    let collapsedTransform = reducedMotion ? originalTransform : CGAffineTransform(
+      a: smallFrame.width / fullFrame.width, b: 0, c: 0,
+      d: smallFrame.height / fullFrame.height,
+      tx: smallFrame.midX - fullFrame.midX, ty: smallFrame.midY - fullFrame.midY)
     playerView.transform = isPresenting ? collapsedTransform : originalTransform
-    let surface = UIView(frame: isPresenting && !reducedMotion ? localSmallFrame : playerView.bounds)
+    let surface = UIView(frame: playerView.bounds)
     surface.accessibilityIdentifier = "player-transition-surface"
     surface.backgroundColor = .black
     surface.layer.cornerCurve = .continuous
-    surface.layer.cornerRadius = isPresenting && !reducedMotion ? localSmallFrame.height / 2 : 0
     playerView.mask = surface
     playerView.alpha = isPresenting ? 0 : originalAlpha
     // Refresh and appearance callbacks legitimately write artwork/control alpha.
@@ -217,15 +240,10 @@ final class PlayerSurfaceAnimator: NSObject, UIViewControllerAnimatedTransitioni
       return mask
     }
     var contentMasks = [UIView]()
-    var contentTransforms = [(view: UIView, original: CGAffineTransform)]()
     if !reducedMotion {
       // Keep the foreground visible through the spring's main travel/rebound.
       // Hide it only near the capsule, where full-size controls cannot fit.
       for content in playerView.subviews where content !== popup.backgroundImage {
-        contentTransforms.append((content, content.transform))
-        if isPresenting {
-          content.transform = content.transform.translatedBy(x: 0, y: playerView.bounds.height * 0.35)
-        }
         contentMasks.append(installMask(on: content, alpha: isPresenting ? 0 : 1,
                                         identifier: "player-transition-content-mask"))
       }
@@ -243,30 +261,27 @@ final class PlayerSurfaceAnimator: NSObject, UIViewControllerAnimatedTransitioni
       cover.layer.cornerRadius = isPresenting ? sourceArtwork.layer.cornerRadius : targetArtwork.layer.cornerRadius
       container.addSubview(cover)
       flyingArtwork = cover
-      let motion = PlayerArtworkMotion(cover: cover,
-        endFrame: isPresenting ? largeArtworkFrame : smallArtworkFrame,
-        endRadius: isPresenting ? targetArtwork.layer.cornerRadius : sourceArtwork.layer.cornerRadius)
+      for artwork in [sourceArtwork, targetArtwork, artworkShadow].compactMap({ $0 }) {
+        _ = installMask(on: artwork, alpha: 0, identifier: "player-transition-artwork-mask")
+      }
+    }
+    if !reducedMotion {
+      let motion = PlayerArtworkMotion(player: playerView, surface: surface,
+        smallFrame: smallFrame, fullFrame: fullFrame, presenting: isPresenting,
+        cover: flyingArtwork,
+        endFrame: (isPresenting ? largeArtworkFrame : smallArtworkFrame) ?? .zero,
+        endRadius: (isPresenting ? targetArtwork?.layer.cornerRadius : sourceArtwork?.layer.cornerRadius) ?? 0)
       popup.surfaceTransition.artworkMotion = motion
-      motion.update(popup.surfaceTransition.artworkProgress)
       if let destination = popup.surfaceTransition.artworkDestination {
         motion.settle(to: destination)
       } else if !context.isInteractive {
         motion.settle(to: 1)
       }
-      for artwork in [sourceArtwork, targetArtwork, artworkShadow].compactMap({ $0 }) {
-        _ = installMask(on: artwork, alpha: 0, identifier: "player-transition-artwork-mask")
-      }
     }
     let animator = UIViewPropertyAnimator(
       duration: duration, dampingRatio: Self.springDamping
-    ) { [contentMasks, contentTransforms] in
+    ) { [contentMasks] in
       playerView.transform = self.isPresenting ? originalTransform : collapsedTransform
-      for entry in contentTransforms {
-        entry.view.transform = self.isPresenting ? entry.original :
-          entry.original.translatedBy(x: 0, y: playerView.bounds.height * 0.35)
-      }
-      surface.frame = self.isPresenting || reducedMotion ? playerView.bounds : localSmallFrame
-      surface.layer.cornerRadius = self.isPresenting || reducedMotion ? 0 : localSmallFrame.height / 2
       if reducedMotion {
         playerView.alpha = self.isPresenting ? originalAlpha : 0
       } else {
@@ -289,14 +304,13 @@ final class PlayerSurfaceAnimator: NSObject, UIViewControllerAnimatedTransitioni
     }
     animator.scrubsLinearly = true
     let presenting = isPresenting
-    animator.addCompletion { [weak self, maskedViews, contentTransforms, flyingArtwork] _ in
+    animator.addCompletion { [weak self, maskedViews, flyingArtwork] _ in
       let completed = !context.transitionWasCancelled
       // Restore nested artwork masks before their ancestor content masks.
       for entry in maskedViews.reversed() { entry.view.mask = entry.original }
       playerView.mask = originalMask
       playerView.alpha = originalAlpha
       playerView.transform = originalTransform
-      for entry in contentTransforms { entry.view.transform = entry.original }
       if presenting != completed { playerView.removeFromSuperview() }
       flyingArtwork?.removeFromSuperview()
       popup.surfaceTransition.artworkMotion?.stop()

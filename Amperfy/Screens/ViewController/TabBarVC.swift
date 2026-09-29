@@ -500,8 +500,10 @@ final class FloatingPlayerDock: UIView {
   let navigationGlass = UIVisualEffectView(effect: UIGlassEffect(style: .regular))
   let searchGlass = UIVisualEffectView(effect: UIGlassEffect(style: .regular))
   let selectionGlass = UIVisualEffectView(effect: UIGlassEffect(style: .regular))
-  // Glass owns its internal rendering transforms. Animate a plain host so
-  // navigation motion remains independent of the material's interactive layout.
+  let selectionTrailGlass = UIVisualEffectView(effect: UIGlassEffect(style: .regular))
+  let selectionGlassGroup = UIVisualEffectView(effect: UIGlassContainerEffect())
+  // Geometry marker for the selected item. The two material views are direct
+  // children of a system glass container, which blends their moving contours.
   let selectionContainer = UIView()
   let navigationButtons = [UIButton(type: .system), UIButton(type: .system)]
   let navigationIcons = [UIImageView(), UIImageView()]
@@ -527,22 +529,29 @@ final class FloatingPlayerDock: UIView {
     addSubview(navigationGlass)
     addSubview(searchGlass)
     addSubview(miniPlayer.glassContainer)
-    for glass in [navigationGlass, searchGlass, selectionGlass] {
+    for glass in [navigationGlass, searchGlass, selectionGlass, selectionTrailGlass] {
       glass.cornerConfiguration = .capsule()
     }
     let interactive = UIGlassEffect(style: .regular)
     interactive.isInteractive = true
     selectionGlass.effect = interactive
     selectionGlass.isUserInteractionEnabled = false
+    selectionTrailGlass.isUserInteractionEnabled = false
+    selectionTrailGlass.isHidden = true
+    let fusion = UIGlassContainerEffect()
+    fusion.spacing = 24
+    selectionGlassGroup.effect = fusion
+    selectionGlassGroup.isUserInteractionEnabled = false
     for glass in [navigationGlass, searchGlass] {
       let effect = UIGlassEffect(style: .regular)
       effect.isInteractive = true
       glass.effect = effect
     }
     selectionContainer.isUserInteractionEnabled = false
+    navigationGlass.contentView.addSubview(selectionGlassGroup)
     navigationGlass.contentView.addSubview(selectionContainer)
-    selectionContainer.addSubview(selectionGlass)
-    selectionGlass.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+    selectionGlassGroup.contentView.addSubview(selectionTrailGlass)
+    selectionGlassGroup.contentView.addSubview(selectionGlass)
     for (index, button) in navigationButtons.enumerated() {
       navigationGlass.contentView.addSubview(button)
       button.accessibilityIdentifier = index == 0 ? "dock-home" : "dock-library"
@@ -610,6 +619,9 @@ final class FloatingPlayerDock: UIView {
       selectionElapsed = 0
       selectionLastTime = 0
       selectionContainer.frame = startingFrame
+      selectionGlass.frame = startingFrame
+      selectionTrailGlass.frame = startingFrame.insetBy(dx: startingFrame.width * 0.2, dy: 5)
+      selectionTrailGlass.isHidden = false
       let link = CADisplayLink(target: self, selector: #selector(stepSelectionMotion(_:)))
       selectionDisplayLink = link
       link.add(to: .main, forMode: .common)
@@ -661,8 +673,10 @@ final class FloatingPlayerDock: UIView {
       selectionContainer.frame = CGRect(x: 4 + CGFloat(max(0, min(1, selection))) * itemWidth,
                                        y: 4, width: itemWidth, height: side - 8)
     }
-    selectionGlass.frame = selectionContainer.bounds
+    selectionGlassGroup.frame = navigationGlass.bounds
+    if selectionDisplayLink == nil { selectionGlass.frame = selectionContainer.frame }
     selectionContainer.isHidden = isCollapsed || selection == 2
+    selectionGlassGroup.isHidden = isCollapsed || selection == 2
     compactNavigationButton.alpha = isCollapsed ? 1 : 0
     compactNavigationButton.isUserInteractionEnabled = isCollapsed
     compactNavigationButton.accessibilityElementsHidden = !isCollapsed
@@ -678,6 +692,8 @@ final class FloatingPlayerDock: UIView {
   private func stopSelectionMotion() {
     selectionDisplayLink?.invalidate()
     selectionDisplayLink = nil
+    selectionTrailGlass.isHidden = true
+    selectionGlass.frame = selectionContainer.frame
   }
 
   override func didMoveToWindow() {
@@ -694,9 +710,19 @@ final class FloatingPlayerDock: UIView {
     selectionLastTime = link.timestamp
     let t = selectionElapsed
     let progress = t >= 0.7 ? 1 : 1 - exp(-10 * t) * (cos(10 * t) + sin(10 * t))
+    let travel = min(1, max(0, progress))
+    let stretch = CGFloat(sin(travel * .pi))
     UIView.performWithoutAnimation {
       selectionContainer.frame = selectionEnd.offsetBy(
         dx: (selectionStart.minX - selectionEnd.minX) * (1 - progress), dy: 0)
+      let head = selectionContainer.frame
+      selectionGlass.frame = head.insetBy(dx: -10 * stretch, dy: 2 * stretch)
+      // The trailing lobe catches up inside the same glass container, making
+      // the outline stretch and fuse instead of sliding a rigid second pill.
+      let tailTravel = max(0, travel - 0.28 * stretch)
+      selectionTrailGlass.frame = selectionStart.offsetBy(
+        dx: (selectionEnd.minX - selectionStart.minX) * tailTravel, dy: 0)
+        .insetBy(dx: head.width * 0.2, dy: 5)
     }
     if t >= 0.7 { stopSelectionMotion() }
   }

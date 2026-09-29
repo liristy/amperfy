@@ -66,6 +66,10 @@ class ContextQueueNextSectionHeader: UIView {
     rootView = toWorkOnRootView
     usesPlayerLayout = toWorkOnRootView != nil
     if usesPlayerLayout {
+      isOpaque = false
+      backgroundColor = .clear
+      queueNameLabel.backgroundColor = .clear
+      contextNameLabel.backgroundColor = .clear
       NSLayoutConstraint.deactivate(constraints)
       let views: [UIView?] = [queueNameLabel, contextNameLabel, shuffleButton, repeatButton, autoplayButton]
       for view in views {
