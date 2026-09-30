@@ -150,14 +150,9 @@ extension UIButton.Configuration {
 
   static func playerQueueMode(isSelected: Bool) -> UIButton.Configuration {
     let color: UIColor = isSelected ? UIColor(white: 0.2, alpha: 1) : .white
-    // UIButton's automatic glass style can flatten inside a table header.
-    // Own the native material explicitly so state refresh cannot remove it.
-    let glass = UIGlassEffect(style: .regular)
-    glass.isInteractive = true
-    glass.tintColor = isSelected ? .white.withAlphaComponent(0.7) : nil
+    // The queue header owns a persistent native glass container for this icon.
     var config = UIButton.Configuration.plain()
     config.background = .clear()
-    config.background.visualEffect = glass
     config.baseForegroundColor = color
     config.imageColorTransformer = UIConfigurationColorTransformer { _ in color }
     config.preferredSymbolConfigurationForImage = .init(pointSize: 17, weight: .medium)

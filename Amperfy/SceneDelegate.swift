@@ -900,10 +900,15 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
                     }
                     try await Task.sleep(for: .milliseconds(100))
                     header.layoutIfNeeded()
-                    // This is the app-owned background effect, not an assumption
-                    // about the private hierarchy of UIButton.Configuration.glass().
+                    // Check the live app-owned glass surface and its real content,
+                    // rather than a configuration that UIKit may render flat.
                     guard buttons.allSatisfy({ button in
-                      guard let glass = button.configuration?.background.visualEffect as? UIGlassEffect else { return false }
+                      guard let material = header.glassMaterial(for: button),
+                            let glass = material.effect as? UIGlassEffect,
+                            button.superview === material.contentView,
+                            material.bounds == button.frame,
+                            material.window != nil, !material.isHidden,
+                            material.alpha > 0.9 else { return false }
                       let color = button.configuration?.imageColorTransformer?(.white)
                       return glass.isInteractive && button.window != nil &&
                         (selected ? color == UIColor(white: 0.2, alpha: 1) : color == .white)

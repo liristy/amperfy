@@ -38,6 +38,7 @@ class ContextQueueNextSectionHeader: UIView {
   private var rootView: PopupPlayerVC?
   private var playerHandler: PlayerUIHandler?
   private var usesPlayerLayout = false
+  private var modeMaterials: [UIButton: UIVisualEffectView] = [:]
 
   @IBOutlet
   weak var queueNameLabel: UILabel!
@@ -80,14 +81,28 @@ class ContextQueueNextSectionHeader: UIView {
       }
       queueNameLabel.text = "Playing next".localized
       queueNameLabel.font = .systemFont(ofSize: 17, weight: .semibold)
+      queueNameLabel.textColor = .white
       contextNameLabel.font = .systemFont(ofSize: 12)
       contextNameLabel.textColor = .white.withAlphaComponent(0.55)
       shuffleButton.accessibilityLabel = "Shuffle".localized
       repeatButton.accessibilityLabel = "Repeat".localized
       autoplayButton.accessibilityLabel = "Autoplay".localized
       for button in [shuffleButton, repeatButton, autoplayButton].compactMap({ $0 }) {
-        button.configurationUpdateHandler = { button in
-          Self.applyModeStyle(to: button)
+        if modeMaterials[button] == nil {
+          let glass = UIGlassEffect(style: .regular)
+          glass.isInteractive = true
+          let material = UIVisualEffectView(effect: glass)
+          material.cornerConfiguration = .capsule()
+          material.accessibilityIdentifier = "queue-mode-glass"
+          // The control lives inside the material so native press interaction
+          // and capsule geometry belong to a real glass surface.
+          material.contentView.addSubview(button)
+          button.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+          addSubview(material)
+          modeMaterials[button] = material
+        }
+        button.configurationUpdateHandler = { [weak self] button in
+          self?.applyModeStyle(to: button)
         }
       }
     }
@@ -101,8 +116,10 @@ class ContextQueueNextSectionHeader: UIView {
     let width = max(0, bounds.width - 16)
     let itemWidth = (width - 16) / 3
     for (index, button) in [shuffleButton, repeatButton, autoplayButton].enumerated() {
-      button?.frame = CGRect(x: 8 + CGFloat(index) * (itemWidth + 8), y: 0,
-                             width: itemWidth, height: 44)
+      guard let button, let material = modeMaterials[button] else { continue }
+      material.frame = CGRect(x: 8 + CGFloat(index) * (itemWidth + 8), y: 0,
+                              width: itemWidth, height: 44)
+      button.frame = material.bounds
     }
     queueNameLabel.frame = CGRect(x: 8, y: 54, width: width, height: 22)
     contextNameLabel.frame = CGRect(x: 8, y: 77, width: width, height: 16)
@@ -112,15 +129,30 @@ class ContextQueueNextSectionHeader: UIView {
     guard usesPlayerLayout else { return }
     for button in [shuffleButton, repeatButton, autoplayButton] {
       guard let button else { continue }
-      Self.applyModeStyle(to: button)
+      applyModeStyle(to: button)
     }
   }
 
-  private static func applyModeStyle(to button: UIButton) {
+  func glassMaterial(for button: UIButton) -> UIVisualEffectView? {
+    modeMaterials[button]
+  }
+
+  private func applyModeStyle(to button: UIButton) {
     let image = button.configuration?.image
     var config = UIButton.Configuration.playerQueueMode(isSelected: button.isSelected)
     config.image = image
     button.configuration = config
+    if let material = modeMaterials[button] {
+      let tint: UIColor? = button.isSelected ? .white.withAlphaComponent(0.7) : nil
+      if (material.effect as? UIGlassEffect)?.tintColor != tint {
+        let glass = UIGlassEffect(style: .regular)
+        glass.isInteractive = true
+        glass.tintColor = tint
+        material.effect = glass
+      }
+      material.alpha = button.isEnabled ? 1 : 0.5
+      material.isHidden = button.isHidden
+    }
   }
 
   func refresh() {
@@ -170,6 +202,7 @@ class ContextQueueNextSectionHeader: UIView {
       shuffleButton.isHidden = true
       autoplayButton.isHidden = true
     }
+    for (button, material) in modeMaterials { material.isHidden = button.isHidden }
   }
 
   @IBAction
