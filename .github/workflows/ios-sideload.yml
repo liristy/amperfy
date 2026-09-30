@@ -18,8 +18,25 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  export-glass-diagnostics:
+    runs-on: ubuntu-latest
+    permissions:
+      actions: read
+      contents: read
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          github-token: ${{ github.token }}
+          run-id: 36759739008
+          name: Amperfy-player-review-114
+          path: review
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Queue-glass-diagnostics-114
+          path: review/player-queue-glass-2-probe-*.png
+          retention-days: 7
   tests:
-    if: github.event.repository.private == false
+    if: ${{ false }} # Artifact-only diagnostic export
     runs-on: macos-26
     timeout-minutes: 35
     env:
@@ -85,7 +102,7 @@ jobs:
 
   build:
     # Standard hosted runners are free for public repositories only.
-    if: github.event.repository.private == false
+    if: ${{ false }} # Artifact-only diagnostic export
     runs-on: macos-26
     timeout-minutes: 45
     env:
