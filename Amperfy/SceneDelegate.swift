@@ -918,45 +918,6 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
                       return
                     }
                     try await compositorScreenshot("player-queue-glass-\(style.rawValue)-\(selected ? "selected" : "normal").png")
-                    if style == .light && !selected {
-                      var ancestor: UIView? = buttons.first
-                      var masks = [(UIView, UIView?, CALayer?)]()
-                      while let current = ancestor {
-                        smokeLog("Glass ancestor: \(type(of: current)) frame=\(current.frame) alpha=\(current.alpha) presented=\(String(describing: current.layer.presentation()?.opacity)) transform=\(current.transform) raster=\(current.layer.shouldRasterize) viewMask=\(String(describing: current.mask)) layerMask=\(String(describing: current.layer.mask))")
-                        masks.append((current, current.mask, current.layer.mask))
-                        ancestor = current.superview
-                      }
-                      let glass = UIGlassEffect(style: .regular)
-                      glass.tintColor = .white
-                      let reference = UIVisualEffectView(effect: glass)
-                      reference.frame = CGRect(x: 20, y: 170, width: 150, height: 44)
-                      reference.cornerConfiguration = .capsule()
-                      popup.view.addSubview(reference)
-                      let blur = UIVisualEffectView(effect: UIBlurEffect(style: .systemMaterial))
-                      blur.frame = CGRect(x: 200, y: 170, width: 150, height: 44)
-                      popup.view.addSubview(blur)
-                      try await Task.sleep(for: .milliseconds(300))
-                      try await compositorScreenshot("player-queue-glass-1-diagnostic.png")
-                      for (current, _, _) in masks {
-                        current.mask = nil
-                        current.layer.mask = nil
-                      }
-                      for material in buttons.compactMap({ header.glassMaterial(for: $0) }) {
-                        material.effect = UIVisualEffect()
-                        let effect = UIGlassEffect(style: .regular)
-                        effect.isInteractive = true
-                        material.effect = effect
-                      }
-                      reference.effect = UIVisualEffect()
-                      reference.effect = glass
-                      try await Task.sleep(for: .milliseconds(300))
-                      try await compositorScreenshot("player-queue-glass-2-diagnostic.png")
-                      for (current, viewMask, layerMask) in masks {
-                        if let viewMask { current.mask = viewMask } else { current.layer.mask = layerMask }
-                      }
-                      reference.removeFromSuperview()
-                      blur.removeFromSuperview()
-                    }
                   }
                   header.refresh()
                 }

@@ -94,19 +94,6 @@ class ContextQueueNextSectionHeader: UIView {
       repeatButton.accessibilityLabel = "Repeat".localized
       autoplayButton.accessibilityLabel = "Autoplay".localized
       for button in [shuffleButton, repeatButton, autoplayButton].compactMap({ $0 }) {
-        if modeMaterials[button] == nil {
-          // Install glass only after the queue is laid out and visible. UIKit
-          // can permanently lose its backdrop when installed under zero alpha.
-          let material = UIVisualEffectView(effect: UIVisualEffect())
-          material.cornerConfiguration = .capsule()
-          material.accessibilityIdentifier = "queue-mode-glass"
-          // The control lives inside the material so native press interaction
-          // and capsule geometry belong to a real glass surface.
-          material.contentView.addSubview(button)
-          button.autoresizingMask = [.flexibleWidth, .flexibleHeight]
-          addSubview(material)
-          modeMaterials[button] = material
-        }
         button.configurationUpdateHandler = { [weak self] button in
           self?.applyModeStyle(to: button)
         }
@@ -122,10 +109,16 @@ class ContextQueueNextSectionHeader: UIView {
     let width = max(0, bounds.width - 16)
     let itemWidth = (width - 16) / 3
     for (index, button) in [shuffleButton, repeatButton, autoplayButton].enumerated() {
-      guard let button, let material = modeMaterials[button] else { continue }
-      material.frame = CGRect(x: 8 + CGFloat(index) * (itemWidth + 8), y: 0,
-                              width: itemWidth, height: 44)
-      button.frame = material.bounds
+      guard let button else { continue }
+      let frame = CGRect(x: 8 + CGFloat(index) * (itemWidth + 8), y: 0,
+                         width: itemWidth, height: 44)
+      if let material = modeMaterials[button] {
+        material.frame = frame
+        material.cornerConfiguration = .capsule()
+        button.frame = material.bounds
+      } else {
+        button.frame = frame
+      }
     }
     queueNameLabel.frame = CGRect(x: 8, y: 54, width: width, height: 22)
     contextNameLabel.frame = CGRect(x: 8, y: 77, width: width, height: 16)
@@ -149,10 +142,17 @@ class ContextQueueNextSectionHeader: UIView {
   }
 
   private func clearGlassMaterials() {
-    for material in modeMaterials.values where material.effect is UIGlassEffect {
-      // An empty effect tears down native glass; nil can retain a stale backdrop.
+    for (button, material) in modeMaterials {
+      // Keep the real controls and their actions, but discard the native
+      // backdrop host before a hidden/zero-opacity ancestor invalidates it.
+      let frame = material.frame
+      addSubview(button)
+      button.autoresizingMask = []
+      button.frame = frame
       material.effect = UIVisualEffect()
+      material.removeFromSuperview()
     }
+    modeMaterials.removeAll()
   }
 
   private func updateGlassMaterials() {
@@ -162,13 +162,31 @@ class ContextQueueNextSectionHeader: UIView {
       guard !view.isHidden, view.alpha >= 0.99 else { return }
       ancestor = view.superview
     }
-    for (button, material) in modeMaterials where !button.isHidden && !material.bounds.isEmpty {
+    for button in [shuffleButton, repeatButton, autoplayButton].compactMap({ $0 })
+      where !button.isHidden && !button.bounds.isEmpty {
       let tint: UIColor? = button.isSelected ? .white.withAlphaComponent(0.7) : nil
-      if !(material.effect is UIGlassEffect) || (material.effect as? UIGlassEffect)?.tintColor != tint {
+      if let material = modeMaterials[button] {
+        if (material.effect as? UIGlassEffect)?.tintColor != tint {
+          let glass = UIGlassEffect(style: .regular)
+          glass.isInteractive = true
+          glass.tintColor = tint
+          material.effect = glass
+        }
+      } else {
+        // A new host, with real geometry, is necessary after re-entry: changing
+        // the effect on the old host can leave its backdrop non-compositing.
         let glass = UIGlassEffect(style: .regular)
         glass.isInteractive = true
         glass.tintColor = tint
-        material.effect = glass
+        let material = UIVisualEffectView(effect: glass)
+        material.frame = button.frame
+        material.cornerConfiguration = .capsule()
+        material.accessibilityIdentifier = "queue-mode-glass"
+        addSubview(material)
+        material.contentView.addSubview(button)
+        button.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+        button.frame = material.bounds
+        modeMaterials[button] = material
       }
     }
   }
@@ -190,12 +208,8 @@ class ContextQueueNextSectionHeader: UIView {
     var config = UIButton.Configuration.playerQueueMode(isSelected: button.isSelected)
     config.image = image
     button.configuration = config
-    if let material = modeMaterials[button] {
-      button.alpha = button.isEnabled ? 1 : 0.5
-      if button.isHidden { material.effect = UIVisualEffect() }
-      material.isHidden = button.isHidden
-      setNeedsLayout()
-    }
+    button.alpha = button.isEnabled ? 1 : 0.5
+    setNeedsLayout()
   }
 
   func refresh() {
@@ -245,10 +259,7 @@ class ContextQueueNextSectionHeader: UIView {
       shuffleButton.isHidden = true
       autoplayButton.isHidden = true
     }
-    for (button, material) in modeMaterials {
-      if button.isHidden { material.effect = UIVisualEffect() }
-      material.isHidden = button.isHidden
-    }
+    if repeatButton.isHidden { clearGlassMaterials() }
     setNeedsLayout()
   }
 

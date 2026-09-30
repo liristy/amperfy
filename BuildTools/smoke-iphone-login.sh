@@ -103,7 +103,7 @@ ready=false
 for attempt in {1..150}; do
   if [[ -f "$container/Documents/player-screenshot-request" ]]; then
     screenshot_name=$(cat "$container/Documents/player-screenshot-request")
-    if [[ ! "$screenshot_name" =~ ^player-queue-glass-[12]-(normal|selected|reopened|diagnostic)\.png$ ]]; then
+    if [[ ! "$screenshot_name" =~ ^player-queue-glass-[12]-(normal|selected|reopened)\.png$ ]]; then
       echo "Invalid player screenshot request"
       exit 1
     fi
