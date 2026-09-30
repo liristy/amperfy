@@ -925,6 +925,27 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
               popup.controlView?.lyricsButton.sendActions(for: .touchUpInside)
               guard try await compactHeaderStayedFixed() else { return }
               smokeLog("Shared card survived switching; queue scrolling moved the card and retained fixed transport controls")
+              self.appDelegate.player.play(playerIndex: PlayerIndex(queueType: .next, index: 1))
+              try await Task.sleep(for: .milliseconds(500))
+              popup.controlView?.displayPlaylistPressed()
+              try await Task.sleep(for: .milliseconds(400))
+              guard self.appDelegate.player.prevQueueCount > 0 else {
+                smokeLog("History fixture did not create past songs"); return
+              }
+              popup.tableView.setContentOffset(CGPoint(x: 0, y: -popup.tableView.adjustedContentInset.top), animated: false)
+              popup.view.layoutIfNeeded()
+              try screenshot("player-queue-history.png")
+              let playingBeforeClear = self.appDelegate.player.currentlyPlaying
+              let upcomingBeforeClear = self.appDelegate.player.nextQueueCount
+              popup.contextPrevQueueSectionHeader?.onClear?()
+              guard self.appDelegate.player.prevQueueCount == 0,
+                    self.appDelegate.player.currentlyPlaying == playingBeforeClear,
+                    self.appDelegate.player.nextQueueCount == upcomingBeforeClear else {
+                smokeLog("Clearing history changed playback or the upcoming queue"); return
+              }
+              popup.controlView?.displayPlaylistPressed()
+              popup.controlView?.lyricsButton.sendActions(for: .touchUpInside)
+              try await Task.sleep(for: .milliseconds(400))
               if let current = self.appDelegate.player.currentlyPlaying,
                  let cell = ViewCreator<PlayableTableCell>.createFromNib(withinFixedFrame: CGRect(x: 0, y: 0, width: 360, height: 64)) {
                 cell.display(playable: current, playContextCb: { _ in PlayContext() }, rootView: vc)

@@ -23,7 +23,9 @@ import MarqueeLabel
 import UIKit
 
 class ContextQueuePrevSectionHeader: UIView {
-  var onClear: (() -> Void)?
+  var onClear: (() -> Void)? {
+    didSet { clearButton.isHidden = onClear == nil }
+  }
   private let clearButton = UIButton(type: .system)
   @IBOutlet
   weak var nameLabel: MarqueeLabel!
@@ -60,6 +62,7 @@ class ContextQueuePrevSectionHeader: UIView {
       clearButton.titleLabel?.font = .systemFont(ofSize: 15)
       clearButton.addAction(UIAction { [weak self] _ in self?.onClear?() }, for: .touchUpInside)
       addSubview(clearButton)
+      clearButton.isHidden = onClear == nil
     }
   }
 

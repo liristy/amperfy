@@ -361,7 +361,12 @@ class PopupPlayerVC: UIViewController, UIScrollViewDelegate, UIGestureRecognizer
   }
 
   var transitionArtwork: UIImageView? {
-    return largeCurrentlyPlayingView?.transitionArtwork
+    guard let artwork = largeCurrentlyPlayingView?.transitionArtwork else { return nil }
+    if appDelegate.storage.settings.user.playerDisplayStyle == .compact {
+      let frame = artwork.convert(artwork.bounds, to: tableView)
+      guard tableView.bounds.contains(frame) else { return nil }
+    }
+    return artwork
   }
 
   @objc private func dragToDismiss(_ pan: UIPanGestureRecognizer) {
