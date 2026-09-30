@@ -856,7 +856,16 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
               }
               smokeLog("Multiple queue rows stayed clear across reuse, selection and appearance; artwork swiping disabled; 7pt tracks verified")
               if let header = popup.contextNextQueueSectionHeader {
+                let originalOffset = popup.tableView.contentOffset
+                let headerRect = popup.tableView.rectForHeader(inSection: PlayerSectionCategory.contextNext.rawValue)
+                popup.tableView.scrollRectToVisible(headerRect, animated: false)
+                popup.tableView.layoutIfNeeded()
                 header.layoutIfNeeded()
+                defer {
+                  header.overrideUserInterfaceStyle = .unspecified
+                  popup.tableView.setContentOffset(originalOffset, animated: false)
+                  popup.tableView.layoutIfNeeded()
+                }
                 let buttons = [header.shuffleButton, header.repeatButton, header.autoplayButton].compactMap { $0 }
                 for style in [UIUserInterfaceStyle.light, .dark] {
                   header.overrideUserInterfaceStyle = style
@@ -870,7 +879,13 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
                     button.setNeedsUpdateConfiguration()
                   }
                   header.refresh()
-                  try await Task.sleep(for: .milliseconds(60))
+                  popup.view.layoutIfNeeded()
+                  try await Task.sleep(for: .milliseconds(300))
+                  try screenshot("player-queue-glass-\(style.rawValue).png")
+                  for button in buttons {
+                    let effects = descendants(of: button).compactMap { $0 as? UIVisualEffectView }
+                    smokeLog("Queue glass \(button.accessibilityLabel ?? "unknown"): window=\(button.window != nil), selected=\(button.isSelected), effects=\(effects.map { String(describing: $0.effect) }), views=\(descendants(of: button).map { String(describing: type(of: $0)) })")
+                  }
                   guard buttons.allSatisfy({ button in
                     descendants(of: button).compactMap { $0 as? UIVisualEffectView }
                       .contains { $0.effect is UIGlassEffect }

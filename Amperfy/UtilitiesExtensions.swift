@@ -148,6 +148,17 @@ extension UIButton.Configuration {
     return config
   }
 
+  static func playerQueueMode(isSelected: Bool) -> UIButton.Configuration {
+    let color: UIColor = isSelected ? UIColor(white: 0.2, alpha: 1) : .white
+    var config = isSelected ? UIButton.Configuration.prominentGlass() : .glass()
+    config.baseForegroundColor = color
+    config.imageColorTransformer = UIConfigurationColorTransformer { _ in color }
+    config.preferredSymbolConfigurationForImage = .init(pointSize: 17, weight: .medium)
+    if isSelected { config.baseBackgroundColor = .white.withAlphaComponent(0.7) }
+    config.cornerStyle = .capsule
+    return config
+  }
+
   static func playerAccessory(isSelected: Bool) -> UIButton.Configuration {
     var config = isSelected ? UIButton.Configuration.glass() : player(isSelected: false)
     config.baseForegroundColor = isSelected ? .black : .white

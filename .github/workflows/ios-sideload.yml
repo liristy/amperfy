@@ -8,6 +8,7 @@ on:
   pull_request:
     branches:
       - master
+      - codex/liquid-glass-controls
 
 permissions:
   contents: read

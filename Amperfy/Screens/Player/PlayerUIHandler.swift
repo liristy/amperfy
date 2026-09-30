@@ -40,6 +40,8 @@ class PlayerUIHandler: NSObject {
   public static let playAndNextiOSButtonImagePointSize: CGFloat = 20
 
   private var player: PlayerFacade
+  var usesGlassModeButtons = false
+
   private var style: PlayerUIStyle
 
   init(player: PlayerFacade, style: PlayerUIStyle) {
@@ -190,6 +192,10 @@ class PlayerUIHandler: NSObject {
     nextButton.accessibilityLabel = player.playerMode == .podcast ? "Forward 30 seconds".localized : "Next track".localized
   }
 
+  private func modeButtonConfiguration(isSelected: Bool) -> UIButton.Configuration {
+    usesGlassModeButtons ? .playerQueueMode(isSelected: isSelected) : .player(isSelected: isSelected)
+  }
+
   func refreshRepeatButton(repeatButton: UIButton) {
     let isSelected = player.repeatMode != .off
     var image: UIImage?
@@ -209,7 +215,7 @@ class PlayerUIHandler: NSObject {
       repeatButton.tintColor = isSelected ? .tintColor : .secondaryLabel
       repeatButton.backgroundColor = isSelected ? .tintColor.withAlphaComponent(0.2) : .clear
     case .popupPlayer:
-      var config = UIButton.Configuration.player(isSelected: isSelected)
+      var config = modeButtonConfiguration(isSelected: isSelected)
       config.image = image?
         .withConfiguration(UIImage.SymbolConfiguration(scale: .medium))
       repeatButton.configuration = config
@@ -230,7 +236,7 @@ class PlayerUIHandler: NSObject {
       shuffleButton.tintColor = player.isShuffle ? .tintColor : .secondaryLabel
       shuffleButton.backgroundColor = player.isShuffle ? .tintColor.withAlphaComponent(0.2) : .clear
     case .popupPlayer:
-      var config = UIButton.Configuration.player(isSelected: player.isShuffle)
+      var config = modeButtonConfiguration(isSelected: player.isShuffle)
       config.image = .shuffle
         .withConfiguration(UIImage.SymbolConfiguration(scale: .medium))
       shuffleButton.configuration = config
@@ -254,7 +260,7 @@ class PlayerUIHandler: NSObject {
       autoplayButton.tintColor = isActive ? .tintColor : .secondaryLabel
       autoplayButton.backgroundColor = isActive ? .tintColor.withAlphaComponent(0.2) : .clear
     case .popupPlayer:
-      var config = UIButton.Configuration.player(isSelected: isActive)
+      var config = modeButtonConfiguration(isSelected: isActive)
       config.image = .infinity
         .withConfiguration(UIImage.SymbolConfiguration(scale: .medium))
       autoplayButton.configuration = config

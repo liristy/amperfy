@@ -65,6 +65,7 @@ class ContextQueueNextSectionHeader: UIView {
   func prepare(toWorkOnRootView: PopupPlayerVC?) {
     rootView = toWorkOnRootView
     usesPlayerLayout = toWorkOnRootView != nil
+    playerHandler?.usesGlassModeButtons = usesPlayerLayout
     if usesPlayerLayout {
       isOpaque = false
       backgroundColor = .clear
@@ -116,15 +117,10 @@ class ContextQueueNextSectionHeader: UIView {
   }
 
   private static func applyModeStyle(to button: UIButton) {
-      let color: UIColor = button.isSelected ? UIColor(white: 0.2, alpha: 1) : .white
-      let image = button.configuration?.image?.withTintColor(color, renderingMode: .alwaysOriginal)
-      var config = button.isSelected ? UIButton.Configuration.prominentGlass() : .glass()
-      config.image = image
-      config.preferredSymbolConfigurationForImage = .init(pointSize: 17, weight: .medium)
-      config.baseForegroundColor = button.isSelected ? UIColor(white: 0.2, alpha: 1) : .white
-      if button.isSelected { config.baseBackgroundColor = .white.withAlphaComponent(0.7) }
-      config.cornerStyle = .capsule
-      button.configuration = config
+    let image = button.configuration?.image
+    var config = UIButton.Configuration.playerQueueMode(isSelected: button.isSelected)
+    config.image = image
+    button.configuration = config
   }
 
   func refresh() {
