@@ -65,22 +65,36 @@ final class ProbeVC: UIViewController {
     super.viewDidAppear(animated)
     guard !mounted else { return }
     mounted = true
-    for index in 0..<3 {
-      let y = CGFloat(140 + index * 215)
-      label(["Default scroll edges", "Hidden scroll edges", "Hidden edges, no clipping"][index], y: y - 40)
-      let table = UITableView(frame: CGRect(x: 0, y: y, width: view.bounds.width, height: 150))
+    for index in 0..<4 {
+      let y = CGFloat(120 + index * 180)
+      label(["Baseline", "Initially masked table", "Initially alpha-zero table", "Drag interaction enabled"][index], y: y - 32)
+      let table = UITableView(frame: CGRect(x: 0, y: y, width: view.bounds.width, height: 130))
       table.backgroundColor = .clear
       table.isOpaque = false
-      if index > 0 {
-        table.topEdgeEffect.isHidden = true
-        table.bottomEdgeEffect.isHidden = true
+      table.topEdgeEffect.isHidden = true
+      table.bottomEdgeEffect.isHidden = true
+      if index == 1 {
+        let mask = UIView(frame: table.bounds)
+        mask.backgroundColor = .black
+        mask.alpha = 0
+        table.mask = mask
       }
-      if index == 2 { table.clipsToBounds = false }
+      if index == 2 { table.alpha = 0 }
+      if index == 3 { table.dragInteractionEnabled = true }
       let header = UIView(frame: CGRect(x: 0, y: 0, width: view.bounds.width, height: 400))
       table.tableHeaderView = header
       view.addSubview(table)
       row(in: header, y: 250, deferred: true)
       table.setContentOffset(CGPoint(x: 0, y: 230), animated: false)
+      DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
+        table.mask = nil
+        table.alpha = 1
+      }
+    }
+    DispatchQueue.main.asyncAfter(deadline: .now() + 12) {
+      _ = UIGraphicsImageRenderer(bounds: self.view.bounds).image { _ in
+        self.view.drawHierarchy(in: self.view.bounds, afterScreenUpdates: true)
+      }
     }
   }
 }
@@ -108,4 +122,6 @@ xcrun simctl bootstatus "$device_id" -b
 xcrun simctl install "$device_id" build/glass-probe/GlassProbe.app
 xcrun simctl launch --stdout="$PWD/build/glass-probe/probe.stdout.log" --stderr="$PWD/build/glass-probe/probe.stderr.log" "$device_id" test.native.glassprobe
 sleep 5
-xcrun simctl io "$device_id" screenshot build/glass-probe/scroll-edges.png
+xcrun simctl io "$device_id" screenshot build/glass-probe/before-snapshot.png
+sleep 10
+xcrun simctl io "$device_id" screenshot build/glass-probe/after-snapshot.png
