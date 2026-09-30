@@ -881,7 +881,6 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
                   header.refresh()
                   popup.view.layoutIfNeeded()
                   try await Task.sleep(for: .milliseconds(300))
-                  try screenshot("player-queue-glass-\(style.rawValue).png")
                   for selected in [false, true] {
                     for button in buttons {
                       button.isSelected = selected
@@ -903,7 +902,6 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
                     try screenshot("player-queue-glass-\(style.rawValue)-\(selected ? "selected" : "normal").png")
                   }
                   header.refresh()
-
                 }
                 guard buttons.count == 3,
                       buttons.allSatisfy({ $0.bounds.width > 80 && $0.bounds.height >= 44 }),
