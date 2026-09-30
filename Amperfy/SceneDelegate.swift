@@ -1176,13 +1176,24 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
               resumedQueue.clearUserQueue()
               try await Task.sleep(for: .milliseconds(500))
               resumedQueue.view.layoutIfNeeded()
-              guard self.appDelegate.player.userQueueCount == 0,
-                    self.appDelegate.player.currentlyPlaying == songBeforeQueueClear,
-                    resumedQueue.userQueueSectionHeader?.window == nil,
-                    queueGlassIsAligned(in: resumedQueue) else {
-                smokeLog("Clearing the user queue left a title, moved playback or detached glass"); return
-              }
+              // UIKit can retain an empty header container during row updates.
+              // Its title and action must be absent from the visible interface.
               try await compositorScreenshot("player-queue-empty.png")
+              let emptyHeader = resumedQueue.userQueueSectionHeader
+              let emptyHeaderHidden = emptyHeader?.window == nil ||
+                (emptyHeader?.nameLabel.isHidden == true && emptyHeader?.rightButton.isHidden == true)
+              let queueGlassAligned = queueGlassIsAligned(in: resumedQueue)
+              let sameSongAfterClear = self.appDelegate.player.currentlyPlaying == songBeforeQueueClear
+              guard self.appDelegate.player.userQueueCount == 0, sameSongAfterClear,
+                    emptyHeaderHidden, queueGlassAligned else {
+                smokeLog("Queue clear failed: remaining=\(self.appDelegate.player.userQueueCount), sameSong=\(sameSongAfterClear), headerHidden=\(emptyHeaderHidden), glassAligned=\(queueGlassAligned)")
+                if let header = resumedQueue.contextNextQueueSectionHeader,
+                   let background = resumedQueue.queueModeBackgrounds {
+                  let controls = [header.shuffleButton, header.repeatButton, header.autoplayButton].compactMap { $0 }
+                  smokeLog("Queue clear frames: controls=\(controls.map { $0.convert($0.bounds, to: resumedQueue.view) }), glass=\(background.subviews.map { $0.convert($0.bounds, to: resumedQueue.view) })")
+                }
+                return
+              }
               resumedQueue.dismiss(animated: false)
               self.appDelegate.storage.settings.user.playerDisplayStyle = .large
               try await Task.sleep(for: .milliseconds(300))

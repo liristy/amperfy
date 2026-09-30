@@ -64,6 +64,8 @@ extension PopupPlayerVC: UITableViewDataSource, UITableViewDelegate {
     appDelegate.player.clearUserQueue()
     tableView.endUpdates()
     refreshUserQueueSectionHeader()
+    tableView.layoutIfNeeded()
+    refreshCellMasks()
   }
 
   func convertCellViewToPlayerIndex(cell: PlayableTableCell) -> PlayerIndex? {
