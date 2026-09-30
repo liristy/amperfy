@@ -921,6 +921,41 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
                   }
                   header.refresh()
                 }
+                // Compare identical native controls in each ancestor at the same screen position.
+                let referenceGlass = UIGlassEffect(style: .regular)
+                referenceGlass.tintColor = .white
+                let reference = UIVisualEffectView(effect: referenceGlass)
+                reference.frame = CGRect(x: 8, y: 0, width: 107, height: 44)
+                reference.cornerConfiguration = .capsule()
+                let label = UILabel(frame: reference.bounds)
+                label.text = "Glass"
+                label.textAlignment = .center
+                label.textColor = .black
+                reference.contentView.addSubview(label)
+                let nativeButton = UIButton(configuration: .prominentGlass())
+                nativeButton.setTitle("Native", for: .normal)
+                nativeButton.frame = CGRect(x: 123, y: 0, width: 107, height: 44)
+                let blur = UIVisualEffectView(effect: UIBlurEffect(style: .systemMaterial))
+                blur.frame = CGRect(x: 238, y: 0, width: 107, height: 44)
+                let references: [UIView] = [reference, nativeButton, blur]
+                let originalFrames = references.map { $0.frame }
+                let nativeMaterials = buttons.compactMap { header.glassMaterial(for: $0) }
+                nativeMaterials.forEach { $0.isHidden = true }
+                for (name, parent) in [("header", header as UIView), ("table", popup.tableView as UIView), ("root", popup.view!)] {
+                  for (index, view) in references.enumerated() {
+                    parent.addSubview(view)
+                    view.frame = header.convert(originalFrames[index], to: parent)
+                  }
+                  try await Task.sleep(for: .milliseconds(300))
+                  try await compositorScreenshot("player-queue-glass-2-probe-\(name).png")
+                }
+                for (index, view) in references.enumerated() {
+                  view.frame = CGRect(x: 24 + CGFloat(index) * 115, y: 170, width: 107, height: 44)
+                }
+                try await Task.sleep(for: .milliseconds(300))
+                try await compositorScreenshot("player-queue-glass-2-probe-above.png")
+                references.forEach { $0.removeFromSuperview() }
+                nativeMaterials.forEach { $0.isHidden = false }
                 // A queue fade must dismantle glass before alpha reaches zero,
                 // then install fresh native backdrops when the queue reappears.
                 popup.controlView?.displayPlaylistPressed()
