@@ -75,6 +75,7 @@ class PopupPlayerVC: UIViewController, UIScrollViewDelegate, UIGestureRecognizer
   var contextPrevQueueSectionHeader: ContextQueuePrevSectionHeader?
   var userQueueSectionHeader: UserQueueSectionHeader?
   var contextNextQueueSectionHeader: ContextQueueNextSectionHeader?
+  private(set) var queueModeBackgrounds: QueueModeGlassBackground?
   var activeDisplayedSectionHeader = Set<PlayerSectionCategory>()
   lazy var clearEmptySectionFooter = {
     let view = UIView()
@@ -264,6 +265,7 @@ class PopupPlayerVC: UIViewController, UIScrollViewDelegate, UIGestureRecognizer
 
   override func viewDidAppear(_ animated: Bool) {
     super.viewDidAppear(animated)
+    updateQueueModeBackgrounds()
     lyricsModeDidChange()
   }
 
@@ -612,6 +614,32 @@ class PopupPlayerVC: UIViewController, UIScrollViewDelegate, UIGestureRecognizer
       let overlap = headerFrame.minY <= cell.frame.minY ? headerFrame.maxY - cell.frame.minY : 0
       (cell as? PlayableTableCell)?.maskCell(fromTop: min(cell.bounds.height, max(0, overlap)))
     }
+    updateQueueModeBackgrounds()
+  }
+
+  func updateQueueModeBackgrounds() {
+    guard isViewLoaded, view.mask == nil, tableView.mask == nil else { return }
+    guard let header = contextNextQueueSectionHeader, view.window != nil else {
+      queueModeBackgrounds?.isHidden = true
+      return
+    }
+    let buttons = [header.shuffleButton, header.repeatButton, header.autoplayButton].compactMap { $0 }
+    guard buttons.count == 3, buttons.allSatisfy({ $0.window != nil }), !tableView.isHidden else {
+      queueModeBackgrounds?.isHidden = true
+      return
+    }
+    if queueModeBackgrounds == nil {
+      let background = QueueModeGlassBackground()
+      view.insertSubview(background, belowSubview: tableView)
+      queueModeBackgrounds = background
+    }
+    queueModeBackgrounds?.update(buttons: buttons, table: tableView)
+  }
+
+  func rebuildQueueModeBackgrounds() {
+    queueModeBackgrounds?.removeFromSuperview()
+    queueModeBackgrounds = nil
+    updateQueueModeBackgrounds()
   }
 
   func refreshCellsContent() {

@@ -327,7 +327,8 @@ final class PlayerSurfaceAnimator: NSObject, UIViewControllerAnimatedTransitioni
         cover: flyingArtwork,
         endFrame: (isPresenting ? largeArtworkFrame : smallArtworkFrame) ?? .zero,
         endRadius: (isPresenting ? targetArtwork?.layer.cornerRadius : sourceArtwork?.layer.cornerRadius) ?? 0,
-        foreground: [popup.largePlayerPlaceholderView, popup.tableView, popup.controlPlaceholderView],
+        foreground: [popup.largePlayerPlaceholderView, popup.tableView, popup.controlPlaceholderView,
+                     popup.queueModeBackgrounds].compactMap { $0 },
         handle: playerView.subviews.first(where: { $0 is UIButton }), miniPlayer: sourcePlayer)
       popup.surfaceTransition.artworkMotion = motion
       if let destination = popup.surfaceTransition.artworkDestination {
@@ -378,6 +379,8 @@ final class PlayerSurfaceAnimator: NSObject, UIViewControllerAnimatedTransitioni
       popup.surfaceTransition.presentationInteraction = nil
       popup.surfaceTransition.interaction = nil
       self?.animator = nil
+      // Create fresh native backdrops after the transition masks are gone.
+      popup.rebuildQueueModeBackgrounds()
       context.completeTransition(completed)
     }
     self.animator = animator
@@ -428,6 +431,7 @@ extension PopupPlayerVC {
       outgoing.isHidden = true
       incoming.alpha = 1
       incoming.isHidden = false
+      updateQueueModeBackgrounds()
       return
     }
 
@@ -444,10 +448,15 @@ extension PopupPlayerVC {
     }
     outgoing.isHidden = false
     incoming.isHidden = false
+    updateQueueModeBackgrounds()
     UIView.animate(withDuration: Self.displaStyleAnimationDuration, delay: 0,
                    options: [.beginFromCurrentState, .allowUserInteraction, .curveEaseInOut]) {
       outgoing.alpha = 0
       incoming.alpha = 1
+      self.queueModeBackgrounds?.alpha = self.tableView.alpha
+    } completion: { [weak self] finished in
+      guard finished else { return }
+      self?.rebuildQueueModeBackgrounds()
     }
   }
 

@@ -87,8 +87,9 @@ class ContextQueueNextSectionHeader: UIView {
       repeatButton.accessibilityLabel = "Repeat".localized
       autoplayButton.accessibilityLabel = "Autoplay".localized
       for button in [shuffleButton, repeatButton, autoplayButton].compactMap({ $0 }) {
-        button.configurationUpdateHandler = { button in
+        button.configurationUpdateHandler = { [weak self] button in
           Self.applyModeStyle(to: button)
+          self?.rootView?.updateQueueModeBackgrounds()
         }
       }
     }
@@ -107,6 +108,7 @@ class ContextQueueNextSectionHeader: UIView {
     }
     queueNameLabel.frame = CGRect(x: 8, y: 54, width: width, height: 22)
     contextNameLabel.frame = CGRect(x: 8, y: 77, width: width, height: 16)
+    rootView?.updateQueueModeBackgrounds()
   }
 
   private func styleModeButtons() {
@@ -228,4 +230,48 @@ extension ContextQueueNextSectionHeader: MusicPlayable {
   }
 
   func didPlaybackRateChange() {}
+}
+
+// The controls stay in UITableView so its pan, drag and accessibility behavior
+// remain native. Their glass samples the player background in a sibling layer;
+// the table's compositing group suppresses glass placed inside its content.
+final class QueueModeGlassBackground: UIView {
+  private let materials = (0..<3).map { _ in UIVisualEffectView(effect: nil) }
+  private var states = [Int?](repeating: nil, count: 3)
+
+  init() {
+    super.init(frame: .zero)
+    isOpaque = false
+    clipsToBounds = true
+    isUserInteractionEnabled = false
+    accessibilityElementsHidden = true
+    for material in materials {
+      material.cornerConfiguration = .capsule()
+      addSubview(material)
+    }
+  }
+
+  required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
+
+  func update(buttons: [UIButton], table: UITableView) {
+    frame = table.frame
+    alpha = table.alpha
+    isHidden = table.isHidden || buttons.allSatisfy(\.isHidden)
+    for (index, button) in buttons.enumerated() {
+      let material = materials[index]
+      material.frame = button.convert(button.bounds, to: self)
+      material.isHidden = button.isHidden
+      let state = (button.isSelected ? 1 : 0) + (button.isHighlighted ? 2 : 0)
+      if states[index] != state {
+        let glass = UIGlassEffect(style: .regular)
+        if button.isSelected {
+          glass.tintColor = .white.withAlphaComponent(button.isHighlighted ? 0.85 : 0.7)
+        } else if button.isHighlighted {
+          glass.tintColor = .white.withAlphaComponent(0.18)
+        }
+        material.effect = glass
+        states[index] = state
+      }
+    }
+  }
 }

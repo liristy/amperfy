@@ -684,12 +684,6 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
                 return
               }
               smokeLog("Cancelled dismissal restored the player")
-              func layoutScreenshot(_ name: String) throws {
-                let image = UIGraphicsImageRenderer(bounds: popup.view.bounds).image { context in
-                  popup.view.layer.render(in: context.cgContext)
-                }
-                try image.pngData()?.write(to: URL.documentsDirectory.appendingPathComponent(name))
-              }
               guard let fullPlayer = popup.largeCurrentlyPlayingView,
                     abs(fullPlayer.titleLabel.font.pointSize - 20) < 0.5,
                     abs(fullPlayer.artistLabel.font.pointSize - 20) < 0.5 else {
@@ -711,7 +705,7 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
                 guard controls.audioOutputIconName == "airplay.audio", controls.airplayButton.menu == nil else { return }
                 smokeLog("AirPods 3/4 symbol, model override, refresh stability and real disconnect reset passed")
               }
-              try layoutScreenshot("player-artwork-landscape.png")
+              try await compositorScreenshot("player-artwork-landscape.png")
               // Leave enough time for the real engine to preload the second stream.
               self.appDelegate.player.seek(toSecond: 174)
               try await Task.sleep(for: .seconds(9))
@@ -855,6 +849,24 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
                 return
               }
               smokeLog("Multiple queue rows stayed clear across reuse, selection and appearance; artwork swiping disabled; 7pt tracks verified")
+              func queueGlassIsAligned(in player: PopupPlayerVC) -> Bool {
+                guard let background = player.queueModeBackgrounds,
+                      background.superview === player.view, background.window != nil,
+                      !background.isHidden, background.alpha > 0.99,
+                      !background.isUserInteractionEnabled,
+                      let header = player.contextNextQueueSectionHeader else { return false }
+                let buttons = [header.shuffleButton, header.repeatButton, header.autoplayButton].compactMap { $0 }
+                let materials = background.subviews.compactMap { $0 as? UIVisualEffectView }
+                guard buttons.count == 3, materials.count == 3 else { return false }
+                return zip(buttons, materials).allSatisfy { button, material in
+                  let expected = button.convert(button.bounds, to: player.view)
+                  let actual = material.convert(material.bounds, to: player.view)
+                  return button.isDescendant(of: player.tableView) && material.effect is UIGlassEffect &&
+                    !material.isHidden && abs(expected.minX - actual.minX) < 0.5 &&
+                    abs(expected.minY - actual.minY) < 0.5 &&
+                    abs(expected.width - actual.width) < 0.5 && abs(expected.height - actual.height) < 0.5
+                }
+              }
               if let header = popup.contextNextQueueSectionHeader {
                 let originalOffset = popup.tableView.contentOffset
                 let headerRect = popup.tableView.rectForHeader(inSection: PlayerSectionCategory.contextNext.rawValue)
@@ -888,23 +900,20 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
                     }
                     try await Task.sleep(for: .milliseconds(100))
                     header.layoutIfNeeded()
-                    // UIKit owns the native glass button's private backdrop tree.
-                    // Verify state/contrast here and inspect system-compositor captures.
+                    // Inspect the public, player-owned material views and real controls.
                     guard buttons.allSatisfy({ button in
                       let color = button.configuration?.imageColorTransformer?(.white)
                       return button.window != nil && !button.isHidden &&
                         button.configuration?.image != nil &&
                         (selected ? color == UIColor(white: 0.2, alpha: 1) : color == .white)
-                    }) else {
-                      smokeLog("Queue mode state or symbol contrast was lost after refresh")
+                    }), queueGlassIsAligned(in: popup) else {
+                      smokeLog("Queue glass geometry, mode state or symbol contrast was lost after refresh")
                       return
                     }
                     try await compositorScreenshot("player-queue-glass-\(style.rawValue)-\(selected ? "selected" : "normal").png")
                   }
                   header.refresh()
                 }
-                smokeLog("Queue layer: \(popup.tableView.layer.debugDescription), speed=\(popup.tableView.layer.speed), offset=\(popup.tableView.layer.timeOffset), keys=\(popup.tableView.layer.animationKeys() ?? [])")
-                try await compareQueueComposition(in: popup, capture: compositorScreenshot)
                 // The same native controls must survive hiding and reopening the queue.
                 popup.controlView?.displayPlaylistPressed()
                 try await Task.sleep(for: .milliseconds(350))
@@ -918,11 +927,23 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
                 popup.view.layoutIfNeeded()
                 header.layoutIfNeeded()
                 guard popup.tableView.alpha > 0.99,
-                      buttons.allSatisfy({ $0.window != nil && !$0.isHidden }) else {
+                      buttons.allSatisfy({ $0.window != nil && !$0.isHidden }),
+                      queueGlassIsAligned(in: popup) else {
                   smokeLog("Reopened queue did not restore its controls")
                   return
                 }
                 try await compositorScreenshot("player-queue-glass-2-reopened.png")
+                popup.beginInteractiveDismissal()
+                try await Task.sleep(for: .milliseconds(80))
+                popup.updateInteractiveDismissal(translation: 70)
+                try await Task.sleep(for: .milliseconds(80))
+                popup.endInteractiveDismissal(translation: 70, velocity: -150, cancelled: true)
+                try await Task.sleep(for: .seconds(1))
+                guard vc.presentedViewController === popup, popup.view.mask == nil,
+                      queueGlassIsAligned(in: popup) else {
+                  smokeLog("Cancelled queue dismissal did not restore native glass"); return
+                }
+                try await compositorScreenshot("player-queue-glass-2-cancelled.png")
                 guard buttons.count == 3,
                       buttons.allSatisfy({ $0.bounds.width > 80 && $0.bounds.height >= 44 }),
                       header.queueNameLabel.frame.minY >= buttons[0].frame.maxY + 8,
@@ -931,11 +952,16 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
                   return
                 }
               }
-              smokeLog("Queue mode state refresh, symbol contrast and re-entry passed in light and dark appearances")
+              smokeLog("Queue native glass geometry, symbol contrast, re-entry and cancelled dismissal passed in light and dark appearances")
               let queueOffset = popup.tableView.contentOffset
               let cardY = largeView.compactHeader.convert(largeView.compactHeader.bounds, to: popup.view).minY
               let controlsY = popup.controlPlaceholderView.frame.minY
               popup.tableView.setContentOffset(CGPoint(x: 0, y: queueOffset.y + 60), animated: false)
+              popup.tableView.layoutIfNeeded()
+              guard queueGlassIsAligned(in: popup) else {
+                smokeLog("Queue glass did not track the scrolling controls"); return
+              }
+              try await compositorScreenshot("player-queue-glass-2-scrolled.png")
               popup.view.layoutIfNeeded()
               let scrolledY = largeView.compactHeader.convert(largeView.compactHeader.bounds, to: popup.view).minY
               guard abs(cardY - scrolledY - 60) < 1,
@@ -1037,10 +1063,7 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
                     reopened !== popup, !reopened.isBeingPresented, reopened.view.mask == nil else {
                 smokeLog("Lyrics player did not finish reopening"); return
               }
-              let reopenedImage = UIGraphicsImageRenderer(bounds: reopened.view.bounds).image { _ in
-                reopened.view.drawHierarchy(in: reopened.view.bounds, afterScreenUpdates: true)
-              }
-              try reopenedImage.pngData()?.write(to: URL.documentsDirectory.appendingPathComponent("player-lyrics-reopened.png"))
+              try await compositorScreenshot("player-lyrics-reopened.png")
               let lyricsButton = reopened.controlView?.lyricsButton
               if lyricsButton?.isSelected == true,
                  lyricsButton?.configuration?.baseForegroundColor == UIColor.black,
@@ -1118,6 +1141,33 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
                 return
               }
               smokeLog("Whole-player capsule morph, shared cover flight in both directions, cancellation and quick dismissal passed")
+              vc.dismiss(animated: false)
+              self.appDelegate.storage.settings.user.playerDisplayStyle = .compact
+              try await Task.sleep(for: .milliseconds(200))
+              miniPlayer.openPlayerView()
+              var resumedQueue: PopupPlayerVC?
+              for _ in 0..<30 {
+                try await Task.sleep(for: .milliseconds(100))
+                if let current = vc.presentedViewController as? PopupPlayerVC,
+                   !current.isBeingPresented, current.view.mask == nil {
+                  resumedQueue = current
+                  break
+                }
+              }
+              guard let resumedQueue else {
+                smokeLog("Persisted queue did not reopen"); return
+              }
+              let modeRect = resumedQueue.tableView.rectForHeader(inSection: PlayerSectionCategory.contextNext.rawValue)
+              resumedQueue.tableView.scrollRectToVisible(modeRect, animated: false)
+              resumedQueue.view.layoutIfNeeded()
+              try await Task.sleep(for: .milliseconds(300))
+              guard queueGlassIsAligned(in: resumedQueue) else {
+                smokeLog("Persisted queue did not restore native glass after full presentation"); return
+              }
+              try await compositorScreenshot("player-queue-resumed.png")
+              resumedQueue.dismiss(animated: false)
+              self.appDelegate.storage.settings.user.playerDisplayStyle = .large
+              try await Task.sleep(for: .milliseconds(300))
               if let tabHost = vc as? UITabBarController,
                  let libraryTab = tabHost.tabs.first(where: { $0.identifier == "Tabs.Library" }) {
                 vc.dismiss(animated: false)
@@ -1374,67 +1424,3 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
     os_log("didUpdate userActivity: %s", log: self.log, type: .info, userActivity.activityType)
   }
 }
-
-#if DEBUG
-@MainActor
-private func compareQueueComposition(
-  in popup: PopupPlayerVC,
-  capture: @MainActor (String) async throws -> Void
-) async throws {
-  guard let header = popup.contextNextQueueSectionHeader else { return }
-  let table = popup.tableView!
-  let buttons = [header.shuffleButton, header.repeatButton, header.autoplayButton].compactMap { $0 }
-  let selected = buttons.map(\.isSelected)
-  let groupOpacity = table.layer.allowsGroupOpacity
-  let separator = table.separatorStyle
-  let offset = table.contentOffset
-  let tableIndex = popup.view.subviews.firstIndex(of: table)!
-  defer {
-    table.layer.allowsGroupOpacity = groupOpacity
-    table.separatorStyle = separator
-    popup.view.insertSubview(table, at: tableIndex)
-    table.setContentOffset(offset, animated: false)
-    for (button, state) in zip(buttons, selected) { button.isSelected = state }
-  }
-  for button in buttons { button.isSelected = true }
-  table.layer.allowsGroupOpacity = false
-  try await Task.sleep(for: .milliseconds(300))
-  try await capture("player-queue-composition-group.png")
-  table.layer.allowsGroupOpacity = groupOpacity
-
-  table.separatorStyle = .singleLine
-  try await Task.sleep(for: .milliseconds(300))
-  try await capture("player-queue-composition-separator.png")
-  table.separatorStyle = separator
-
-  popup.view.bringSubviewToFront(table)
-  try await Task.sleep(for: .milliseconds(300))
-  try await capture("player-queue-composition-front.png")
-  popup.view.insertSubview(table, at: tableIndex)
-
-  let container = UIVisualEffectView(effect: UIGlassContainerEffect())
-  container.frame = CGRect(x: 0, y: 0, width: header.bounds.width, height: 44)
-  header.addSubview(container)
-  for button in buttons { container.contentView.addSubview(button) }
-  try await Task.sleep(for: .milliseconds(300))
-  try await capture("player-queue-composition-container.png")
-  for button in buttons { header.addSubview(button) }
-  container.removeFromSuperview()
-
-  let rect = table.rectForHeader(inSection: PlayerSectionCategory.contextNext.rawValue)
-  table.setContentOffset(CGPoint(x: 0, y: rect.minY), animated: false)
-  table.layoutIfNeeded()
-  try await Task.sleep(for: .milliseconds(300))
-  try await capture("player-queue-composition-pinned.png")
-  table.setContentOffset(offset, animated: false)
-  table.layoutIfNeeded()
-
-  let backdrop = UIVisualEffectView(effect: UIGlassEffect(style: .regular))
-  backdrop.frame = buttons[0].convert(buttons[0].bounds, to: popup.view)
-  backdrop.cornerConfiguration = .capsule()
-  popup.view.insertSubview(backdrop, belowSubview: table)
-  try await Task.sleep(for: .milliseconds(300))
-  try await capture("player-queue-composition-behind.png")
-  backdrop.removeFromSuperview()
-}
-#endif

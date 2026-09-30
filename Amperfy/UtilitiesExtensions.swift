@@ -150,8 +150,10 @@ extension UIButton.Configuration {
 
   static func playerQueueMode(isSelected: Bool) -> UIButton.Configuration {
     let color: UIColor = isSelected ? UIColor(white: 0.2, alpha: 1) : .white
-    var config = isSelected ? UIButton.Configuration.prominentGlass() : .glass()
-    if isSelected { config.baseBackgroundColor = .white.withAlphaComponent(0.7) }
+    // The player owns the native glass backdrops outside the scrolling table.
+    var config = UIButton.Configuration.plain()
+    config.background = .clear()
+    config.background.backgroundColorTransformer = UIConfigurationColorTransformer { _ in .clear }
     config.baseForegroundColor = color
     config.imageColorTransformer = UIConfigurationColorTransformer { _ in color }
     config.preferredSymbolConfigurationForImage = .init(pointSize: 17, weight: .medium)
