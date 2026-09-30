@@ -18,23 +18,21 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  export-glass-diagnostics:
-    runs-on: ubuntu-latest
-    permissions:
-      actions: read
-      contents: read
+  glass-scroll-probe:
+    runs-on: macos-26
+    timeout-minutes: 10
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_26.3.app/Contents/Developer
     steps:
-      - uses: actions/download-artifact@v4
-        with:
-          github-token: ${{ github.token }}
-          run-id: 36759739008
-          name: Amperfy-player-review-114
-          path: review
+      - uses: actions/checkout@v4
+      - run: bash BuildTools/probe-native-glass.sh
       - uses: actions/upload-artifact@v4
+        if: always()
         with:
-          name: Queue-glass-diagnostics-114
-          path: review/player-queue-glass-2-probe-*.png
+          name: Native-glass-scroll-probe
+          path: build/glass-probe/*.png
           retention-days: 7
+
   tests:
     if: ${{ false }} # Artifact-only diagnostic export
     runs-on: macos-26
