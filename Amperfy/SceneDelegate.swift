@@ -911,46 +911,34 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
                             material.alpha > 0.9 else { return false }
                       let color = button.configuration?.imageColorTransformer?(.white)
                       return glass.isInteractive && button.window != nil &&
-                        glass.tintColor == UIColor.white.withAlphaComponent(selected ? 0.7 : 0.18) &&
+                        glass.tintColor == (selected ? UIColor.white.withAlphaComponent(0.7) : nil) &&
                         (selected ? color == UIColor(white: 0.2, alpha: 1) : color == .white)
                     }) else {
                       smokeLog("Queue buttons lost their glass material or symbol contrast after refresh")
                       return
                     }
                     try await compositorScreenshot("player-queue-glass-\(style.rawValue)-\(selected ? "selected" : "normal").png")
-                    if style == .light && !selected {
-                      var ancestor: UIView? = buttons.first
-                      while let view = ancestor {
-                        smokeLog("Glass ancestor: \(type(of: view)) frame=\(view.frame) alpha=\(view.alpha) presentation=\(String(describing: view.layer.presentation()?.opacity)) mask=\(String(describing: view.mask)) raster=\(view.layer.shouldRasterize) hidden=\(view.isHidden)")
-                        ancestor = view.superview
-                      }
-                      var references = [UIVisualEffectView]()
-                      for (index, glassStyle) in [UIGlassEffect.Style.regular, .clear, .regular].enumerated() {
-                        let effect = UIGlassEffect(style: glassStyle)
-                        effect.isInteractive = true
-                        if index == 2 { effect.tintColor = .white }
-                        let reference = UIVisualEffectView(effect: effect)
-                        reference.cornerConfiguration = .capsule()
-                        reference.frame = CGRect(x: CGFloat(20 + index * 125), y: 175, width: 115, height: 44)
-                        popup.view.addSubview(reference)
-                        references.append(reference)
-                      }
-                      try await Task.sleep(for: .milliseconds(300))
-                      try await compositorScreenshot("player-queue-glass-1-diagnostic.png")
-                      for button in buttons {
-                        if let material = header.glassMaterial(for: button) {
-                          let effect = material.effect
-                          material.effect = nil
-                          material.effect = effect
-                        }
-                      }
-                      try await Task.sleep(for: .milliseconds(300))
-                      try await compositorScreenshot("player-queue-glass-2-diagnostic.png")
-                      references.forEach { $0.removeFromSuperview() }
-                    }
                   }
                   header.refresh()
                 }
+                // A queue fade must dismantle glass before alpha reaches zero,
+                // then install fresh native backdrops when the queue reappears.
+                popup.controlView?.displayPlaylistPressed()
+                try await Task.sleep(for: .milliseconds(350))
+                guard buttons.allSatisfy({ !(header.glassMaterial(for: $0)?.effect is UIGlassEffect) }) else {
+                  smokeLog("Hidden queue retained glass during its fade")
+                  return
+                }
+                popup.controlView?.displayPlaylistPressed()
+                try await Task.sleep(for: .milliseconds(350))
+                popup.tableView.scrollRectToVisible(headerRect, animated: false)
+                popup.view.layoutIfNeeded()
+                header.layoutIfNeeded()
+                guard buttons.allSatisfy({ header.glassMaterial(for: $0)?.effect is UIGlassEffect }) else {
+                  smokeLog("Reopened queue did not recreate its glass")
+                  return
+                }
+                try await compositorScreenshot("player-queue-glass-2-reopened.png")
                 guard buttons.count == 3,
                       buttons.allSatisfy({ $0.bounds.width > 80 && $0.bounds.height >= 44 }),
                       header.queueNameLabel.frame.minY >= buttons[0].frame.maxY + 8,

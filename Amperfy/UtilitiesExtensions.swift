@@ -153,6 +153,7 @@ extension UIButton.Configuration {
     // The queue header owns a persistent native glass container for this icon.
     var config = UIButton.Configuration.plain()
     config.background = .clear()
+    config.background.backgroundColorTransformer = UIConfigurationColorTransformer { _ in .clear }
     config.baseForegroundColor = color
     config.imageColorTransformer = UIConfigurationColorTransformer { _ in color }
     config.preferredSymbolConfigurationForImage = .init(pointSize: 17, weight: .medium)

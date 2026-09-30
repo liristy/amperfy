@@ -98,7 +98,7 @@ enum ListeningStatisticsSmoke {
     var readyScroll: UIScrollView?
     for _ in 0..<60 {
       host.view.layoutIfNeeded()
-      if !model.loading, let scroll = descendants(host.view).compactMap({ $0 as? UIScrollView }).first(where: {
+      if !model.loading, model.snapshot?.count == 328, let scroll = descendants(host.view).compactMap({ $0 as? UIScrollView }).first(where: {
         $0.bounds.height > 250 && $0.contentSize.height > $0.bounds.height + 250
       }) {
         readyScroll = scroll

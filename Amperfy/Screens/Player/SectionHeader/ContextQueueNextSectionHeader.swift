@@ -39,6 +39,8 @@ class ContextQueueNextSectionHeader: UIView {
   private var playerHandler: PlayerUIHandler?
   private var usesPlayerLayout = false
   private var modeMaterials: [UIButton: UIVisualEffectView] = [:]
+  enum GlassSuppressionReason { case playerTransition, queueHidden }
+  private var glassSuppressionReasons: Set<GlassSuppressionReason> = [.queueHidden]
 
   @IBOutlet
   weak var queueNameLabel: UILabel!
@@ -58,6 +60,10 @@ class ContextQueueNextSectionHeader: UIView {
   required init?(coder aDecoder: NSCoder) {
     super.init(coder: aDecoder)
     self.layoutMargins = Self.margin
+    registerForTraitChanges([UITraitUserInterfaceStyle.self]) { (view: ContextQueueNextSectionHeader, _: UITraitCollection) in
+      view.clearGlassMaterials()
+      view.setNeedsLayout()
+    }
     self.player = appDelegate.player
     player.addNotifier(notifier: self)
     self.playerHandler = PlayerUIHandler(player: player, style: .popupPlayer)
@@ -89,9 +95,9 @@ class ContextQueueNextSectionHeader: UIView {
       autoplayButton.accessibilityLabel = "Autoplay".localized
       for button in [shuffleButton, repeatButton, autoplayButton].compactMap({ $0 }) {
         if modeMaterials[button] == nil {
-          let glass = UIGlassEffect(style: .regular)
-          glass.isInteractive = true
-          let material = UIVisualEffectView(effect: glass)
+          // Install glass only after the queue is laid out and visible. UIKit
+          // can permanently lose its backdrop when installed under zero alpha.
+          let material = UIVisualEffectView(effect: UIVisualEffect())
           material.cornerConfiguration = .capsule()
           material.accessibilityIdentifier = "queue-mode-glass"
           // The control lives inside the material so native press interaction
@@ -123,6 +129,48 @@ class ContextQueueNextSectionHeader: UIView {
     }
     queueNameLabel.frame = CGRect(x: 8, y: 54, width: width, height: 22)
     contextNameLabel.frame = CGRect(x: 8, y: 77, width: width, height: 16)
+    updateGlassMaterials()
+  }
+
+  override func didMoveToWindow() {
+    super.didMoveToWindow()
+    if window == nil { clearGlassMaterials() }
+    setNeedsLayout()
+  }
+
+  func setGlassSuppressed(_ suppressed: Bool, for reason: GlassSuppressionReason) {
+    if suppressed {
+      glassSuppressionReasons.insert(reason)
+      clearGlassMaterials()
+    } else {
+      glassSuppressionReasons.remove(reason)
+      setNeedsLayout()
+    }
+  }
+
+  private func clearGlassMaterials() {
+    for material in modeMaterials.values where material.effect is UIGlassEffect {
+      // An empty effect tears down native glass; nil can retain a stale backdrop.
+      material.effect = UIVisualEffect()
+    }
+  }
+
+  private func updateGlassMaterials() {
+    guard glassSuppressionReasons.isEmpty, window != nil else { return }
+    var ancestor: UIView? = self
+    while let view = ancestor {
+      guard !view.isHidden, view.alpha >= 0.99 else { return }
+      ancestor = view.superview
+    }
+    for (button, material) in modeMaterials where !button.isHidden && !material.bounds.isEmpty {
+      let tint: UIColor? = button.isSelected ? .white.withAlphaComponent(0.7) : nil
+      if !(material.effect is UIGlassEffect) || (material.effect as? UIGlassEffect)?.tintColor != tint {
+        let glass = UIGlassEffect(style: .regular)
+        glass.isInteractive = true
+        glass.tintColor = tint
+        material.effect = glass
+      }
+    }
   }
 
   private func styleModeButtons() {
@@ -143,17 +191,10 @@ class ContextQueueNextSectionHeader: UIView {
     config.image = image
     button.configuration = config
     if let material = modeMaterials[button] {
-      // A light native tint keeps an inactive capsule legible against the
-      // full player's smooth artwork background in dark appearance.
-      let tint = UIColor.white.withAlphaComponent(button.isSelected ? 0.7 : 0.18)
-      if (material.effect as? UIGlassEffect)?.tintColor != tint {
-        let glass = UIGlassEffect(style: .regular)
-        glass.isInteractive = true
-        glass.tintColor = tint
-        material.effect = glass
-      }
-      material.alpha = button.isEnabled ? 1 : 0.5
+      button.alpha = button.isEnabled ? 1 : 0.5
+      if button.isHidden { material.effect = UIVisualEffect() }
       material.isHidden = button.isHidden
+      setNeedsLayout()
     }
   }
 
@@ -204,7 +245,11 @@ class ContextQueueNextSectionHeader: UIView {
       shuffleButton.isHidden = true
       autoplayButton.isHidden = true
     }
-    for (button, material) in modeMaterials { material.isHidden = button.isHidden }
+    for (button, material) in modeMaterials {
+      if button.isHidden { material.effect = UIVisualEffect() }
+      material.isHidden = button.isHidden
+    }
+    setNeedsLayout()
   }
 
   @IBAction

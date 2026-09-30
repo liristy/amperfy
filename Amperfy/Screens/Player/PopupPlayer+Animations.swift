@@ -243,6 +243,7 @@ final class PlayerSurfaceAnimator: NSObject, UIViewControllerAnimatedTransitioni
       context.completeTransition(false)
       return UIViewPropertyAnimator(duration: 0, curve: .linear)
     }
+    popup.contextNextQueueSectionHeader?.setGlassSuppressed(true, for: .playerTransition)
     if isPresenting {
       toView.frame = context.finalFrame(for: toVC)
       container.addSubview(toView)
@@ -379,6 +380,7 @@ final class PlayerSurfaceAnimator: NSObject, UIViewControllerAnimatedTransitioni
       popup.surfaceTransition.interaction = nil
       self?.animator = nil
       context.completeTransition(completed)
+      popup.contextNextQueueSectionHeader?.setGlassSuppressed(false, for: .playerTransition)
     }
     self.animator = animator
     return animator
@@ -403,6 +405,9 @@ extension PopupPlayerVC {
 
   func changeDisplayStyleVisually(to displayStyle: PlayerDisplayStyle, animated: Bool = true) {
     guard let largeView = largeCurrentlyPlayingView else { return }
+    // Remove the backdrop before its ancestors fade to zero. Reinstall it from
+    // the header's next visible layout pass after the transition completes.
+    contextNextQueueSectionHeader?.setGlassSuppressed(true, for: .queueHidden)
     largeView.finishDisplayAnimation()
     let headerWasVisible = !largeView.compactHeader.isHidden
     let sourceArtwork = largeView.transitionArtwork
@@ -428,6 +433,7 @@ extension PopupPlayerVC {
       outgoing.isHidden = true
       incoming.alpha = 1
       incoming.isHidden = false
+      contextNextQueueSectionHeader?.setGlassSuppressed(displayStyle != .compact, for: .queueHidden)
       return
     }
 
@@ -448,6 +454,10 @@ extension PopupPlayerVC {
                    options: [.beginFromCurrentState, .allowUserInteraction, .curveEaseInOut]) {
       outgoing.alpha = 0
       incoming.alpha = 1
+    } completion: { [weak self] _ in
+      guard let self else { return }
+      self.contextNextQueueSectionHeader?.setGlassSuppressed(
+        self.appDelegate.storage.settings.user.playerDisplayStyle != .compact, for: .queueHidden)
     }
   }
 
