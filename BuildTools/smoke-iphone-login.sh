@@ -99,11 +99,11 @@ xcrun simctl launch \
   "$device_id" "$bundle_id" -AppleLanguages '(zh-Hans)' --smoke-login --smoke-player
 ready=false
 # The player suite also checks all statistics panels and native detail returns.
-# Keep a bounded five-minute deadline; report an explicit failure immediately.
+# Bound polling between compositor captures; report an explicit failure immediately.
 for attempt in {1..150}; do
   if [[ -f "$container/Documents/player-screenshot-request" ]]; then
     screenshot_name=$(cat "$container/Documents/player-screenshot-request")
-    if [[ ! "$screenshot_name" =~ ^player-queue-glass-[12]-(normal|selected|reopened|probe-header|probe-table|probe-root|probe-above)\.png$ ]]; then
+    if [[ ! "$screenshot_name" =~ ^player-[a-z0-9-]+\.png$ ]]; then
       echo "Invalid player screenshot request"
       exit 1
     fi

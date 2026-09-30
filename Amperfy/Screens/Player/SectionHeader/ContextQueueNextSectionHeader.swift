@@ -38,9 +38,6 @@ class ContextQueueNextSectionHeader: UIView {
   private var rootView: PopupPlayerVC?
   private var playerHandler: PlayerUIHandler?
   private var usesPlayerLayout = false
-  private var modeMaterials: [UIButton: UIVisualEffectView] = [:]
-  enum GlassSuppressionReason { case playerTransition, queueHidden }
-  private var glassSuppressionReasons: Set<GlassSuppressionReason> = [.queueHidden]
 
   @IBOutlet
   weak var queueNameLabel: UILabel!
@@ -60,10 +57,6 @@ class ContextQueueNextSectionHeader: UIView {
   required init?(coder aDecoder: NSCoder) {
     super.init(coder: aDecoder)
     self.layoutMargins = Self.margin
-    registerForTraitChanges([UITraitUserInterfaceStyle.self]) { (view: ContextQueueNextSectionHeader, _: UITraitCollection) in
-      view.clearGlassMaterials()
-      view.setNeedsLayout()
-    }
     self.player = appDelegate.player
     player.addNotifier(notifier: self)
     self.playerHandler = PlayerUIHandler(player: player, style: .popupPlayer)
@@ -94,8 +87,8 @@ class ContextQueueNextSectionHeader: UIView {
       repeatButton.accessibilityLabel = "Repeat".localized
       autoplayButton.accessibilityLabel = "Autoplay".localized
       for button in [shuffleButton, repeatButton, autoplayButton].compactMap({ $0 }) {
-        button.configurationUpdateHandler = { [weak self] button in
-          self?.applyModeStyle(to: button)
+        button.configurationUpdateHandler = { button in
+          Self.applyModeStyle(to: button)
         }
       }
     }
@@ -109,107 +102,26 @@ class ContextQueueNextSectionHeader: UIView {
     let width = max(0, bounds.width - 16)
     let itemWidth = (width - 16) / 3
     for (index, button) in [shuffleButton, repeatButton, autoplayButton].enumerated() {
-      guard let button else { continue }
-      let frame = CGRect(x: 8 + CGFloat(index) * (itemWidth + 8), y: 0,
-                         width: itemWidth, height: 44)
-      if let material = modeMaterials[button] {
-        material.frame = frame
-        material.cornerConfiguration = .capsule()
-        button.frame = material.bounds
-      } else {
-        button.frame = frame
-      }
+      button?.frame = CGRect(x: 8 + CGFloat(index) * (itemWidth + 8), y: 0,
+                             width: itemWidth, height: 44)
     }
     queueNameLabel.frame = CGRect(x: 8, y: 54, width: width, height: 22)
     contextNameLabel.frame = CGRect(x: 8, y: 77, width: width, height: 16)
-    updateGlassMaterials()
-  }
-
-  override func didMoveToWindow() {
-    super.didMoveToWindow()
-    if window == nil { clearGlassMaterials() }
-    setNeedsLayout()
-  }
-
-  func setGlassSuppressed(_ suppressed: Bool, for reason: GlassSuppressionReason) {
-    if suppressed {
-      glassSuppressionReasons.insert(reason)
-      clearGlassMaterials()
-    } else {
-      glassSuppressionReasons.remove(reason)
-      setNeedsLayout()
-    }
-  }
-
-  private func clearGlassMaterials() {
-    for (button, material) in modeMaterials {
-      // Keep the real controls and their actions, but discard the native
-      // backdrop host before a hidden/zero-opacity ancestor invalidates it.
-      let frame = material.frame
-      addSubview(button)
-      button.autoresizingMask = []
-      button.frame = frame
-      material.effect = UIVisualEffect()
-      material.removeFromSuperview()
-    }
-    modeMaterials.removeAll()
-  }
-
-  private func updateGlassMaterials() {
-    guard glassSuppressionReasons.isEmpty, window != nil else { return }
-    var ancestor: UIView? = self
-    while let view = ancestor {
-      guard !view.isHidden, view.alpha >= 0.99 else { return }
-      ancestor = view.superview
-    }
-    for button in [shuffleButton, repeatButton, autoplayButton].compactMap({ $0 })
-      where !button.isHidden && !button.bounds.isEmpty {
-      let tint: UIColor? = button.isSelected ? .white.withAlphaComponent(0.7) : nil
-      if let material = modeMaterials[button] {
-        if (material.effect as? UIGlassEffect)?.tintColor != tint {
-          let glass = UIGlassEffect(style: .regular)
-          glass.isInteractive = true
-          glass.tintColor = tint
-          material.effect = glass
-        }
-      } else {
-        // A new host, with real geometry, is necessary after re-entry: changing
-        // the effect on the old host can leave its backdrop non-compositing.
-        let glass = UIGlassEffect(style: .regular)
-        glass.isInteractive = true
-        glass.tintColor = tint
-        let material = UIVisualEffectView(effect: glass)
-        material.frame = button.frame
-        material.cornerConfiguration = .capsule()
-        material.accessibilityIdentifier = "queue-mode-glass"
-        addSubview(material)
-        material.contentView.addSubview(button)
-        button.autoresizingMask = [.flexibleWidth, .flexibleHeight]
-        button.frame = material.bounds
-        modeMaterials[button] = material
-      }
-    }
   }
 
   private func styleModeButtons() {
     guard usesPlayerLayout else { return }
     for button in [shuffleButton, repeatButton, autoplayButton] {
       guard let button else { continue }
-      applyModeStyle(to: button)
+      Self.applyModeStyle(to: button)
     }
   }
 
-  func glassMaterial(for button: UIButton) -> UIVisualEffectView? {
-    modeMaterials[button]
-  }
-
-  private func applyModeStyle(to button: UIButton) {
+  private static func applyModeStyle(to button: UIButton) {
     let image = button.configuration?.image
     var config = UIButton.Configuration.playerQueueMode(isSelected: button.isSelected)
     config.image = image
     button.configuration = config
-    button.alpha = button.isEnabled ? 1 : 0.5
-    setNeedsLayout()
   }
 
   func refresh() {
@@ -259,8 +171,6 @@ class ContextQueueNextSectionHeader: UIView {
       shuffleButton.isHidden = true
       autoplayButton.isHidden = true
     }
-    if repeatButton.isHidden { clearGlassMaterials() }
-    setNeedsLayout()
   }
 
   @IBAction

@@ -482,14 +482,19 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
                                                         preferredSymbol: "airpods.gen3") == "airpods.gen3",
                     PlayerControlView.audioOutputSymbol(portType: .builtInSpeaker, portName: "iPhone",
                                                         preferredSymbol: "airpods.gen3") == "airplay.audio" else { return }
-              func transitionScreenshot(_ name: String) throws {
-                guard let window = miniPlayer.window else { return }
-                let image = UIGraphicsImageRenderer(bounds: window.bounds).image { _ in
-                  window.drawHierarchy(in: window.bounds, afterScreenUpdates: false)
+              func compositorScreenshot(_ name: String) async throws {
+                let request = URL.documentsDirectory.appendingPathComponent("player-screenshot-request")
+                let complete = URL.documentsDirectory.appendingPathComponent("player-screenshot-complete")
+                try? FileManager.default.removeItem(at: complete)
+                try name.write(to: request, atomically: true, encoding: .utf8)
+                for _ in 0..<150 {
+                  if FileManager.default.fileExists(atPath: complete.path) { return }
+                  try await Task.sleep(for: .milliseconds(100))
                 }
-                try image.pngData()?.write(to: URL.documentsDirectory.appendingPathComponent(name))
+                throw NSError(domain: "PlayerSmoke", code: 1,
+                  userInfo: [NSLocalizedDescriptionKey: "Simulator screenshot timed out: \(name)"])
               }
-              try transitionScreenshot("player-opening-refreshed.png")
+              try await compositorScreenshot("player-opening-refreshed.png")
               miniPlayer.endPlayerExpansion(translation: pausedDistance * 0.85, velocity: 850)
               try await Task.sleep(for: .seconds(1))
               guard hiddenCover.mask == nil, miniPlayer.artworkImage.mask == nil,
@@ -517,7 +522,7 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
                 smokeLog("Closing did not hand off to the animated capsule, or exposed fullscreen controls")
                 playerPolishChecksPassed = false
               }
-              try transitionScreenshot("player-closing-capsule.png")
+              try await compositorScreenshot("player-closing-capsule.png")
               pausedPopup.endInteractiveDismissal(translation: closingDistance * 0.93, velocity: -200, cancelled: true)
               try await Task.sleep(for: .seconds(1))
               guard pausedPopup.view.alpha == 1, pausedPopup.view.mask == nil,
@@ -582,14 +587,9 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
                 return
               }
               smokeLog("Shared album cover moved from \(miniCoverFrame) to held frame \(coverFrame)")
-              // Capture the held gesture before release. Rendering system glass can
-              // stall the main thread and hide the short rebound from frame sampling.
-              if let window = miniPlayer.window {
-                let image = UIGraphicsImageRenderer(bounds: window.bounds).image { _ in
-                  window.drawHierarchy(in: window.bounds, afterScreenUpdates: false)
-                }
-                try image.pngData()?.write(to: URL.documentsDirectory.appendingPathComponent("player-opening.png"))
-              }
+              // The compositor captures native glass without asking UIKit to redraw
+              // a paused transition into a separate graphics context.
+              try await compositorScreenshot("player-opening.png")
               miniPlayer.endPlayerExpansion(translation: 160, velocity: 850)
               // UIKit may defer presentation until the next run-loop turn. Sample frames
               // throughout the transition instead of assuming one fixed scheduling delay.
@@ -684,23 +684,11 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
                 return
               }
               smokeLog("Cancelled dismissal restored the player")
-              func screenshot(_ name: String) throws {
-                let image = UIGraphicsImageRenderer(bounds: popup.view.bounds).image { _ in
-                  popup.view.drawHierarchy(in: popup.view.bounds, afterScreenUpdates: true)
+              func layoutScreenshot(_ name: String) throws {
+                let image = UIGraphicsImageRenderer(bounds: popup.view.bounds).image { context in
+                  popup.view.layer.render(in: context.cgContext)
                 }
                 try image.pngData()?.write(to: URL.documentsDirectory.appendingPathComponent(name))
-              }
-              func compositorScreenshot(_ name: String) async throws {
-                let request = URL.documentsDirectory.appendingPathComponent("player-screenshot-request")
-                let complete = URL.documentsDirectory.appendingPathComponent("player-screenshot-complete")
-                try? FileManager.default.removeItem(at: complete)
-                try name.write(to: request, atomically: true, encoding: .utf8)
-                for _ in 0..<150 {
-                  if FileManager.default.fileExists(atPath: complete.path) { return }
-                  try await Task.sleep(for: .milliseconds(100))
-                }
-                throw NSError(domain: "PlayerSmoke", code: 1,
-                  userInfo: [NSLocalizedDescriptionKey: "Simulator screenshot timed out: \(name)"])
               }
               guard let fullPlayer = popup.largeCurrentlyPlayingView,
                     abs(fullPlayer.titleLabel.font.pointSize - 20) < 0.5,
@@ -723,7 +711,7 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
                 guard controls.audioOutputIconName == "airplay.audio", controls.airplayButton.menu == nil else { return }
                 smokeLog("AirPods 3/4 symbol, model override, refresh stability and real disconnect reset passed")
               }
-              try screenshot("player-artwork-landscape.png")
+              try layoutScreenshot("player-artwork-landscape.png")
               // Leave enough time for the real engine to preload the second stream.
               self.appDelegate.player.seek(toSecond: 174)
               try await Task.sleep(for: .seconds(9))
@@ -733,7 +721,7 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
                 return
               }
               smokeLog("Gapless playback updated song and player title")
-              try screenshot("player-next-song.png")
+              try await compositorScreenshot("player-next-song.png")
               self.appDelegate.player.seek(toSecond: 42)
               try await Task.sleep(for: .seconds(1))
               self.appDelegate.player.pause()
@@ -743,7 +731,7 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
                 smokeLog("Pausing did not shrink only the large artwork")
                 return
               }
-              try screenshot("player-paused-artwork.png")
+              try await compositorScreenshot("player-paused-artwork.png")
               self.appDelegate.player.play()
               try await Task.sleep(for: .milliseconds(800))
               guard fullPlayer.artworkImage.transform == .identity else {
@@ -771,7 +759,7 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
               }
               guard activeLyricIsVisible() else { smokeLog("Lyrics did not highlight when opened"); return }
               let heightWithControls = popup.largePlayerPlaceholderView.bounds.height
-              try screenshot("player-lyrics-controls.png")
+              try await compositorScreenshot("player-lyrics-controls.png")
               try await Task.sleep(for: .seconds(5))
               guard popup.areLyricsControlsHidden,
                     popup.largePlayerPlaceholderView.bounds.height > heightWithControls + 200 else {
@@ -780,14 +768,14 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
               }
               popup.largeCurrentlyPlayingView?.refreshLyricsTime(time: CMTime(seconds: 42, preferredTimescale: 1000))
               guard activeLyricIsVisible() else { smokeLog("Immersive lyrics lost their highlight"); return }
-              try screenshot("player-lyrics-immersive.png")
+              try await compositorScreenshot("player-lyrics-immersive.png")
               popup.restoreLyricsControls()
               try await Task.sleep(for: .seconds(1))
               guard !popup.areLyricsControlsHidden,
                     abs(popup.largePlayerPlaceholderView.bounds.height - heightWithControls) < 1 else { return }
               guard activeLyricIsVisible() else { smokeLog("Restoring controls lost the lyrics highlight"); return }
               smokeLog("Lyrics stayed highlighted across immersive layout changes")
-              try screenshot("player-lyrics-restored.png")
+              try await compositorScreenshot("player-lyrics-restored.png")
               // The same header instances and screen rectangles must survive
               // every frame, including reversal, scrolling and immersive layout.
               guard let largeView = popup.largeCurrentlyPlayingView else { return }
@@ -828,7 +816,7 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
                 smokeLog("Lyrics to queue moved the fixed header")
                 return
               }
-              try screenshot("player-queue-from-lyrics.png")
+              try await compositorScreenshot("player-queue-from-lyrics.png")
               // Exercise both sections and state updates, not just a single next row.
               for style in [UIUserInterfaceStyle.light, .dark] {
                 popup.overrideUserInterfaceStyle = style
@@ -857,7 +845,7 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
               popup.overrideUserInterfaceStyle = .dark
               popup.scrollToCurrentlyPlayingRow()
               popup.tableView.layoutIfNeeded()
-              try screenshot("player-queue-multiple.png")
+              try await compositorScreenshot("player-queue-multiple.png")
               guard (largeView.artworkImage.gestureRecognizers ?? []).allSatisfy({ !($0 is UISwipeGestureRecognizer) }),
                     let controls = popup.controlView,
                     descendants(of: controls).compactMap({ $0 as? PlayerTrackSlider }).allSatisfy({
@@ -900,68 +888,26 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
                     }
                     try await Task.sleep(for: .milliseconds(100))
                     header.layoutIfNeeded()
-                    // Check the live app-owned glass surface and its real content,
-                    // rather than a configuration that UIKit may render flat.
+                    // UIKit owns the native glass button's private backdrop tree.
+                    // Verify state/contrast here and inspect system-compositor captures.
                     guard buttons.allSatisfy({ button in
-                      guard let material = header.glassMaterial(for: button),
-                            let glass = material.effect as? UIGlassEffect,
-                            button.superview === material.contentView,
-                            material.bounds == button.frame,
-                            material.window != nil, !material.isHidden,
-                            material.alpha > 0.9 else { return false }
                       let color = button.configuration?.imageColorTransformer?(.white)
-                      return glass.isInteractive && button.window != nil &&
-                        glass.tintColor == (selected ? UIColor.white.withAlphaComponent(0.7) : nil) &&
+                      return button.window != nil && !button.isHidden &&
+                        button.configuration?.image != nil &&
                         (selected ? color == UIColor(white: 0.2, alpha: 1) : color == .white)
                     }) else {
-                      smokeLog("Queue buttons lost their glass material or symbol contrast after refresh")
+                      smokeLog("Queue mode state or symbol contrast was lost after refresh")
                       return
                     }
                     try await compositorScreenshot("player-queue-glass-\(style.rawValue)-\(selected ? "selected" : "normal").png")
                   }
                   header.refresh()
                 }
-                // Compare identical native controls in each ancestor at the same screen position.
-                let referenceGlass = UIGlassEffect(style: .regular)
-                referenceGlass.tintColor = .white
-                let reference = UIVisualEffectView(effect: referenceGlass)
-                reference.frame = CGRect(x: 8, y: 0, width: 107, height: 44)
-                reference.cornerConfiguration = .capsule()
-                let label = UILabel(frame: reference.bounds)
-                label.text = "Glass"
-                label.textAlignment = .center
-                label.textColor = .black
-                reference.contentView.addSubview(label)
-                let nativeButton = UIButton(configuration: .prominentGlass())
-                nativeButton.setTitle("Native", for: .normal)
-                nativeButton.frame = CGRect(x: 123, y: 0, width: 107, height: 44)
-                let blur = UIVisualEffectView(effect: UIBlurEffect(style: .systemMaterial))
-                blur.frame = CGRect(x: 238, y: 0, width: 107, height: 44)
-                let references: [UIView] = [reference, nativeButton, blur]
-                let originalFrames = references.map { $0.frame }
-                let nativeMaterials = buttons.compactMap { header.glassMaterial(for: $0) }
-                nativeMaterials.forEach { $0.isHidden = true }
-                for (name, parent) in [("header", header as UIView), ("table", popup.tableView as UIView), ("root", popup.view!)] {
-                  for (index, view) in references.enumerated() {
-                    parent.addSubview(view)
-                    view.frame = header.convert(originalFrames[index], to: parent)
-                  }
-                  try await Task.sleep(for: .milliseconds(300))
-                  try await compositorScreenshot("player-queue-glass-2-probe-\(name).png")
-                }
-                for (index, view) in references.enumerated() {
-                  view.frame = CGRect(x: 24 + CGFloat(index) * 115, y: 170, width: 107, height: 44)
-                }
-                try await Task.sleep(for: .milliseconds(300))
-                try await compositorScreenshot("player-queue-glass-2-probe-above.png")
-                references.forEach { $0.removeFromSuperview() }
-                nativeMaterials.forEach { $0.isHidden = false }
-                // A queue fade must dismantle glass before alpha reaches zero,
-                // then install fresh native backdrops when the queue reappears.
+                // The same native controls must survive hiding and reopening the queue.
                 popup.controlView?.displayPlaylistPressed()
                 try await Task.sleep(for: .milliseconds(350))
-                guard buttons.allSatisfy({ !(header.glassMaterial(for: $0)?.effect is UIGlassEffect) }) else {
-                  smokeLog("Hidden queue retained glass during its fade")
+                guard popup.tableView.alpha < 0.01 else {
+                  smokeLog("Queue stayed visible after closing")
                   return
                 }
                 popup.controlView?.displayPlaylistPressed()
@@ -969,8 +915,9 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
                 popup.tableView.scrollRectToVisible(headerRect, animated: false)
                 popup.view.layoutIfNeeded()
                 header.layoutIfNeeded()
-                guard buttons.allSatisfy({ header.glassMaterial(for: $0)?.effect is UIGlassEffect }) else {
-                  smokeLog("Reopened queue did not recreate its glass")
+                guard popup.tableView.alpha > 0.99,
+                      buttons.allSatisfy({ $0.window != nil && !$0.isHidden }) else {
+                  smokeLog("Reopened queue did not restore its controls")
                   return
                 }
                 try await compositorScreenshot("player-queue-glass-2-reopened.png")
@@ -982,7 +929,7 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
                   return
                 }
               }
-              smokeLog("Queue native glass, pressed-state refresh and selected symbol contrast passed in light and dark appearances")
+              smokeLog("Queue mode state refresh, symbol contrast and re-entry passed in light and dark appearances")
               let queueOffset = popup.tableView.contentOffset
               let cardY = largeView.compactHeader.convert(largeView.compactHeader.bounds, to: popup.view).minY
               let controlsY = popup.controlPlaceholderView.frame.minY
@@ -1002,7 +949,7 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
                 smokeLog("Queue to lyrics moved the fixed header")
                 return
               }
-              try screenshot("player-lyrics-from-queue.png")
+              try await compositorScreenshot("player-lyrics-from-queue.png")
               popup.controlView?.displayPlaylistPressed()
               try await Task.sleep(for: .milliseconds(300))
               popup.controlView?.displayPlaylistPressed()
@@ -1014,7 +961,7 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
                 smokeLog("Closing queue unexpectedly restored lyrics")
                 return
               }
-              try screenshot("player-queue-closed-artwork.png")
+              try await compositorScreenshot("player-queue-closed-artwork.png")
               popup.controlView?.lyricsButton.sendActions(for: .touchUpInside)
               try await Task.sleep(for: .milliseconds(500))
               smokeLog("Lyrics to queue to cover regression passed")
@@ -1041,7 +988,7 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
               }
               popup.tableView.setContentOffset(CGPoint(x: 0, y: -popup.tableView.adjustedContentInset.top), animated: false)
               popup.view.layoutIfNeeded()
-              try screenshot("player-queue-history.png")
+              try await compositorScreenshot("player-queue-history.png")
               let playingBeforeClear = self.appDelegate.player.currentlyPlaying
               let upcomingBeforeClear = self.appDelegate.player.nextQueueCount
               popup.contextPrevQueueSectionHeader?.onClear?()
@@ -1111,7 +1058,7 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
               lyricsView.handleDrag(velocity: CGPoint(x: 0, y: -300))
               try await Task.sleep(for: .milliseconds(500))
               guard popup.areLyricsControlsHidden else { return }
-              try screenshot("player-lyrics-upward.png")
+              try await compositorScreenshot("player-lyrics-upward.png")
               popup.largeCurrentlyPlayingView?.lyricsArtworkPressed()
               try await Task.sleep(for: .seconds(1))
               guard popup.largeCurrentlyPlayingView?.isDisplayingLyrics == false,

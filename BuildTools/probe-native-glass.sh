@@ -16,7 +16,7 @@ final class ProbeDelegate: UIResponder, UIApplicationDelegate {
   }
 }
 
-final class ProbeVC: UIViewController {
+final class ProbeVC: UIViewController, UITableViewDataSource, UITableViewDelegate {
   private var effects: [UIVisualEffectView] = []
   private var mounted = false
   private let gradient = CAGradientLayer()
@@ -61,40 +61,57 @@ final class ProbeVC: UIViewController {
       }
     }
   }
+  func numberOfSections(in tableView: UITableView) -> Int { 3 }
+  func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int { 3 }
+  func tableView(_ tableView: UITableView, heightForRowAt indexPath: IndexPath) -> CGFloat { 40 }
+  func tableView(_ tableView: UITableView, heightForHeaderInSection section: Int) -> CGFloat { 60 }
+  func tableView(_ tableView: UITableView, viewForHeaderInSection section: Int) -> UIView? {
+    let header = UIView(frame: CGRect(x: 0, y: 0, width: tableView.bounds.width, height: 60))
+    row(in: header, y: 5, deferred: true)
+    return header
+  }
+  func tableView(_ tableView: UITableView, cellForRowAt indexPath: IndexPath) -> UITableViewCell {
+    let cell = UITableViewCell(style: .default, reuseIdentifier: nil)
+    cell.textLabel?.text = "Row \(indexPath.row)"
+    if tableView.tag >= 2 {
+      cell.backgroundConfiguration = .clear()
+      cell.backgroundColor = .clear
+      cell.contentView.backgroundColor = .clear
+    }
+    if tableView.tag == 3 {
+      let mask = CALayer()
+      mask.frame = CGRect(x: 0, y: 10, width: tableView.bounds.width, height: 30)
+      mask.backgroundColor = UIColor.black.cgColor
+      cell.layer.mask = mask
+      cell.layer.masksToBounds = true
+    }
+    return cell
+  }
   override func viewDidAppear(_ animated: Bool) {
     super.viewDidAppear(animated)
     guard !mounted else { return }
     mounted = true
     for index in 0..<4 {
       let y = CGFloat(120 + index * 180)
-      label(["Baseline", "Initially masked table", "Initially alpha-zero table", "Drag interaction enabled"][index], y: y - 32)
+      label(["Table header, no data", "Section header, real cells", "Clear cell backgrounds", "Clear cells with masks"][index], y: y - 32)
       let table = UITableView(frame: CGRect(x: 0, y: y, width: view.bounds.width, height: 130))
+      table.tag = index
       table.backgroundColor = .clear
       table.isOpaque = false
       table.topEdgeEffect.isHidden = true
       table.bottomEdgeEffect.isHidden = true
-      if index == 1 {
-        let mask = UIView(frame: table.bounds)
-        mask.backgroundColor = .black
-        mask.alpha = 0
-        table.mask = mask
+      table.sectionHeaderTopPadding = 0
+      if index == 0 {
+        let header = UIView(frame: CGRect(x: 0, y: 0, width: view.bounds.width, height: 400))
+        table.tableHeaderView = header
+        row(in: header, y: 250, deferred: true)
+      } else {
+        table.dataSource = self
+        table.delegate = self
       }
-      if index == 2 { table.alpha = 0 }
-      if index == 3 { table.dragInteractionEnabled = true }
-      let header = UIView(frame: CGRect(x: 0, y: 0, width: view.bounds.width, height: 400))
-      table.tableHeaderView = header
       view.addSubview(table)
-      row(in: header, y: 250, deferred: true)
-      table.setContentOffset(CGPoint(x: 0, y: 230), animated: false)
-      DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
-        table.mask = nil
-        table.alpha = 1
-      }
-    }
-    DispatchQueue.main.asyncAfter(deadline: .now() + 12) {
-      _ = UIGraphicsImageRenderer(bounds: self.view.bounds).image { _ in
-        self.view.drawHierarchy(in: self.view.bounds, afterScreenUpdates: true)
-      }
+      table.layoutIfNeeded()
+      table.setContentOffset(CGPoint(x: 0, y: index == 0 ? 230 : 20), animated: false)
     }
   }
 }
@@ -122,6 +139,4 @@ xcrun simctl bootstatus "$device_id" -b
 xcrun simctl install "$device_id" build/glass-probe/GlassProbe.app
 xcrun simctl launch --stdout="$PWD/build/glass-probe/probe.stdout.log" --stderr="$PWD/build/glass-probe/probe.stderr.log" "$device_id" test.native.glassprobe
 sleep 5
-xcrun simctl io "$device_id" screenshot build/glass-probe/before-snapshot.png
-sleep 10
-xcrun simctl io "$device_id" screenshot build/glass-probe/after-snapshot.png
+xcrun simctl io "$device_id" screenshot build/glass-probe/section-headers.png

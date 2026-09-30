@@ -18,7 +18,7 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  glass-scroll-probe:
+  glass-section-probe:
     runs-on: macos-26
     timeout-minutes: 10
     env:
@@ -29,12 +29,12 @@ jobs:
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: Native-glass-scroll-probe
+          name: Native-glass-section-probe
           path: build/glass-probe/*.png
           retention-days: 7
 
   tests:
-    if: ${{ false }} # Artifact-only diagnostic export
+    if: github.event.repository.private == false
     runs-on: macos-26
     timeout-minutes: 35
     env:
@@ -100,7 +100,7 @@ jobs:
 
   build:
     # Standard hosted runners are free for public repositories only.
-    if: ${{ false }} # Artifact-only diagnostic export
+    if: github.event.repository.private == false
     runs-on: macos-26
     timeout-minutes: 45
     env:
