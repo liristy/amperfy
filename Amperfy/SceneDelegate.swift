@@ -903,6 +903,8 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
                   }
                   header.refresh()
                 }
+                smokeLog("Queue layer: \(popup.tableView.layer.debugDescription), speed=\(popup.tableView.layer.speed), offset=\(popup.tableView.layer.timeOffset), keys=\(popup.tableView.layer.animationKeys() ?? [])")
+                try await compareFreshQueueTables(in: popup, capture: compositorScreenshot)
                 // The same native controls must survive hiding and reopening the queue.
                 popup.controlView?.displayPlaylistPressed()
                 try await Task.sleep(for: .milliseconds(350))
@@ -1372,3 +1374,40 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
     os_log("didUpdate userActivity: %s", log: self.log, type: .info, userActivity.activityType)
   }
 }
+
+#if DEBUG
+@MainActor
+private func compareFreshQueueTables(
+  in popup: PopupPlayerVC,
+  capture: @MainActor (String) async throws -> Void
+) async throws {
+  for opaque in [false, true] {
+    let table = UITableView(frame: CGRect(x: 24, y: 170, width: popup.view.bounds.width - 48, height: 50))
+    table.isOpaque = false
+    table.backgroundColor = .clear
+    table.topEdgeEffect.isHidden = true
+    table.bottomEdgeEffect.isHidden = true
+    let header = UIView(frame: table.bounds)
+    header.isOpaque = opaque
+    header.backgroundColor = .clear
+    let regular = UIButton(configuration: .glass())
+    regular.configuration?.title = "Glass"
+    let prominent = UIButton(configuration: .prominentGlass())
+    prominent.configuration?.title = "Native"
+    let effect = UIGlassEffect(style: .regular)
+    effect.tintColor = .white
+    let glass = UIVisualEffectView(effect: effect)
+    let references: [UIView] = [regular, prominent, glass]
+    for (index, reference) in references.enumerated() {
+      reference.frame = CGRect(x: 8 + CGFloat(index) * 115, y: 0, width: 107, height: 44)
+      header.addSubview(reference)
+    }
+    glass.cornerConfiguration = .capsule()
+    table.tableHeaderView = header
+    popup.view.addSubview(table)
+    try await Task.sleep(for: .milliseconds(300))
+    try await capture("player-queue-glass-2-fresh-\(opaque ? "opaque" : "clear").png")
+    table.removeFromSuperview()
+  }
+}
+#endif

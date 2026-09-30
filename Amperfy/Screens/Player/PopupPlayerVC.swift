@@ -85,6 +85,7 @@ class PopupPlayerVC: UIViewController, UIScrollViewDelegate, UIGestureRecognizer
 
   override func viewDidLoad() {
     super.viewDidLoad()
+    instantiateQueueTable()
 
     tableView.delegate = self
     tableView.dataSource = self
@@ -232,6 +233,36 @@ class PopupPlayerVC: UIViewController, UIScrollViewDelegate, UIGestureRecognizer
         self.refresh()
       }
     )
+  }
+
+  private func instantiateQueueTable() {
+    let previous = tableView!
+    let native = UITableView(frame: previous.frame, style: .plain)
+    native.translatesAutoresizingMaskIntoConstraints = previous.translatesAutoresizingMaskIntoConstraints
+    native.alwaysBounceVertical = previous.alwaysBounceVertical
+    native.allowsSelection = previous.allowsSelection
+    native.insetsLayoutMarginsFromSafeArea = previous.insetsLayoutMarginsFromSafeArea
+    native.insetsContentViewsToSafeArea = previous.insetsContentViewsToSafeArea
+    native.contentInsetAdjustmentBehavior = previous.contentInsetAdjustmentBehavior
+    // Keep the nib's geometry while constructing the table with current UIKit defaults.
+    let oldConstraints = view.constraints.filter {
+      ($0.firstItem as? UIView) === previous || ($0.secondItem as? UIView) === previous
+    }
+    let newConstraints = oldConstraints.map { old in
+      let first: Any = (old.firstItem as? UIView) === previous ? native : old.firstItem!
+      let second: Any? = (old.secondItem as? UIView) === previous ? native : old.secondItem
+      let replacement = NSLayoutConstraint(item: first, attribute: old.firstAttribute,
+        relatedBy: old.relation, toItem: second, attribute: old.secondAttribute,
+        multiplier: old.multiplier, constant: old.constant)
+      replacement.priority = old.priority
+      replacement.identifier = old.identifier
+      return replacement
+    }
+    NSLayoutConstraint.deactivate(oldConstraints)
+    view.insertSubview(native, aboveSubview: previous)
+    tableView = native
+    previous.removeFromSuperview()
+    NSLayoutConstraint.activate(newConstraints)
   }
 
   override func viewDidLayoutSubviews() {
