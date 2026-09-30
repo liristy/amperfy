@@ -129,7 +129,7 @@ enum ListeningStatisticsSmoke {
               abs(scroll.contentOffset.y - offset.y) < 1, "Closing the player changed the originating page or scroll position")
     try capture(tabHost, name: "player-statistics-return")
     tabHost.selectedTab = previousTab
-    print("Listening statistics passed: URL validation, filters, count, three rankings, trends, winners, history paging, details, errors and playback; four native tabs and exact return position verified")
+    FileHandle.standardOutput.write(Data(("Listening statistics passed: URL validation, filters, count, three rankings, trends, winners, history paging, details, errors and playback; four native tabs and exact return position verified\n").utf8))
   }
 
   private static func capture(_ host: UIViewController, name: String) throws {

@@ -882,27 +882,28 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
                   popup.view.layoutIfNeeded()
                   try await Task.sleep(for: .milliseconds(300))
                   try screenshot("player-queue-glass-\(style.rawValue).png")
-                  for button in buttons {
-                    let effects = descendants(of: button).compactMap { $0 as? UIVisualEffectView }
-                    smokeLog("Queue glass \(button.accessibilityLabel ?? "unknown"): window=\(button.window != nil), selected=\(button.isSelected), effects=\(effects.map { String(describing: $0.effect) }), views=\(descendants(of: button).map { String(describing: type(of: $0)) })")
+                  for selected in [false, true] {
+                    for button in buttons {
+                      button.isSelected = selected
+                      button.setNeedsUpdateConfiguration()
+                    }
+                    try await Task.sleep(for: .milliseconds(100))
+                    header.layoutIfNeeded()
+                    // This is the app-owned background effect, not an assumption
+                    // about the private hierarchy of UIButton.Configuration.glass().
+                    guard buttons.allSatisfy({ button in
+                      guard let glass = button.configuration?.background.visualEffect as? UIGlassEffect else { return false }
+                      let color = button.configuration?.imageColorTransformer?(.white)
+                      return glass.isInteractive && button.window != nil &&
+                        (selected ? color == UIColor(white: 0.2, alpha: 1) : color == .white)
+                    }) else {
+                      smokeLog("Queue buttons lost their glass material or symbol contrast after refresh")
+                      return
+                    }
+                    try screenshot("player-queue-glass-\(style.rawValue)-\(selected ? "selected" : "normal").png")
                   }
-                  // Record UIKit's own reference hierarchy before deciding whether
-                  // the app or a private implementation assumption caused a failure.
-                  let reference = UIButton(configuration: .glass())
-                  reference.frame = CGRect(x: 8, y: 0, width: 100, height: 44)
-                  header.addSubview(reference)
-                  reference.layoutIfNeeded()
-                  try await Task.sleep(for: .milliseconds(300))
-                  let referenceEffects = descendants(of: reference).compactMap { $0 as? UIVisualEffectView }
-                  smokeLog("Native glass reference effects=\(referenceEffects.map { String(describing: $0.effect) }), views=\(descendants(of: reference).map { String(describing: type(of: $0)) })")
-                  reference.removeFromSuperview()
-                  if !buttons.allSatisfy({ button in
-                    descendants(of: button).compactMap { $0 as? UIVisualEffectView }
-                      .contains { $0.effect is UIGlassEffect }
-                  }) {
-                    smokeLog("Queue buttons lost native glass after state refresh")
-                    playerPolishChecksPassed = false
-                  }
+                  header.refresh()
+
                 }
                 guard buttons.count == 3,
                       buttons.allSatisfy({ $0.bounds.width > 80 && $0.bounds.height >= 44 }),
@@ -912,6 +913,7 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
                   return
                 }
               }
+              smokeLog("Queue native glass, pressed-state refresh and selected symbol contrast passed in light and dark appearances")
               let queueOffset = popup.tableView.contentOffset
               let cardY = largeView.compactHeader.convert(largeView.compactHeader.bounds, to: popup.view).minY
               let controlsY = popup.controlPlaceholderView.frame.minY

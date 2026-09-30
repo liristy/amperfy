@@ -98,7 +98,9 @@ xcrun simctl launch \
   --stderr="$PWD/build/validation/player.stderr.log" \
   "$device_id" "$bundle_id" -AppleLanguages '(zh-Hans)' --smoke-login --smoke-player
 ready=false
-for attempt in {1..60}; do
+# The player suite also checks all statistics panels and native detail returns.
+# Keep a bounded five-minute deadline; report an explicit failure immediately.
+for attempt in {1..150}; do
   if [[ -f "$container/Documents/player-smoke-ready" ]]; then
     ready=true
     break
