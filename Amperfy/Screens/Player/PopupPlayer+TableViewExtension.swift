@@ -120,7 +120,7 @@ extension PopupPlayerVC: UITableViewDataSource, UITableViewDelegate {
   func tableView(_ tableView: UITableView, heightForHeaderInSection section: Int) -> CGFloat {
     switch PlayerSectionCategory(rawValue: section) {
     case .contextPrev:
-      return ContextQueuePrevSectionHeader.frameHeight
+      return player.prevQueueCount > 0 ? ContextQueuePrevSectionHeader.frameHeight : .leastNormalMagnitude
     case .currentlyPlaying:
       return 0.0
     case .userQueue:
@@ -139,7 +139,7 @@ extension PopupPlayerVC: UITableViewDataSource, UITableViewDelegate {
   func tableView(_ tableView: UITableView, viewForFooterInSection section: Int) -> UIView? {
     switch PlayerSectionCategory(rawValue: section) {
     case .contextNext, .contextPrev:
-      return clearEmptySectionFooter
+      return UIView()
     case .currentlyPlaying, .none, .userQueue:
       return nil
     }
@@ -147,10 +147,10 @@ extension PopupPlayerVC: UITableViewDataSource, UITableViewDelegate {
 
   func tableView(_ tableView: UITableView, heightForFooterInSection section: Int) -> CGFloat {
     switch PlayerSectionCategory(rawValue: section) {
-    case .contextPrev: return 30.0 // bottom padding of prev section (space above currently playing cell)
+    case .contextPrev: return player.prevQueueCount > 0 ? 16 : .leastNormalMagnitude
     case .currentlyPlaying, .none, .userQueue: return 0.0
     case .contextNext: // calculate footer height to keep currently playing row on top of table view
-      let heightOfContextNextRows = tableView.frame.height - ContextQueueNextSectionHeader.frameHeight
+      let heightOfContextNextRows = tableView.frame.height - ContextQueueNextSectionHeader.frameHeight - CurrentlyPlayingTableCell.rowHeight - 8
       let contextNextRowOccupiedHeight = CGFloat(player.nextQueueCount) * tableView.rowHeight
       let offset = heightOfContextNextRows - contextNextRowOccupiedHeight
       return offset > 0.0 ? offset : 0.0
@@ -173,7 +173,7 @@ extension PopupPlayerVC: UITableViewDataSource, UITableViewDelegate {
     case .contextNext, .contextPrev, .none, .userQueue:
       return tableView.rowHeight
     case .currentlyPlaying:
-      return CGFloat.leastNormalMagnitude
+      return CurrentlyPlayingTableCell.rowHeight + 8
     }
   }
 
@@ -194,10 +194,14 @@ extension PopupPlayerVC: UITableViewDataSource, UITableViewDelegate {
       cell.maskCell(fromTop: 0.0)
       return cell
     case .currentlyPlaying:
-      // Preserve the queue index/scroll anchor without duplicating the fixed header.
+      // History, the current song card and upcoming songs share one scroll surface.
       let marker = UITableViewCell(style: .default, reuseIdentifier: nil)
       marker.backgroundColor = .clear
-      marker.isHidden = true
+      marker.backgroundConfiguration = .clear()
+      marker.selectionStyle = .none
+      if appDelegate.storage.settings.user.playerDisplayStyle == .compact {
+        largeCurrentlyPlayingView?.attachCompactHeader(to: marker.contentView, anchor: marker.contentView)
+      }
       return marker
     case .none:
       return UITableViewCell()

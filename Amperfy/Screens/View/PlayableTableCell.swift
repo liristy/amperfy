@@ -224,6 +224,12 @@ class PlayableTableCell: BasicTableCell {
     refresh()
   }
 
+  override func layoutSubviews() {
+    super.layoutSubviews()
+    contentView.layoutIfNeeded()
+    playIndicator?.updateLayout()
+  }
+
   override func updateConfiguration(using state: UICellConfigurationState) {
     super.updateConfiguration(using: state)
     if rootView is PopupPlayerVC {

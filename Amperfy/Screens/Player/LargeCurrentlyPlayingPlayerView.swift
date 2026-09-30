@@ -131,6 +131,7 @@ class LargeCurrentlyPlayingPlayerView: UIView {
   private var displayElement: LargeDisplayElement = .artwork
   private let artworkShadowView = UIView()
   private let lyricsHeader = UIView()
+  private var headerConstraints: [NSLayoutConstraint] = []
   private let lyricsArtwork = LibraryEntityImage(frame: .zero)
   private let lyricsTitle = UILabel()
   private let lyricsArtist = UILabel()
@@ -145,7 +146,35 @@ class LargeCurrentlyPlayingPlayerView: UIView {
   var compactHeaderElements: [UIView] { [lyricsArtwork, lyricsTitle, lyricsArtist] }
 
   func updateCompactHeaderVisibility() {
+    if let rootView {
+      if appDelegate.storage.settings.user.playerDisplayStyle == .compact {
+        rootView.tableView.layoutIfNeeded()
+        let path = IndexPath(row: 0, section: PlayerSectionCategory.currentlyPlaying.rawValue)
+        if let cell = rootView.tableView.cellForRow(at: path) {
+          attachCompactHeader(to: cell.contentView, anchor: cell.contentView)
+        }
+      } else {
+        attachCompactHeader(to: rootView.view, anchor: rootView.largePlayerPlaceholderView)
+      }
+    }
     lyricsHeader.isHidden = appDelegate.storage.settings.user.playerDisplayStyle != .compact && !isDisplayingLyrics
+  }
+
+  func attachCompactHeader(to host: UIView, anchor: UIView) {
+    guard lyricsHeader.superview !== host else { return }
+    NSLayoutConstraint.deactivate(headerConstraints)
+    lyricsHeader.removeFromSuperview()
+    lyricsHeader.translatesAutoresizingMaskIntoConstraints = false
+    host.addSubview(lyricsHeader)
+    headerConstraints = [
+      lyricsHeader.leadingAnchor.constraint(equalTo: anchor.leadingAnchor, constant: 8),
+      lyricsHeader.trailingAnchor.constraint(equalTo: anchor.trailingAnchor, constant: -8),
+      lyricsHeader.topAnchor.constraint(equalTo: anchor.topAnchor),
+      lyricsHeader.heightAnchor.constraint(equalToConstant: CurrentlyPlayingTableCell.rowHeight),
+    ]
+    NSLayoutConstraint.activate(headerConstraints)
+    host.setNeedsLayout()
+    setNeedsLayout()
   }
 
   @IBOutlet
@@ -255,17 +284,9 @@ class LargeCurrentlyPlayingPlayerView: UIView {
     compactFavorite.accessibilityLabel = "Favorite".localized
     compactFavorite.addTarget(self, action: #selector(compactFavoritePressed), for: .touchUpInside)
     [lyricsArtwork, lyricsTitle, lyricsArtist, compactFavorite, lyricsOptions].forEach { lyricsHeader.addSubview($0) }
-    // One persistent header lives outside both switching/scrolling content views.
-    // Its parent, constraints, typography and image stay identical in queue and lyrics.
+    // Reuse this card in the queue's current-song row and the lyrics header.
     if let rootView {
-      lyricsHeader.translatesAutoresizingMaskIntoConstraints = false
-      rootView.view.addSubview(lyricsHeader)
-      NSLayoutConstraint.activate([
-        lyricsHeader.leadingAnchor.constraint(equalTo: rootView.largePlayerPlaceholderView.leadingAnchor, constant: 8),
-        lyricsHeader.trailingAnchor.constraint(equalTo: rootView.largePlayerPlaceholderView.trailingAnchor, constant: -8),
-        lyricsHeader.topAnchor.constraint(equalTo: rootView.largePlayerPlaceholderView.topAnchor),
-        lyricsHeader.heightAnchor.constraint(equalToConstant: CurrentlyPlayingTableCell.rowHeight),
-      ])
+      attachCompactHeader(to: rootView.view, anchor: rootView.largePlayerPlaceholderView)
     }
     updateCompactHeaderVisibility()
 

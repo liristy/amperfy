@@ -84,6 +84,11 @@ class ContextQueueNextSectionHeader: UIView {
       shuffleButton.accessibilityLabel = "Shuffle".localized
       repeatButton.accessibilityLabel = "Repeat".localized
       autoplayButton.accessibilityLabel = "Autoplay".localized
+      for button in [shuffleButton, repeatButton, autoplayButton].compactMap({ $0 }) {
+        button.configurationUpdateHandler = { button in
+          Self.applyModeStyle(to: button)
+        }
+      }
     }
     contextNameLabel.applyAmperfyStyle()
     refresh()
@@ -106,7 +111,13 @@ class ContextQueueNextSectionHeader: UIView {
     guard usesPlayerLayout else { return }
     for button in [shuffleButton, repeatButton, autoplayButton] {
       guard let button else { continue }
-      let image = button.configuration?.image
+      Self.applyModeStyle(to: button)
+    }
+  }
+
+  private static func applyModeStyle(to button: UIButton) {
+      let color: UIColor = button.isSelected ? UIColor(white: 0.2, alpha: 1) : .white
+      let image = button.configuration?.image?.withTintColor(color, renderingMode: .alwaysOriginal)
       var config = button.isSelected ? UIButton.Configuration.prominentGlass() : .glass()
       config.image = image
       config.preferredSymbolConfigurationForImage = .init(pointSize: 17, weight: .medium)
@@ -114,7 +125,6 @@ class ContextQueueNextSectionHeader: UIView {
       if button.isSelected { config.baseBackgroundColor = .white.withAlphaComponent(0.7) }
       config.cornerStyle = .capsule
       button.configuration = config
-    }
   }
 
   func refresh() {

@@ -37,6 +37,7 @@ final class ListeningModel: ObservableObject {
   @Published var loading = false
   @Published var playbackError: String?
   let account: Account
+  var openEntity: ((ListeningEntity, ListeningFilter) -> Void)?
   private let settingsKey: String
   private var loadID = UUID()
   private var loadedRequest: ListeningRequest?
@@ -180,17 +181,28 @@ final class ListeningModel: ObservableObject {
 
 final class ListeningStatisticsVC: UIHostingController<ListeningStatisticsView> {
   let model: ListeningModel
-  init(account: Account) {
+  private let entity: ListeningEntity?
+  init(account: Account, entity: ListeningEntity? = nil, address: String? = nil,
+       filter: ListeningFilter = .init()) {
     let model = ListeningModel(account: account)
+    if let address { model.address = address }
     self.model = model
-    super.init(rootView: ListeningStatisticsView(model: model))
-    title = "Listening Statistics".localized
+    self.entity = entity
+    super.init(rootView: ListeningStatisticsView(model: model, entity: entity, filter: filter))
+    title = entity?.name ?? "Listening Statistics".localized
+    model.openEntity = { [weak self] entity, filter in
+      guard let self else { return }
+      let detail = ListeningStatisticsVC(account: self.model.account, entity: entity,
+        address: self.model.address, filter: filter)
+      self.navigationController?.pushViewController(detail, animated: true)
+    }
   }
   @MainActor required dynamic init?(coder aDecoder: NSCoder) { fatalError("init(coder:) has not been implemented") }
   override func viewDidLoad() {
     super.viewDidLoad()
     navigationController?.navigationBar.prefersLargeTitles = true
-    navigationItem.largeTitleDisplayMode = .always
+    navigationItem.largeTitleDisplayMode = entity == nil ? .always : .never
+    navigationItem.backButtonDisplayMode = .minimal
     navigationItem.rightBarButtonItem = UIBarButtonItem(image: UIImage(systemName: "slider.horizontal.3"),
       primaryAction: UIAction { [weak self] _ in self?.model.showSettings = true })
     navigationItem.rightBarButtonItem?.accessibilityLabel = "Statistics Settings".localized
@@ -209,14 +221,17 @@ struct ListeningStatisticsView: View {
   @State private var showDates = false
   @State private var from = Calendar.current.date(byAdding: .day, value: -30, to: Date()) ?? Date()
   @State private var until = Date()
-  @State private var entityPath: [ListeningEntity] = []
+  private let entity: ListeningEntity?
+  private var entityPath: [ListeningEntity] { entity.map { [$0] } ?? [] }
   @State private var detailSearch: [ListeningKind: String] = [:]
   @State private var detailPage: [ListeningKind: Int] = [:]
 
-  init(model: ListeningModel, panel: ListeningPanel = .overview, entity: ListeningEntity? = nil) {
+  init(model: ListeningModel, panel: ListeningPanel = .overview, entity: ListeningEntity? = nil,
+       filter: ListeningFilter = .init()) {
     self.model = model
     model.panel = panel
-    _entityPath = State(initialValue: entity.map { [$0] } ?? [])
+    self.entity = entity
+    _filter = State(initialValue: filter)
   }
 
   private var request: ListeningRequest {
@@ -251,8 +266,7 @@ struct ListeningStatisticsView: View {
     }
     .onChange(of: kind) { _, _ in page = 0; search = "" }
     .onChange(of: filter) { _, _ in page = 0 }
-    .onChange(of: model.address) { _, _ in page = 0; entityPath = [] }
-    .onChange(of: entityPath) { _, _ in detailSearch = [:]; detailPage = [:] }
+    .onChange(of: model.address) { _, _ in page = 0 }
     .onChange(of: filter) { _, _ in detailPage = [:] }
     .sheet(isPresented: $model.showSettings) { ListeningSettingsView(model: model) }
     .sheet(isPresented: $showDates) { datePicker }
@@ -275,9 +289,7 @@ struct ListeningStatisticsView: View {
   private var toolbar: some View {
     VStack(spacing: 16) {
       HStack {
-        if !entityPath.isEmpty {
-          Button { entityPath.removeLast(); page = 0 } label: { Label("Back".localized, systemImage: "chevron.left") }.buttonStyle(.glass)
-        } else {
+        if entityPath.isEmpty {
           Menu {
             Picker("Listening Statistics".localized, selection: $model.panel) {
               ForEach(ListeningPanel.allCases, id: \.self) { Text($0.title).tag($0) }
@@ -411,7 +423,7 @@ struct ListeningStatisticsView: View {
 
   private func entityRow(_ entity: ListeningEntity, caption: String, trailing: String) -> some View {
     HStack(spacing: 12) {
-      Button { entityPath.append(entity); page = 0 } label: {
+      Button { model.openEntity?(entity, filter) } label: {
         HStack(spacing: 12) {
           ListeningArtwork(entity: entity, model: model)
           VStack(alignment: .leading, spacing: 4) {
@@ -443,7 +455,6 @@ struct ListeningStatisticsView: View {
     var parts = entry.track.artists
     if let album = entry.track.album?.albumtitle { parts.append(album) }
     if let duration = entry.duration { parts.append(Duration.seconds(duration).formatted(.time(pattern: .minuteSecond))) }
-    if let origin = entry.origin, !origin.isEmpty { parts.append(origin) }
     return parts.joined(separator: " · ")
   }
 
@@ -469,7 +480,7 @@ struct ListeningStatisticsView: View {
         Text(entity.kind.title).font(.caption).foregroundStyle(.secondary)
         Text(entity.name).font(.title2.bold())
         ForEach(entity.artists, id: \.self) { name in
-          Button(name) { entityPath.append(.init(kind: .artists, name: name)); page = 0 }.font(.subheadline)
+          Button(name) { model.openEntity?(.init(kind: .artists, name: name), filter) }.font(.subheadline)
         }
       }
       Spacer(minLength: 0)
@@ -497,7 +508,7 @@ struct ListeningStatisticsView: View {
       if !related.isEmpty {
         Text("Associated Artists".localized).font(.headline)
         ForEach(related, id: \.self) { name in
-          Button(name) { entityPath.append(.init(kind: .artists, name: name)); page = 0 }.buttonStyle(.glass)
+          Button(name) { model.openEntity?(.init(kind: .artists, name: name), filter) }.buttonStyle(.glass)
         }
       }
     }

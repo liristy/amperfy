@@ -102,6 +102,20 @@ enum ListeningStatisticsSmoke {
     scroll.setContentOffset(CGPoint(x: 0, y: 180), animated: false)
     try await Task.sleep(for: .milliseconds(250))
     let offset = scroll.contentOffset
+    model.openEntity?(artists[0].entity, .init())
+    try await Task.sleep(for: .milliseconds(700))
+    guard let detail = navigation.topViewController as? ListeningStatisticsVC else {
+      try check(false, "Entity did not use native navigation"); return
+    }
+    try check(detail !== host && navigation.viewControllers.count == 2 &&
+      navigation.interactivePopGestureRecognizer?.isEnabled == true &&
+      !navigation.isNavigationBarHidden, "Native back navigation or edge swipe unavailable")
+    try await Task.sleep(for: .milliseconds(700))
+    try capture(tabHost, name: "player-statistics-detail")
+    navigation.popViewController(animated: true)
+    try await Task.sleep(for: .milliseconds(700))
+    try check(navigation.topViewController === host && abs(scroll.contentOffset.y - offset.y) < 1,
+              "Statistics detail return lost the original scroll position")
     let statisticsTab = tabHost.selectedTab
     tabHost.miniPlayer?.openPlayerView()
     try await Task.sleep(for: .milliseconds(800))

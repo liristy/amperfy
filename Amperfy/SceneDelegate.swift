@@ -504,16 +504,19 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
               guard let controlsMask = pausedPopup.controlPlaceholderView.mask,
                     controlsMask.accessibilityIdentifier == "player-transition-content-mask",
                     (controlsMask.layer.presentation()?.opacity ?? controlsMask.layer.opacity) < 0.01,
-                    (pausedPopup.view.layer.presentation()?.opacity ?? 0) > 0.98,
-                    miniPlayer.glassContainer.layer.opacity == 1,
+                    pausedPopup.view.alpha > 0.1,
+                    miniPlayer.glassContainer.alpha > 0.1,
+                    miniPlayer.glassContainer.alpha < 1,
+                    miniPlayer.glassContainer.transform.a < 1,
                     hiddenCover.mask?.alpha == 0, flyingCover() != nil else {
-                smokeLog("Closing hid the shrinking surface or exposed fullscreen controls near the capsule")
+                smokeLog("Closing did not hand off to the animated capsule, or exposed fullscreen controls")
                 return
               }
               try transitionScreenshot("player-closing-capsule.png")
               pausedPopup.endInteractiveDismissal(translation: closingDistance * 0.93, velocity: -200, cancelled: true)
               try await Task.sleep(for: .seconds(1))
               guard pausedPopup.view.alpha == 1, pausedPopup.view.mask == nil,
+                    miniPlayer.glassContainer.alpha == 1, miniPlayer.glassContainer.transform == .identity,
                     pausedPopup.controlPlaceholderView.mask == nil,
                     hiddenCover.mask == nil, miniPlayer.artworkImage.mask == nil,
                     flyingCover() == nil else {
@@ -847,6 +850,24 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
               if let header = popup.contextNextQueueSectionHeader {
                 header.layoutIfNeeded()
                 let buttons = [header.shuffleButton, header.repeatButton, header.autoplayButton].compactMap { $0 }
+                for style in [UIUserInterfaceStyle.light, .dark] {
+                  header.overrideUserInterfaceStyle = style
+                  for button in buttons {
+                    button.isHighlighted = true
+                    button.setNeedsUpdateConfiguration()
+                  }
+                  try await Task.sleep(for: .milliseconds(60))
+                  for button in buttons {
+                    button.isHighlighted = false
+                    button.setNeedsUpdateConfiguration()
+                  }
+                  header.refresh()
+                  try await Task.sleep(for: .milliseconds(60))
+                  guard buttons.allSatisfy({ button in
+                    descendants(of: button).compactMap { $0 as? UIVisualEffectView }
+                      .contains { $0.effect is UIGlassEffect }
+                  }) else { smokeLog("Queue buttons lost native glass after state refresh"); return }
+                }
                 guard buttons.count == 3,
                       buttons.allSatisfy({ $0.bounds.width > 80 && $0.bounds.height >= 44 }),
                       header.queueNameLabel.frame.minY >= buttons[0].frame.maxY + 8,
@@ -856,8 +877,16 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
                 }
               }
               let queueOffset = popup.tableView.contentOffset
+              let cardY = largeView.compactHeader.convert(largeView.compactHeader.bounds, to: popup.view).minY
+              let controlsY = popup.controlPlaceholderView.frame.minY
               popup.tableView.setContentOffset(CGPoint(x: 0, y: queueOffset.y + 60), animated: false)
-              guard try await compactHeaderStayedFixed(samples: 3) else { return }
+              popup.view.layoutIfNeeded()
+              let scrolledY = largeView.compactHeader.convert(largeView.compactHeader.bounds, to: popup.view).minY
+              guard abs(cardY - scrolledY - 60) < 1,
+                    popup.controlPlaceholderView.frame.minY == controlsY else {
+                smokeLog("Queue card did not scroll with songs, or transport moved")
+                return
+              }
               popup.tableView.setContentOffset(queueOffset, animated: false)
               popup.controlView?.lyricsButton.sendActions(for: .touchUpInside)
               guard try await compactHeaderStayedFixed(),
@@ -895,7 +924,21 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
               guard try await compactHeaderStayedFixed() else { return }
               popup.controlView?.lyricsButton.sendActions(for: .touchUpInside)
               guard try await compactHeaderStayedFixed() else { return }
-              smokeLog("Shared header identity, position and size stayed fixed through switching, reversal, queue scrolling and immersive controls")
+              smokeLog("Shared card survived switching; queue scrolling moved the card and retained fixed transport controls")
+              if let current = self.appDelegate.player.currentlyPlaying,
+                 let cell = ViewCreator<PlayableTableCell>.createFromNib(withinFixedFrame: CGRect(x: 0, y: 0, width: 360, height: 64)) {
+                cell.display(playable: current, playContextCb: { _ in PlayContext() }, rootView: vc)
+                for height in [CGFloat(64), 80, 56] {
+                  cell.frame.size.height = height
+                  cell.setNeedsLayout()
+                  cell.layoutIfNeeded()
+                  guard let overlay = cell.entityImage.layer.sublayers?.first(where: { $0 is OverlayLayer }),
+                        overlay.frame == cell.entityImage.bounds else {
+                    smokeLog("Playing artwork overlay did not follow cell layout"); return
+                  }
+                }
+                cell.prepareForReuse()
+              }
               // Use the same animated dismissal and mini-player entry point as a user.
               // Bounded state checks report a failed transition instead of hanging on
               // a completion callback UIKit may discard during a modal handoff.

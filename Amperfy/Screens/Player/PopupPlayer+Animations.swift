@@ -81,13 +81,16 @@ final class PlayerArtworkMotion: NSObject {
   let endFrame: CGRect
   private let startRadius: CGFloat
   private let endRadius: CGFloat
+  private let miniPlayer: UIView?
+  private let miniTransform: CGAffineTransform
+  private let miniAlpha: CGFloat
   private var progress: CGFloat = 0
   private var destination: CGFloat?
   private var displayLink: CADisplayLink?
 
   init(player: UIView, surface: UIView, progressView: UIView, smallFrame: CGRect, fullFrame: CGRect,
        presenting: Bool, cover: UIImageView?, endFrame: CGRect, endRadius: CGFloat,
-       foreground: [UIView], handle: UIView?) {
+       foreground: [UIView], handle: UIView?, miniPlayer: UIView?) {
     self.player = player
     self.surface = surface
     self.progressView = progressView
@@ -102,6 +105,9 @@ final class PlayerArtworkMotion: NSObject {
     self.endFrame = endFrame
     self.startRadius = cover?.layer.cornerRadius ?? 0
     self.endRadius = endRadius
+    self.miniPlayer = miniPlayer
+    self.miniTransform = miniPlayer?.transform ?? .identity
+    self.miniAlpha = miniPlayer?.alpha ?? 1
     super.init()
     render(transition: 0)
     let link = CADisplayLink(target: self, selector: #selector(tick(_:)))
@@ -141,6 +147,14 @@ final class PlayerArtworkMotion: NSObject {
     CATransaction.begin()
     CATransaction.setDisableActions(true)
     UIView.performWithoutAnimation {
+      // The live glass capsule and its title/buttons emerge on the same clock
+      // as the collapsing surface. Reversing a drag reverses this handoff too.
+      let handoff = min(1, max(0, expansion / 0.22))
+      miniPlayer?.alpha = miniAlpha * (1 - handoff)
+      miniPlayer?.transform = miniTransform
+        .translatedBy(x: 0, y: 8 * handoff)
+        .scaledBy(x: 1 - 0.06 * handoff, y: 1 - 0.12 * handoff)
+      player.alpha = min(1, max(0, expansion / 0.12))
       // Carry the content with the card's top edge, instead of uncovering a
       // bottom-anchored full-height page like a vertical curtain.
       player.transform = CGAffineTransform(a: scale, b: 0, c: 0, d: scale,
@@ -190,6 +204,8 @@ final class PlayerArtworkMotion: NSObject {
     displayLink = nil
     for content in foreground { content.view.transform = content.transform }
     handle?.transform = handleTransform
+    miniPlayer?.transform = miniTransform
+    miniPlayer?.alpha = miniAlpha
   }
 }
 
@@ -312,7 +328,7 @@ final class PlayerSurfaceAnimator: NSObject, UIViewControllerAnimatedTransitioni
         endFrame: (isPresenting ? largeArtworkFrame : smallArtworkFrame) ?? .zero,
         endRadius: (isPresenting ? targetArtwork?.layer.cornerRadius : sourceArtwork?.layer.cornerRadius) ?? 0,
         foreground: [popup.largePlayerPlaceholderView, popup.tableView, popup.controlPlaceholderView],
-        handle: playerView.subviews.first(where: { $0 is UIButton }))
+        handle: playerView.subviews.first(where: { $0 is UIButton }), miniPlayer: sourcePlayer)
       popup.surfaceTransition.artworkMotion = motion
       if let destination = popup.surfaceTransition.artworkDestination {
         motion.settle(to: destination)
@@ -337,10 +353,7 @@ final class PlayerSurfaceAnimator: NSObject, UIViewControllerAnimatedTransitioni
           // morph. Crossfade only at the capsule endpoint; fading the page over
           // its travel turns the whole-player spring into a cover-only animation.
           // Keep the real mini player underneath, never a stale glass snapshot.
-          UIView.addKeyframe(withRelativeStartTime: self.isPresenting ? 0 : 0.965,
-                            relativeDuration: 0.035) {
-            playerView.alpha = self.isPresenting ? originalAlpha : 0
-          }
+          // Surface/capsule opacity follows the sampled geometry above.
         }
       }
     }

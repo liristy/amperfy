@@ -129,6 +129,7 @@ class PopupPlayerVC: UIViewController, UIScrollViewDelegate, UIGestureRecognizer
     dismissPan.maximumNumberOfTouches = 1
     view.addGestureRecognizer(dismissPan)
     tableView.panGestureRecognizer.require(toFail: dismissPan)
+    setupTableView()
     if let createdLargeCurrentlyPlayingView = ViewCreator<LargeCurrentlyPlayingPlayerView>
       .createFromNib(withinFixedFrame: CGRect(
         x: 0,
@@ -166,7 +167,6 @@ class PopupPlayerVC: UIViewController, UIScrollViewDelegate, UIGestureRecognizer
     ])
     configureAdaptiveLayout()
 
-    setupTableView()
     fetchSongInfoAndUpdateViews()
 
     if let sectionView = ViewCreator<ContextQueuePrevSectionHeader>
@@ -177,7 +177,14 @@ class PopupPlayerVC: UIViewController, UIScrollViewDelegate, UIGestureRecognizer
         height: ContextQueuePrevSectionHeader.frameHeight
       )) {
       contextPrevQueueSectionHeader = sectionView
-      contextPrevQueueSectionHeader?.display(name: "Previous".localized)
+      contextPrevQueueSectionHeader?.display(name: "History".localized)
+      contextPrevQueueSectionHeader?.onClear = { [weak self] in
+        guard let self else { return }
+        for index in (0..<self.player.prevQueueCount).reversed() {
+          self.player.removePlayable(at: PlayerIndex(queueType: .prev, index: index))
+        }
+        self.reloadData()
+      }
     }
     if let sectionView = ViewCreator<UserQueueSectionHeader>.createFromNib(withinFixedFrame: CGRect(
       x: 0,
@@ -412,13 +419,12 @@ class PopupPlayerVC: UIViewController, UIScrollViewDelegate, UIGestureRecognizer
   }
 
   private func configureAdaptiveLayout() {
-    // The queue begins below the same fixed header used by lyrics.
+    // Include the current song card in the scrollable queue, below history.
     for constraint in view.constraints where
       (constraint.firstItem as? UIView) === tableView && constraint.firstAttribute == .top {
       constraint.isActive = false
     }
-    tableView.topAnchor.constraint(equalTo: largePlayerPlaceholderView.topAnchor,
-                                   constant: CurrentlyPlayingTableCell.rowHeight + 8).isActive = true
+    tableView.topAnchor.constraint(equalTo: largePlayerPlaceholderView.topAnchor).isActive = true
     let contentViews: [UIView] = [largePlayerPlaceholderView, tableView, controlPlaceholderView]
     portraitLayoutConstraints = view.constraints.filter { constraint in
       (constraint.firstItem as? UIView) !== largeCurrentlyPlayingView?.compactHeader &&
@@ -454,8 +460,7 @@ class PopupPlayerVC: UIViewController, UIScrollViewDelegate, UIGestureRecognizer
       ),
       tableView.leadingAnchor.constraint(equalTo: largePlayerPlaceholderView.leadingAnchor),
       tableView.trailingAnchor.constraint(equalTo: largePlayerPlaceholderView.trailingAnchor),
-      tableView.topAnchor.constraint(equalTo: largePlayerPlaceholderView.topAnchor,
-                                     constant: CurrentlyPlayingTableCell.rowHeight + 8),
+      tableView.topAnchor.constraint(equalTo: largePlayerPlaceholderView.topAnchor),
       tableView.bottomAnchor.constraint(equalTo: largePlayerPlaceholderView.bottomAnchor),
     ]
   }
@@ -587,20 +592,18 @@ class PopupPlayerVC: UIViewController, UIScrollViewDelegate, UIGestureRecognizer
   }
 
   func refreshCellMasks() {
-    guard let topSection = Array(activeDisplayedSectionHeader)
-      .sorted(by: { $0.rawValue < $1.rawValue }).first
-    else { return }
-
-    let topSectionHeight = tableView(tableView, heightForHeaderInSection: topSection.rawValue)
-    let scrollOffset = tableView.contentOffset.y
-
+    // Only hide overlap with a header actually pinned above this cell.
     for cell in tableView.visibleCells {
-      let hiddenFrameHeight = scrollOffset + topSectionHeight - cell.frame.origin.y
-      if hiddenFrameHeight >= 0 || hiddenFrameHeight <= cell.frame.size.height {
-        if let customCell = cell as? PlayableTableCell {
-          customCell.maskCell(fromTop: hiddenFrameHeight)
-        }
+      guard let path = tableView.indexPath(for: cell) else { continue }
+      let header: UIView? = switch PlayerSectionCategory(rawValue: path.section) {
+      case .contextPrev: contextPrevQueueSectionHeader
+      case .contextNext: contextNextQueueSectionHeader
+      case .userQueue: userQueueSectionHeader
+      default: nil
       }
+      let headerFrame = header?.convert(header?.bounds ?? .zero, to: tableView) ?? .zero
+      let overlap = headerFrame.minY <= cell.frame.minY ? headerFrame.maxY - cell.frame.minY : 0
+      (cell as? PlayableTableCell)?.maskCell(fromTop: min(cell.bounds.height, max(0, overlap)))
     }
   }
 
