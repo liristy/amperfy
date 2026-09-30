@@ -155,7 +155,6 @@ final class PlayerArtworkMotion: NSObject {
       miniPlayer?.transform = miniTransform
         .translatedBy(x: 0, y: 8 * settling)
         .scaledBy(x: 1 - 0.06 * settling, y: 1 - 0.12 * settling)
-      player.alpha = min(1, max(0, expansion / 0.12))
       // Carry the content with the card's top edge, instead of uncovering a
       // bottom-anchored full-height page like a vertical curtain.
       player.transform = CGAffineTransform(a: scale, b: 0, c: 0, d: scale,
@@ -350,11 +349,13 @@ final class PlayerSurfaceAnimator: NSObject, UIViewControllerAnimatedTransitioni
                             relativeDuration: 0.30) {
             contentMasks.forEach { $0.alpha = self.isPresenting ? 1 : 0 }
           }
-          // The moving surface must remain opaque through the entire visible
-          // morph. Crossfade only at the capsule endpoint; fading the page over
-          // its travel turns the whole-player spring into a cover-only animation.
-          // Keep the real mini player underneath, never a stale glass snapshot.
-          // Surface/capsule opacity follows the sampled geometry above.
+          // UIKit owns opacity while the display link owns geometry. Updating
+          // root-view alpha directly during an interactive UIKit transition can
+          // leave its presentation opacity behind the rendered surface.
+          UIView.addKeyframe(withRelativeStartTime: self.isPresenting ? 0 : 0.78,
+                            relativeDuration: self.isPresenting ? 0.035 : 0.22) {
+            playerView.alpha = self.isPresenting ? originalAlpha : 0
+          }
         }
       }
     }

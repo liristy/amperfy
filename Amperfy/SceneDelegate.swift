@@ -463,7 +463,7 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
                     (pausedPopup.view.layer.presentation()?.opacity ?? pausedPopup.view.layer.opacity) > 0.98,
                     let earlyContent = pausedPopup.controlPlaceholderView.mask?.layer.presentation(),
                     earlyContent.opacity > 0.5 else {
-                smokeLog("Opening checkpoint: surface \(String(describing: renderedSurface(pausedPopup))), bounds \(pausedPopup.view.bounds), opacity \(pausedPopup.view.layer.opacity), content \(String(describing: pausedPopup.controlPlaceholderView.mask?.layer.presentation()?.opacity))")
+                smokeLog("Opening checkpoint: surface \(String(describing: renderedSurface(pausedPopup))), bounds \(pausedPopup.view.bounds), mini \(miniPlayer.glassContainer.bounds), opacity \(pausedPopup.view.layer.opacity), rendered opacity \(String(describing: pausedPopup.view.layer.presentation()?.opacity)), content \(String(describing: pausedPopup.controlPlaceholderView.mask?.layer.presentation()?.opacity))")
                 return
               }
               miniPlayer.updatePlayerExpansion(translation: pausedDistance * 0.85)
@@ -505,7 +505,7 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
               guard let controlsMask = pausedPopup.controlPlaceholderView.mask,
                     controlsMask.accessibilityIdentifier == "player-transition-content-mask",
                     (controlsMask.layer.presentation()?.opacity ?? controlsMask.layer.opacity) < 0.01,
-                    pausedPopup.view.alpha > 0.1,
+                    (pausedPopup.view.layer.presentation()?.opacity ?? pausedPopup.view.layer.opacity) > 0.1,
                     miniPlayer.glassContainer.alpha > 0.1,
                     miniPlayer.glassContainer.alpha < 1,
                     miniPlayer.glassContainer.transform.a < 1,
