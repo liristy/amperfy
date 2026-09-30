@@ -143,7 +143,9 @@ class ContextQueueNextSectionHeader: UIView {
     config.image = image
     button.configuration = config
     if let material = modeMaterials[button] {
-      let tint: UIColor? = button.isSelected ? .white.withAlphaComponent(0.7) : nil
+      // A light native tint keeps an inactive capsule legible against the
+      // full player's smooth artwork background in dark appearance.
+      let tint = UIColor.white.withAlphaComponent(button.isSelected ? 0.7 : 0.18)
       if (material.effect as? UIGlassEffect)?.tintColor != tint {
         let glass = UIGlassEffect(style: .regular)
         glass.isInteractive = true

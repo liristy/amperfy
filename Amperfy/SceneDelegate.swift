@@ -911,6 +911,7 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
                             material.alpha > 0.9 else { return false }
                       let color = button.configuration?.imageColorTransformer?(.white)
                       return glass.isInteractive && button.window != nil &&
+                        glass.tintColor == UIColor.white.withAlphaComponent(selected ? 0.7 : 0.18) &&
                         (selected ? color == UIColor(white: 0.2, alpha: 1) : color == .white)
                     }) else {
                       smokeLog("Queue buttons lost their glass material or symbol contrast after refresh")
