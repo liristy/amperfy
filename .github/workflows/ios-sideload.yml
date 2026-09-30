@@ -18,6 +18,25 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  glass-probe:
+    if: github.event.repository.private == false && github.head_ref == 'codex/liquid-glass-debug'
+    runs-on: macos-26
+    timeout-minutes: 10
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_26.3.app/Contents/Developer
+    steps:
+      - uses: actions/checkout@v4
+      - name: Probe native glass independently of the player
+        run: bash BuildTools/probe-native-glass.sh
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: Native-glass-probe-${{ github.run_number }}
+          path: |
+            build/glass-probe/*.png
+            build/glass-probe/*.log
+          retention-days: 7
+
   tests:
     if: github.event.repository.private == false
     runs-on: macos-26
