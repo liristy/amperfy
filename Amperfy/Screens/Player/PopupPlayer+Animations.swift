@@ -74,10 +74,10 @@ final class PlayerArtworkMotion: NSObject {
   private let handle: UIView?
   private let handleTransform: CGAffineTransform
   private let cover: UIImageView?
-  private let smallFrame: CGRect
+  let smallFrame: CGRect
   private let fullFrame: CGRect
   private let presenting: Bool
-  private let startFrame: CGRect
+  let startFrame: CGRect
   let endFrame: CGRect
   private let startRadius: CGFloat
   private let endRadius: CGFloat
@@ -150,10 +150,11 @@ final class PlayerArtworkMotion: NSObject {
       // The live glass capsule and its title/buttons emerge on the same clock
       // as the collapsing surface. Reversing a drag reverses this handoff too.
       let handoff = min(1, max(0, expansion / 0.22))
+      let settling = min(1, max(-0.2, expansion / 0.22))
       miniPlayer?.alpha = miniAlpha * (1 - handoff)
       miniPlayer?.transform = miniTransform
-        .translatedBy(x: 0, y: 8 * handoff)
-        .scaledBy(x: 1 - 0.06 * handoff, y: 1 - 0.12 * handoff)
+        .translatedBy(x: 0, y: 8 * settling)
+        .scaledBy(x: 1 - 0.06 * settling, y: 1 - 0.12 * settling)
       player.alpha = min(1, max(0, expansion / 0.12))
       // Carry the content with the card's top edge, instead of uncovering a
       // bottom-anchored full-height page like a vertical curtain.

@@ -38,7 +38,10 @@ extension PopupPlayerVC: UITableViewDataSource, UITableViewDelegate {
     tableView.register(nibName: PlayableTableCell.typeName)
     tableView.register(nibName: CurrentlyPlayingTableCell.typeName)
     tableView.rowHeight = 56
-    tableView.estimatedRowHeight = 56
+    // All sizes are explicit; estimates would shift the card's scroll anchor.
+    tableView.estimatedRowHeight = 0
+    tableView.estimatedSectionHeaderHeight = 0
+    tableView.estimatedSectionFooterHeight = 0
     tableView.backgroundColor = UIColor.clear
     tableView.backgroundView = nil
     // The full player already supplies a continuous artwork background.

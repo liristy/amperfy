@@ -410,8 +410,9 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
                 }
               }
               func renderedSurface(_ popup: PopupPlayerVC) -> CGRect? {
-                guard let page = popup.view.layer.presentation(),
-                      let mask = popup.view.mask?.layer.presentation() else { return nil }
+                guard let maskView = popup.view.mask else { return nil }
+                let page = popup.view.layer.presentation() ?? popup.view.layer
+                let mask = maskView.layer.presentation() ?? maskView.layer
                 let sx = page.frame.width / popup.view.bounds.width
                 let sy = page.frame.height / popup.view.bounds.height
                 return CGRect(x: page.frame.minX + mask.frame.minX * sx,
@@ -459,10 +460,10 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
                     earlyFrame.height < pausedPopup.view.bounds.height - 20,
                     earlyFrame.width > miniPlayer.glassContainer.bounds.width + 1,
                     earlyFrame.width < pausedPopup.view.bounds.width - 1,
-                    (pausedPopup.view.layer.presentation()?.opacity ?? 0) > 0.98,
+                    (pausedPopup.view.layer.presentation()?.opacity ?? pausedPopup.view.layer.opacity) > 0.98,
                     let earlyContent = pausedPopup.controlPlaceholderView.mask?.layer.presentation(),
                     earlyContent.opacity > 0.5 else {
-                smokeLog("Opening hid the whole player during the capsule expansion")
+                smokeLog("Opening checkpoint: surface \(String(describing: renderedSurface(pausedPopup))), bounds \(pausedPopup.view.bounds), opacity \(pausedPopup.view.layer.opacity), content \(String(describing: pausedPopup.controlPlaceholderView.mask?.layer.presentation()?.opacity))")
                 return
               }
               miniPlayer.updatePlayerExpansion(translation: pausedDistance * 0.85)
@@ -538,15 +539,16 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
               miniPlayer.updatePlayerExpansion(translation: 160)
               try await Task.sleep(for: .milliseconds(80))
               guard let cover = flyingCover(), let coverHost = cover.superview,
-                    let coverFrame = cover.layer.presentation()?.frame,
                     let openingPopup = vc.presentedViewController as? PopupPlayerVC,
                     openingPopup.transitionArtwork?.mask?.alpha == 0 else {
                 smokeLog("Opening did not create a shared moving album cover")
                 return
               }
-              let miniCoverFrame = miniPlayer.artworkImage.convert(miniPlayer.artworkImage.bounds, to: coverHost)
-              guard let destinationCoverFrame = openingPopup.surfaceTransition.artworkMotion?.endFrame else { return }
-              let sourceSurface = miniPlayer.glassContainer.convert(miniPlayer.glassContainer.bounds, to: coverHost)
+              let coverFrame = (cover.layer.presentation() ?? cover.layer).frame
+              guard let openingMotion = openingPopup.surfaceTransition.artworkMotion else { return }
+              let miniCoverFrame = openingMotion.startFrame
+              let destinationCoverFrame = openingMotion.endFrame
+              let sourceSurface = openingMotion.smallFrame
               if let held = renderedSurface(openingPopup) {
                 let heightProgress = (held.height - sourceSurface.height) /
                   (openingPopup.view.bounds.height - sourceSurface.height)
@@ -614,7 +616,8 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
                 lastSample = "height \(animatedFrame.height), destination \(destinationHeight)"
                 largestOpeningHeight = max(largestOpeningHeight, animatedFrame.height)
                 if animatedFrame.height > destinationHeight + 0.5 { sampledSpringOvershoot = true }
-                if let cover = flyingCover(), let frame = cover.layer.presentation()?.frame {
+                if let cover = flyingCover() {
+                  let frame = (cover.layer.presentation() ?? cover.layer).frame
                   let pageProgress = min(1, max(0, (animatedFrame.height - sourceSurface.height) /
                     (destinationHeight - sourceSurface.height)))
                   let coverProgress = (frame.width - miniCoverFrame.width) /
@@ -631,7 +634,8 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
                   }
                   previousCoverWidth = frame.width
                 }
-                if let layer = popup.view.layer.presentation(), layer.transform.m22 > 1.012 {
+                let layer = popup.view.layer.presentation() ?? popup.view.layer
+                if layer.transform.m22 > 1.012 {
                   largestContentScale = max(largestContentScale, layer.transform.m22)
                   // Model alpha can be 1 while the rendered page is invisible.
                   // The rebound must be visible in both surface and content.
@@ -1033,7 +1037,8 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
                       let animatedFrame = renderedSurface(popup) else { continue }
                 let destination = miniPlayer.glassContainer.bounds
                 if animatedFrame.height < destination.height - 0.25 { sampledClosingRebound = true }
-                if let cover = flyingCover(), let frame = cover.layer.presentation()?.frame {
+                if let cover = flyingCover() {
+                  let frame = (cover.layer.presentation() ?? cover.layer).frame
                   if frame.width > previousReturningWidth + 0.5 ||
                         frame.width < miniPlayer.artworkImage.bounds.width - 0.5 {
                     smokeLog("Returning artwork bounced instead of travelling smoothly: \(frame)")

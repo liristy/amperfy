@@ -363,6 +363,8 @@ class PopupPlayerVC: UIViewController, UIScrollViewDelegate, UIGestureRecognizer
   var transitionArtwork: UIImageView? {
     guard let artwork = largeCurrentlyPlayingView?.transitionArtwork else { return nil }
     if appDelegate.storage.settings.user.playerDisplayStyle == .compact {
+      let path = IndexPath(row: 0, section: PlayerSectionCategory.currentlyPlaying.rawValue)
+      guard tableView.indexPathsForVisibleRows?.contains(path) == true else { return nil }
       let frame = artwork.convert(artwork.bounds, to: tableView)
       guard tableView.bounds.contains(frame) else { return nil }
     }
