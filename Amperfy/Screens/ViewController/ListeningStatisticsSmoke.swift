@@ -94,11 +94,19 @@ enum ListeningStatisticsSmoke {
     await probe.play(.init(kind: .tracks, name: "Missing fixture song", artists: ["Nobody"]))
     try check(probe.playbackError != nil, "Missing song was silently ignored")
     model.panel = .overview
-    try await Task.sleep(for: .milliseconds(600))
     func descendants(_ view: UIView) -> [UIView] { view.subviews + view.subviews.flatMap { descendants($0) } }
-    guard let scroll = descendants(host.view).compactMap({ $0 as? UIScrollView }).first(where: {
-      $0.bounds.height > 250 && $0.contentSize.height > $0.bounds.height + 250
-    }) else { try check(false, "Statistics scroll view unavailable"); return }
+    var readyScroll: UIScrollView?
+    for _ in 0..<60 {
+      host.view.layoutIfNeeded()
+      if !model.loading, let scroll = descendants(host.view).compactMap({ $0 as? UIScrollView }).first(where: {
+        $0.bounds.height > 250 && $0.contentSize.height > $0.bounds.height + 250
+      }) {
+        readyScroll = scroll
+        break
+      }
+      try await Task.sleep(for: .milliseconds(100))
+    }
+    guard let scroll = readyScroll else { try check(false, "Statistics scroll view unavailable after loading"); return }
     scroll.setContentOffset(CGPoint(x: 0, y: 180), animated: false)
     try await Task.sleep(for: .milliseconds(250))
     let offset = scroll.contentOffset

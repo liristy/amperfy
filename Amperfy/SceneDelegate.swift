@@ -918,6 +918,36 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
                       return
                     }
                     try await compositorScreenshot("player-queue-glass-\(style.rawValue)-\(selected ? "selected" : "normal").png")
+                    if style == .light && !selected {
+                      var ancestor: UIView? = buttons.first
+                      while let view = ancestor {
+                        smokeLog("Glass ancestor: \(type(of: view)) frame=\(view.frame) alpha=\(view.alpha) presentation=\(String(describing: view.layer.presentation()?.opacity)) mask=\(String(describing: view.mask)) raster=\(view.layer.shouldRasterize) hidden=\(view.isHidden)")
+                        ancestor = view.superview
+                      }
+                      var references = [UIVisualEffectView]()
+                      for (index, glassStyle) in [UIGlassEffect.Style.regular, .clear, .regular].enumerated() {
+                        let effect = UIGlassEffect(style: glassStyle)
+                        effect.isInteractive = true
+                        if index == 2 { effect.tintColor = .white }
+                        let reference = UIVisualEffectView(effect: effect)
+                        reference.cornerConfiguration = .capsule()
+                        reference.frame = CGRect(x: CGFloat(20 + index * 125), y: 175, width: 115, height: 44)
+                        popup.view.addSubview(reference)
+                        references.append(reference)
+                      }
+                      try await Task.sleep(for: .milliseconds(300))
+                      try await compositorScreenshot("player-queue-glass-1-diagnostic.png")
+                      for button in buttons {
+                        if let material = header.glassMaterial(for: button) {
+                          let effect = material.effect
+                          material.effect = nil
+                          material.effect = effect
+                        }
+                      }
+                      try await Task.sleep(for: .milliseconds(300))
+                      try await compositorScreenshot("player-queue-glass-2-diagnostic.png")
+                      references.forEach { $0.removeFromSuperview() }
+                    }
                   }
                   header.refresh()
                 }
