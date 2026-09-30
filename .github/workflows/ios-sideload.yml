@@ -68,6 +68,20 @@ jobs:
             build/validation/crashes
           retention-days: 7
 
+      - name: Upload compact player review artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: Amperfy-player-review-${{ github.run_number }}
+          path: |
+            build/validation/player.stdout.log
+            build/validation/player.stderr.log
+            build/validation/*-preview.jpg
+            build/validation/player-queue-glass-*.png
+            build/validation/player-queue-history.png
+            build/validation/player-statistics-detail.png
+          retention-days: 7
+
   build:
     # Standard hosted runners are free for public repositories only.
     if: github.event.repository.private == false

@@ -886,10 +886,23 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
                     let effects = descendants(of: button).compactMap { $0 as? UIVisualEffectView }
                     smokeLog("Queue glass \(button.accessibilityLabel ?? "unknown"): window=\(button.window != nil), selected=\(button.isSelected), effects=\(effects.map { String(describing: $0.effect) }), views=\(descendants(of: button).map { String(describing: type(of: $0)) })")
                   }
-                  guard buttons.allSatisfy({ button in
+                  // Record UIKit's own reference hierarchy before deciding whether
+                  // the app or a private implementation assumption caused a failure.
+                  let reference = UIButton(configuration: .glass())
+                  reference.frame = CGRect(x: 8, y: 0, width: 100, height: 44)
+                  header.addSubview(reference)
+                  reference.layoutIfNeeded()
+                  try await Task.sleep(for: .milliseconds(300))
+                  let referenceEffects = descendants(of: reference).compactMap { $0 as? UIVisualEffectView }
+                  smokeLog("Native glass reference effects=\(referenceEffects.map { String(describing: $0.effect) }), views=\(descendants(of: reference).map { String(describing: type(of: $0)) })")
+                  reference.removeFromSuperview()
+                  if !buttons.allSatisfy({ button in
                     descendants(of: button).compactMap { $0 as? UIVisualEffectView }
                       .contains { $0.effect is UIGlassEffect }
-                  }) else { smokeLog("Queue buttons lost native glass after state refresh"); return }
+                  }) {
+                    smokeLog("Queue buttons lost native glass after state refresh")
+                    playerPolishChecksPassed = false
+                  }
                 }
                 guard buttons.count == 3,
                       buttons.allSatisfy({ $0.bounds.width > 80 && $0.bounds.height >= 44 }),
