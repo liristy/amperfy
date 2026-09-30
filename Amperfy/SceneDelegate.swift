@@ -1025,6 +1025,10 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
                     self.appDelegate.player.nextQueueCount == upcomingBeforeClear else {
                 smokeLog("Clearing history changed playback or the upcoming queue"); return
               }
+              popup.tableView.layoutIfNeeded()
+              guard popup.contextPrevQueueSectionHeader?.window == nil else {
+                smokeLog("Cleared history left its title over the current song"); return
+              }
               popup.controlView?.displayPlaylistPressed()
               popup.controlView?.lyricsButton.sendActions(for: .touchUpInside)
               try await Task.sleep(for: .milliseconds(400))
@@ -1164,7 +1168,21 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
               guard queueGlassIsAligned(in: resumedQueue) else {
                 smokeLog("Persisted queue did not restore native glass after full presentation"); return
               }
+              guard resumedQueue.contextPrevQueueSectionHeader?.window == nil else {
+                smokeLog("Reopened empty history left its title over the current song"); return
+              }
               try await compositorScreenshot("player-queue-resumed.png")
+              let songBeforeQueueClear = self.appDelegate.player.currentlyPlaying
+              resumedQueue.clearUserQueue()
+              try await Task.sleep(for: .milliseconds(500))
+              resumedQueue.view.layoutIfNeeded()
+              guard self.appDelegate.player.userQueueCount == 0,
+                    self.appDelegate.player.currentlyPlaying == songBeforeQueueClear,
+                    resumedQueue.userQueueSectionHeader?.window == nil,
+                    queueGlassIsAligned(in: resumedQueue) else {
+                smokeLog("Clearing the user queue left a title, moved playback or detached glass"); return
+              }
+              try await compositorScreenshot("player-queue-empty.png")
               resumedQueue.dismiss(animated: false)
               self.appDelegate.storage.settings.user.playerDisplayStyle = .large
               try await Task.sleep(for: .milliseconds(300))

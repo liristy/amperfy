@@ -104,13 +104,16 @@ extension PopupPlayerVC: UITableViewDataSource, UITableViewDelegate {
   }
 
   func tableView(_ tableView: UITableView, viewForHeaderInSection section: Int) -> UIView? {
+    // A zero-height custom header can still draw its labels outside its bounds.
+    // Empty sections must not supply a header view.
     let sectionCategors = PlayerSectionCategory(rawValue: section)
     switch sectionCategors {
     case .contextPrev:
-      return contextPrevQueueSectionHeader
+      return player.prevQueueCount > 0 ? contextPrevQueueSectionHeader : nil
     case .currentlyPlaying:
       return nil
     case .userQueue:
+      guard player.userQueueCount > 0 else { return nil }
       refreshUserQueueSectionHeader()
       return userQueueSectionHeader
     case .contextNext:
