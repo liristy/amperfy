@@ -904,7 +904,7 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
                   header.refresh()
                 }
                 smokeLog("Queue layer: \(popup.tableView.layer.debugDescription), speed=\(popup.tableView.layer.speed), offset=\(popup.tableView.layer.timeOffset), keys=\(popup.tableView.layer.animationKeys() ?? [])")
-                try await compareFreshQueueTables(in: popup, capture: compositorScreenshot)
+                try await compareQueueComposition(in: popup, capture: compositorScreenshot)
                 // The same native controls must survive hiding and reopening the queue.
                 popup.controlView?.displayPlaylistPressed()
                 try await Task.sleep(for: .milliseconds(350))
@@ -1377,47 +1377,64 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
 
 #if DEBUG
 @MainActor
-private func compareFreshQueueTables(
+private func compareQueueComposition(
   in popup: PopupPlayerVC,
   capture: @MainActor (String) async throws -> Void
 ) async throws {
-  var tables = [UITableView]()
-  defer { tables.forEach { $0.removeFromSuperview() } }
-  for index in 0..<5 {
-    let table = UITableView(frame: CGRect(x: 24, y: 170 + CGFloat(index) * 55,
-      width: popup.view.bounds.width - 48, height: 50))
-    table.isOpaque = false
-    table.backgroundColor = .clear
-    table.topEdgeEffect.isHidden = true
-    table.bottomEdgeEffect.isHidden = true
-    let header = UIView(frame: table.bounds)
-    header.isOpaque = index % 2 == 1
-    if index < 2 || index == 4 { header.backgroundColor = .clear }
-    if index == 4 {
-      table.allowsSelection = popup.tableView.allowsSelection
-      table.alwaysBounceVertical = popup.tableView.alwaysBounceVertical
-      table.insetsLayoutMarginsFromSafeArea = popup.tableView.insetsLayoutMarginsFromSafeArea
-      table.insetsContentViewsToSafeArea = popup.tableView.insetsContentViewsToSafeArea
-      table.contentInsetAdjustmentBehavior = popup.tableView.contentInsetAdjustmentBehavior
-    }
-    let regular = UIButton(configuration: .glass())
-    regular.configuration?.title = ["Clear / 0", "Clear / 1", "Nil / 0", "Nil / 1", "Match"][index]
-    let prominent = UIButton(configuration: .prominentGlass())
-    prominent.configuration?.title = "Native"
-    let effect = UIGlassEffect(style: .regular)
-    effect.tintColor = .white
-    let glass = UIVisualEffectView(effect: effect)
-    let references: [UIView] = [regular, prominent, glass]
-    for (column, reference) in references.enumerated() {
-      reference.frame = CGRect(x: 8 + CGFloat(column) * 115, y: 0, width: 107, height: 44)
-      header.addSubview(reference)
-    }
-    glass.cornerConfiguration = .capsule()
-    table.tableHeaderView = header
-    popup.view.addSubview(table)
-    tables.append(table)
+  guard let header = popup.contextNextQueueSectionHeader else { return }
+  let table = popup.tableView!
+  let buttons = [header.shuffleButton, header.repeatButton, header.autoplayButton].compactMap { $0 }
+  let selected = buttons.map(\.isSelected)
+  let groupOpacity = table.layer.allowsGroupOpacity
+  let separator = table.separatorStyle
+  let offset = table.contentOffset
+  let tableIndex = popup.view.subviews.firstIndex(of: table)!
+  defer {
+    table.layer.allowsGroupOpacity = groupOpacity
+    table.separatorStyle = separator
+    popup.view.insertSubview(table, at: tableIndex)
+    table.setContentOffset(offset, animated: false)
+    for (button, state) in zip(buttons, selected) { button.isSelected = state }
   }
+  for button in buttons { button.isSelected = true }
+  table.layer.allowsGroupOpacity = false
   try await Task.sleep(for: .milliseconds(300))
-  try await capture("player-queue-glass-2-fresh-tables.png")
+  try await capture("player-queue-composition-group.png")
+  table.layer.allowsGroupOpacity = groupOpacity
+
+  table.separatorStyle = .singleLine
+  try await Task.sleep(for: .milliseconds(300))
+  try await capture("player-queue-composition-separator.png")
+  table.separatorStyle = separator
+
+  popup.view.bringSubviewToFront(table)
+  try await Task.sleep(for: .milliseconds(300))
+  try await capture("player-queue-composition-front.png")
+  popup.view.insertSubview(table, at: tableIndex)
+
+  let container = UIVisualEffectView(effect: UIGlassContainerEffect())
+  container.frame = CGRect(x: 0, y: 0, width: header.bounds.width, height: 44)
+  header.addSubview(container)
+  for button in buttons { container.contentView.addSubview(button) }
+  try await Task.sleep(for: .milliseconds(300))
+  try await capture("player-queue-composition-container.png")
+  for button in buttons { header.addSubview(button) }
+  container.removeFromSuperview()
+
+  let rect = table.rectForHeader(inSection: PlayerSectionCategory.contextNext.rawValue)
+  table.setContentOffset(CGPoint(x: 0, y: rect.minY), animated: false)
+  table.layoutIfNeeded()
+  try await Task.sleep(for: .milliseconds(300))
+  try await capture("player-queue-composition-pinned.png")
+  table.setContentOffset(offset, animated: false)
+  table.layoutIfNeeded()
+
+  let backdrop = UIVisualEffectView(effect: UIGlassEffect(style: .regular))
+  backdrop.frame = buttons[0].convert(buttons[0].bounds, to: popup.view)
+  backdrop.cornerConfiguration = .capsule()
+  popup.view.insertSubview(backdrop, belowSubview: table)
+  try await Task.sleep(for: .milliseconds(300))
+  try await capture("player-queue-composition-behind.png")
+  backdrop.removeFromSuperview()
 }
 #endif

@@ -48,6 +48,20 @@ jobs:
       - name: Record source timestamps
         if: always()
         run: python3 BuildTools/build-cache-mtimes.py save build/validation/DerivedData/source-mtimes.json
+      - name: Upload compact player review artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: Amperfy-player-review-${{ github.run_number }}
+          path: |
+            build/validation/player.stdout.log
+            build/validation/player.stderr.log
+            build/validation/server.log
+            build/validation/*-preview.jpg
+            build/validation/player-queue-glass-*.png
+            build/validation/player-queue-history.png
+            build/validation/player-statistics-detail.png
+          retention-days: 7
       - name: Save simulator build cache even after a UI failure
         if: always() && !cancelled() && steps.simulator-cache.outputs.cache-hit != 'true'
         uses: actions/cache/save@v4
@@ -68,20 +82,6 @@ jobs:
             build/validation/crashes
           retention-days: 7
 
-      - name: Upload compact player review artifacts
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: Amperfy-player-review-${{ github.run_number }}
-          path: |
-            build/validation/player.stdout.log
-            build/validation/player.stderr.log
-            build/validation/server.log
-            build/validation/*-preview.jpg
-            build/validation/player-queue-glass-*.png
-            build/validation/player-queue-history.png
-            build/validation/player-statistics-detail.png
-          retention-days: 7
 
   build:
     # Standard hosted runners are free for public repositories only.
