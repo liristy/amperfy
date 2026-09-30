@@ -482,7 +482,7 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
                                                         preferredSymbol: "airpods.gen3") == "airpods.gen3",
                     PlayerControlView.audioOutputSymbol(portType: .builtInSpeaker, portName: "iPhone",
                                                         preferredSymbol: "airpods.gen3") == "airplay.audio" else { return }
-              func compositorScreenshot(_ name: String) async throws {
+              @MainActor @Sendable func compositorScreenshot(_ name: String) async throws {
                 let request = URL.documentsDirectory.appendingPathComponent("player-screenshot-request")
                 let complete = URL.documentsDirectory.appendingPathComponent("player-screenshot-complete")
                 try? FileManager.default.removeItem(at: complete)
@@ -1383,7 +1383,7 @@ private func compareFreshQueueTables(
 ) async throws {
   var tables = [UITableView]()
   defer { tables.forEach { $0.removeFromSuperview() } }
-  for index in 0..<4 {
+  for index in 0..<5 {
     let table = UITableView(frame: CGRect(x: 24, y: 170 + CGFloat(index) * 55,
       width: popup.view.bounds.width - 48, height: 50))
     table.isOpaque = false
@@ -1392,9 +1392,16 @@ private func compareFreshQueueTables(
     table.bottomEdgeEffect.isHidden = true
     let header = UIView(frame: table.bounds)
     header.isOpaque = index % 2 == 1
-    if index < 2 { header.backgroundColor = .clear }
+    if index < 2 || index == 4 { header.backgroundColor = .clear }
+    if index == 4 {
+      table.allowsSelection = popup.tableView.allowsSelection
+      table.alwaysBounceVertical = popup.tableView.alwaysBounceVertical
+      table.insetsLayoutMarginsFromSafeArea = popup.tableView.insetsLayoutMarginsFromSafeArea
+      table.insetsContentViewsToSafeArea = popup.tableView.insetsContentViewsToSafeArea
+      table.contentInsetAdjustmentBehavior = popup.tableView.contentInsetAdjustmentBehavior
+    }
     let regular = UIButton(configuration: .glass())
-    regular.configuration?.title = ["Clear / 0", "Clear / 1", "Nil / 0", "Nil / 1"][index]
+    regular.configuration?.title = ["Clear / 0", "Clear / 1", "Nil / 0", "Nil / 1", "Match"][index]
     let prominent = UIButton(configuration: .prominentGlass())
     prominent.configuration?.title = "Native"
     let effect = UIGlassEffect(style: .regular)

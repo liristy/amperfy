@@ -49,7 +49,7 @@ jobs:
         if: always()
         run: python3 BuildTools/build-cache-mtimes.py save build/validation/DerivedData/source-mtimes.json
       - name: Save simulator build cache even after a UI failure
-        if: always() && steps.simulator-cache.outputs.cache-hit != 'true'
+        if: always() && !cancelled() && steps.simulator-cache.outputs.cache-hit != 'true'
         uses: actions/cache/save@v4
         with:
           path: build/validation/DerivedData
