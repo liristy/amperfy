@@ -565,9 +565,13 @@ final class FloatingPlayerDock: UIView {
     let rowY = Self.playerHeight + Self.gap
     navigationSlot.frame = CGRect(x: 0, y: rowY, width: isCollapsed ? side : max(side, bounds.width - side - Self.gap), height: side)
     searchSlot.frame = CGRect(x: bounds.width - side, y: rowY, width: side, height: side)
-    miniPlayer.glassContainer.frame = isCollapsed ?
+    let playerFrame = isCollapsed ?
       CGRect(x: side + Self.gap, y: rowY + (side - 48) / 2, width: max(0, bounds.width - (side + Self.gap) * 2), height: 48) :
       CGRect(x: 0, y: 0, width: bounds.width, height: Self.playerHeight)
+    // The player transition scales this live glass view. Assigning frame while
+    // transformed changes its bounds and cancels the intended capsule shrink.
+    miniPlayer.glassContainer.bounds = CGRect(origin: .zero, size: playerFrame.size)
+    miniPlayer.glassContainer.center = CGPoint(x: playerFrame.midX, y: playerFrame.midY)
     miniPlayer.glassContainer.layoutIfNeeded()
     searchButton.frame = CGRect(x: 0, y: 0, width: side, height: side)
     compactNavigationButton.frame = CGRect(x: 0, y: 0, width: side, height: side)

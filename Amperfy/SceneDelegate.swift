@@ -455,16 +455,18 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
               let pausedDistance = (miniPlayer.window?.bounds.height ?? 800) * 0.6
               miniPlayer.updatePlayerExpansion(translation: pausedDistance * 0.30)
               try await Task.sleep(for: .milliseconds(100))
-              guard let earlyFrame = renderedSurface(pausedPopup),
+              if let earlyFrame = renderedSurface(pausedPopup),
                     earlyFrame.height > miniPlayer.glassContainer.bounds.height + 20,
                     earlyFrame.height < pausedPopup.view.bounds.height - 20,
                     earlyFrame.width > miniPlayer.glassContainer.bounds.width + 1,
                     earlyFrame.width < pausedPopup.view.bounds.width - 1,
                     (pausedPopup.view.layer.presentation()?.opacity ?? pausedPopup.view.layer.opacity) > 0.98,
                     let earlyContent = pausedPopup.controlPlaceholderView.mask?.layer.presentation(),
-                    earlyContent.opacity > 0.5 else {
+                    earlyContent.opacity > 0.5 {
+                smokeLog("Interactive opening surface and foreground are visible")
+              } else {
                 smokeLog("Opening checkpoint: surface \(String(describing: renderedSurface(pausedPopup))), bounds \(pausedPopup.view.bounds), mini \(miniPlayer.glassContainer.bounds), opacity \(pausedPopup.view.layer.opacity), rendered opacity \(String(describing: pausedPopup.view.layer.presentation()?.opacity)), content \(String(describing: pausedPopup.controlPlaceholderView.mask?.layer.presentation()?.opacity))")
-                return
+                playerPolishChecksPassed = false
               }
               miniPlayer.updatePlayerExpansion(translation: pausedDistance * 0.85)
               pausedPopup.refreshCurrentlyPlayingInfoView()
@@ -502,16 +504,18 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
               pausedPopup.refreshCurrentlyPlayingInfoView()
               pausedPopup.controlView?.refreshView()
               try await Task.sleep(for: .milliseconds(100))
-              guard let controlsMask = pausedPopup.controlPlaceholderView.mask,
+              if let controlsMask = pausedPopup.controlPlaceholderView.mask,
                     controlsMask.accessibilityIdentifier == "player-transition-content-mask",
                     (controlsMask.layer.presentation()?.opacity ?? controlsMask.layer.opacity) < 0.01,
                     (pausedPopup.view.layer.presentation()?.opacity ?? pausedPopup.view.layer.opacity) > 0.1,
                     miniPlayer.glassContainer.alpha > 0.1,
                     miniPlayer.glassContainer.alpha < 1,
                     miniPlayer.glassContainer.transform.a < 1,
-                    hiddenCover.mask?.alpha == 0, flyingCover() != nil else {
+                    hiddenCover.mask?.alpha == 0, flyingCover() != nil {
+                smokeLog("Interactive closing capsule handoff is visible")
+              } else {
                 smokeLog("Closing did not hand off to the animated capsule, or exposed fullscreen controls")
-                return
+                playerPolishChecksPassed = false
               }
               try transitionScreenshot("player-closing-capsule.png")
               pausedPopup.endInteractiveDismissal(translation: closingDistance * 0.93, velocity: -200, cancelled: true)
