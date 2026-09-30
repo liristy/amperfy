@@ -1381,33 +1381,36 @@ private func compareFreshQueueTables(
   in popup: PopupPlayerVC,
   capture: @MainActor (String) async throws -> Void
 ) async throws {
-  for opaque in [false, true] {
-    let table = UITableView(frame: CGRect(x: 24, y: 170, width: popup.view.bounds.width - 48, height: 50))
+  var tables = [UITableView]()
+  defer { tables.forEach { $0.removeFromSuperview() } }
+  for index in 0..<4 {
+    let table = UITableView(frame: CGRect(x: 24, y: 170 + CGFloat(index) * 55,
+      width: popup.view.bounds.width - 48, height: 50))
     table.isOpaque = false
     table.backgroundColor = .clear
     table.topEdgeEffect.isHidden = true
     table.bottomEdgeEffect.isHidden = true
     let header = UIView(frame: table.bounds)
-    header.isOpaque = opaque
-    header.backgroundColor = .clear
+    header.isOpaque = index % 2 == 1
+    if index < 2 { header.backgroundColor = .clear }
     let regular = UIButton(configuration: .glass())
-    regular.configuration?.title = "Glass"
+    regular.configuration?.title = ["Clear / 0", "Clear / 1", "Nil / 0", "Nil / 1"][index]
     let prominent = UIButton(configuration: .prominentGlass())
     prominent.configuration?.title = "Native"
     let effect = UIGlassEffect(style: .regular)
     effect.tintColor = .white
     let glass = UIVisualEffectView(effect: effect)
     let references: [UIView] = [regular, prominent, glass]
-    for (index, reference) in references.enumerated() {
-      reference.frame = CGRect(x: 8 + CGFloat(index) * 115, y: 0, width: 107, height: 44)
+    for (column, reference) in references.enumerated() {
+      reference.frame = CGRect(x: 8 + CGFloat(column) * 115, y: 0, width: 107, height: 44)
       header.addSubview(reference)
     }
     glass.cornerConfiguration = .capsule()
     table.tableHeaderView = header
     popup.view.addSubview(table)
-    try await Task.sleep(for: .milliseconds(300))
-    try await capture("player-queue-glass-2-fresh-\(opaque ? "opaque" : "clear").png")
-    table.removeFromSuperview()
+    tables.append(table)
   }
+  try await Task.sleep(for: .milliseconds(300))
+  try await capture("player-queue-glass-2-fresh-tables.png")
 }
 #endif
