@@ -101,6 +101,17 @@ ready=false
 # The player suite also checks all statistics panels and native detail returns.
 # Keep a bounded five-minute deadline; report an explicit failure immediately.
 for attempt in {1..150}; do
+  if [[ -f "$container/Documents/player-screenshot-request" ]]; then
+    screenshot_name=$(cat "$container/Documents/player-screenshot-request")
+    if [[ ! "$screenshot_name" =~ ^player-queue-glass-[12]-(normal|selected)\.png$ ]]; then
+      echo "Invalid player screenshot request"
+      exit 1
+    fi
+    # Capture the compositor's native glass, which drawHierarchy can omit.
+    xcrun simctl io "$device_id" screenshot "$container/Documents/$screenshot_name"
+    rm "$container/Documents/player-screenshot-request"
+    touch "$container/Documents/player-screenshot-complete"
+  fi
   if [[ -f "$container/Documents/player-smoke-ready" ]]; then
     ready=true
     break
@@ -139,6 +150,6 @@ from pathlib import Path
 decoder = json.JSONDecoder()
 records = [decoder.raw_decode(part)[0] for part in Path('build/validation/server.log').read_text().split('SCROBBLE ')[1:]]
 assert any(r['submission'] == ['false'] for r in records), 'Missing now-playing notification'
-assert any(r['id'] == ['song-1'] and r['submission'] == ['true'] and int(r['time'][0]) > 0 for r in records), 'Missing completed listen with play timestamp'
+assert any(r['id'] == ['song-scrobble'] and r['submission'] == ['true'] and int(r['time'][0]) > 0 for r in records), f'Missing completed short listen with play timestamp: {records}'
 print('Subsonic now-playing and timestamped listening-history submission passed')
 PY

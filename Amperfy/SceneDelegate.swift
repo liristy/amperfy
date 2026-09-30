@@ -690,6 +690,18 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
                 }
                 try image.pngData()?.write(to: URL.documentsDirectory.appendingPathComponent(name))
               }
+              func compositorScreenshot(_ name: String) async throws {
+                let request = URL.documentsDirectory.appendingPathComponent("player-screenshot-request")
+                let complete = URL.documentsDirectory.appendingPathComponent("player-screenshot-complete")
+                try? FileManager.default.removeItem(at: complete)
+                try name.write(to: request, atomically: true, encoding: .utf8)
+                for _ in 0..<150 {
+                  if FileManager.default.fileExists(atPath: complete.path) { return }
+                  try await Task.sleep(for: .milliseconds(100))
+                }
+                throw NSError(domain: "PlayerSmoke", code: 1,
+                  userInfo: [NSLocalizedDescriptionKey: "Simulator screenshot timed out: \(name)"])
+              }
               guard let fullPlayer = popup.largeCurrentlyPlayingView,
                     abs(fullPlayer.titleLabel.font.pointSize - 20) < 0.5,
                     abs(fullPlayer.artistLabel.font.pointSize - 20) < 0.5 else {
@@ -899,7 +911,7 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
                       smokeLog("Queue buttons lost their glass material or symbol contrast after refresh")
                       return
                     }
-                    try screenshot("player-queue-glass-\(style.rawValue)-\(selected ? "selected" : "normal").png")
+                    try await compositorScreenshot("player-queue-glass-\(style.rawValue)-\(selected ? "selected" : "normal").png")
                   }
                   header.refresh()
                 }
@@ -1187,6 +1199,32 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
               smokeLog("Favorites shuffle and sleep timer shortcuts passed; cancellation and replacement preserved playback")
               if let tabHost = vc as? TabBarVC { try await ListeningStatisticsSmoke.run(on: tabHost) }
               guard playerPolishChecksPassed else { return }
+              // UI gestures deliberately skip tracks. Prove a completed listen with
+              // a dedicated short stream instead of counting seeks as listening.
+              try await syncer.searchSongs(searchText: "scrobble-probe")
+              guard let scrobbleSong = library.getSong(for: account, id: "song-scrobble") else {
+                smokeLog("Short scrobble fixture was not synchronized"); return
+              }
+              try await syncer.sync(song: scrobbleSong)
+              let playStarted = Date()
+              self.appDelegate.player.clearUserQueue()
+              self.appDelegate.player.setRepeatMode(.off)
+              self.appDelegate.player.play(context: PlayContext(name: "Scrobble smoke", playables: [scrobbleSong]))
+              var uploadedListen = false
+              for _ in 0..<150 {
+                if library.getScrobbleEntries(for: account).contains(where: {
+                  $0.playable?.asSong == scrobbleSong && $0.isUploaded &&
+                    ($0.date?.timeIntervalSince(playStarted) ?? -100) >= -1
+                }) {
+                  uploadedListen = true
+                  break
+                }
+                try await Task.sleep(for: .milliseconds(100))
+              }
+              guard uploadedListen else {
+                smokeLog("Real short-stream playback did not upload its timestamped listen"); return
+              }
+              smokeLog("Short audio played through the listening threshold and uploaded its timestamped history")
               let marker = URL.documentsDirectory.appendingPathComponent("player-smoke-ready")
               try "ready".write(to: marker, atomically: true, encoding: .utf8)
             } catch { smokeLog("Player smoke failed: \(error)") }

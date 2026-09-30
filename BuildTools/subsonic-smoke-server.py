@@ -27,13 +27,18 @@ def rectangular_cover(second=False):
 
 COVERS = [rectangular_cover(), rectangular_cover(True)]
 
-audio_buffer = io.BytesIO()
-with wave.open(audio_buffer, 'wb') as audio:
-    audio.setnchannels(1)
-    audio.setsampwidth(2)
-    audio.setframerate(16000)
-    audio.writeframes(b'\0\0' * 16000 * 180)
-AUDIO = audio_buffer.getvalue()
+def silent_audio(seconds):
+    audio_buffer = io.BytesIO()
+    with wave.open(audio_buffer, 'wb') as audio:
+        audio.setnchannels(1)
+        audio.setsampwidth(2)
+        audio.setframerate(16000)
+        audio.writeframes(b'\0\0' * 16000 * seconds)
+    return audio_buffer.getvalue()
+
+
+AUDIO = silent_audio(180)
+SCROBBLE_AUDIO = silent_audio(8)
 LYRICS = '<lyricsList><structuredLyrics lang="zh" synced="true">' + ''.join(
     f'<line start="{i * 10000}">{text}</line>' for i, text in enumerate([
         '晚风轻轻经过', '带着远方的颜色', '沿着街灯往前走', '把今天写成一首歌',
@@ -46,6 +51,7 @@ ALBUM = '<album id="album-1" name="测试专辑" artist="测试歌手" artistId=
 SONG = '<song id="song-1" title="测试歌曲" album="测试专辑" albumId="album-1" artist="测试歌手" artistId="artist-1" duration="180" size="1000000" suffix="mp3" contentType="audio/mpeg" isDir="false" coverArt="al-1"/>'
 SONG = SONG.replace('suffix="mp3"', 'suffix="wav"').replace('audio/mpeg', 'audio/wav')
 SECOND_SONG = SONG.replace('song-1', 'song-2').replace('测试歌曲', '下一首歌曲').replace('al-1', 'al-2')
+SCROBBLE_SONG = SONG.replace('song-1', 'song-scrobble').replace('测试歌曲', 'Scrobble probe').replace('duration="180"', 'duration="8"')
 PLAYLIST = '<playlist id="playlist-1" name="测试歌单" songCount="1" duration="180" coverArt="pl-1_hash" owner="smoke" public="false"/>'
 
 
@@ -68,7 +74,8 @@ class Handler(BaseHTTPRequestHandler):
             if action == 'stream' and (query.get('format') != ['raw'] or 'maxBitRate' in query):
                 self.send_error(400, 'Expected original audio without transcoding')
                 return
-            start, end = 0, len(AUDIO) - 1
+            audio = SCROBBLE_AUDIO if query.get('id') == ['song-scrobble'] else AUDIO
+            start, end = 0, len(audio) - 1
             partial = self.headers.get('Range', '').startswith('bytes=')
             if partial:
                 first, last = self.headers['Range'][6:].split('-', 1)
@@ -78,11 +85,11 @@ class Handler(BaseHTTPRequestHandler):
             self.send_header('Content-Type', 'audio/wav')
             self.send_header('Accept-Ranges', 'bytes')
             if partial:
-                self.send_header('Content-Range', f'bytes {start}-{end}/{len(AUDIO)}')
+                self.send_header('Content-Range', f'bytes {start}-{end}/{len(audio)}')
             self.send_header('Content-Length', str(end - start + 1))
             self.end_headers()
             try:
-                self.wfile.write(AUDIO[start:end+1])
+                self.wfile.write(audio[start:end+1])
             except (BrokenPipeError, ConnectionResetError):
                 pass
             return
@@ -97,7 +104,8 @@ class Handler(BaseHTTPRequestHandler):
             responses = {
                 'ping': '',
                 'getOpenSubsonicExtensions': '<openSubsonicExtensions name="songLyrics"><versions>1</versions></openSubsonicExtensions>',
-                'getSong': SECOND_SONG if query.get('id') == ['song-2'] else SONG,
+                'getSong': SCROBBLE_SONG if query.get('id') == ['song-scrobble'] else SECOND_SONG if query.get('id') == ['song-2'] else SONG,
+                'search3': '<searchResult3>' + (SCROBBLE_SONG if query.get('query') == ['scrobble-probe'] else '') + '</searchResult3>',
                 'getLyricsBySongId': LYRICS,
                 'getGenres': '<genres><genre songCount="1" albumCount="1">Pop</genre></genres>',
                 'getArtists': f'<artists><index name="T">{ARTIST}</index></artists>',

@@ -76,6 +76,7 @@ jobs:
           path: |
             build/validation/player.stdout.log
             build/validation/player.stderr.log
+            build/validation/server.log
             build/validation/*-preview.jpg
             build/validation/player-queue-glass-*.png
             build/validation/player-queue-history.png
