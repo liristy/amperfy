@@ -479,6 +479,7 @@ class PlayerControlView: UIView {
     case .music:
       appDelegate.player.setPlayerMode(.podcast)
     case .podcast:
+      appDelegate.player.setPlayerMode(.music)
     }
     refreshPlayerModeChangeButton()
   }
