@@ -22,6 +22,7 @@
 import AmperfyKit
 import AVFAudio
 import CoreMedia
+import MediaPlayer
 import OSLog
 import UIKit
 
@@ -691,6 +692,27 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
                 return
               }
               if let controls = popup.controlView {
+                #if !targetEnvironment(macCatalyst)
+                  let songBeforeVolume = self.appDelegate.player.currentlyPlaying
+                  let gainBeforeVolume = self.appDelegate.player.volume
+                  let modeBeforeVolume = self.appDelegate.player.playerMode
+                  let playingBeforeVolume = self.appDelegate.player.isPlaying
+                  controls.showVolumeSliderMenu()
+                  try await Task.sleep(for: .milliseconds(350))
+                  guard let menu = popup.presentedViewController as? SliderMenuPopover,
+                        descendants(of: controls).contains(where: { $0 is MPVolumeView }),
+                        descendants(of: menu.view).contains(where: { $0 is MPVolumeView }),
+                        menu.sliderMenuView.slider.isHidden,
+                        self.appDelegate.player.volume == gainBeforeVolume,
+                        self.appDelegate.player.playerMode == modeBeforeVolume,
+                        self.appDelegate.player.currentlyPlaying == songBeforeVolume,
+                        self.appDelegate.player.isPlaying == playingBeforeVolume else {
+                    smokeLog("System volume menu changed application gain, playback or mode")
+                    return
+                  }
+                  menu.dismiss(animated: false)
+                  smokeLog("Native system-volume controls and popover preserved application gain and playback; hardware volume requires a physical device")
+                #endif
                 controls.renderAudioOutput(.init(portType: .bluetoothA2DP, name: "airpods", uid: "smoke-airpods4"))
                 controls.refreshPlayer()
                 controls.renderAudioOutput(nil, settled: false)

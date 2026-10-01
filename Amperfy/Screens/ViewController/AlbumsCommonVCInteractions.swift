@@ -21,6 +21,7 @@
 
 import AmperfyKit
 import CoreData
+import MediaPlayer
 import UIKit
 
 // MARK: - SliderMenuPopover
@@ -54,6 +55,27 @@ class SliderMenuView: UIView {
 
   var stepValue: Float = 1.0
   var sliderValueChangedCB: VoidFunctionCallback?
+  #if !targetEnvironment(macCatalyst)
+    private var systemVolume: MPVolumeView?
+
+    func useSystemVolume() {
+      guard systemVolume == nil else { return }
+      slider.isHidden = true
+      sliderValueChangedCB = nil
+      let volumeView = MPVolumeView(frame: .zero)
+      volumeView.showsRouteButton = false
+      volumeView.showsVolumeSlider = true
+      volumeView.translatesAutoresizingMaskIntoConstraints = false
+      addSubview(volumeView)
+      NSLayoutConstraint.activate([
+        volumeView.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 10),
+        volumeView.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -10),
+        volumeView.centerYAnchor.constraint(equalTo: centerYAnchor),
+        volumeView.heightAnchor.constraint(equalToConstant: 32),
+      ])
+      systemVolume = volumeView
+    }
+  #endif
 
   override init(frame: CGRect) {
     super.init(frame: frame)

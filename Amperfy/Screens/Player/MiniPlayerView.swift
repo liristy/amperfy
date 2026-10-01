@@ -1137,13 +1137,16 @@ class MiniPlayerView: UIView, UIGestureRecognizerDelegate {
     let sliderMenuView = popoverContentController.sliderMenuView
     sliderMenuView.frame = CGRect(x: 0, y: 0, width: 250, height: 50)
 
-    sliderMenuView.slider.minimumValue = 0
-    sliderMenuView.slider.maximumValue = 100
-    sliderMenuView.slider.value = appDelegate.player.volume * 100
-
-    sliderMenuView.sliderValueChangedCB = {
-      self.appDelegate.player.volume = Float(sliderMenuView.slider.value) / 100.0
-    }
+    #if targetEnvironment(macCatalyst)
+      sliderMenuView.slider.minimumValue = 0
+      sliderMenuView.slider.maximumValue = 100
+      sliderMenuView.slider.value = appDelegate.player.volume * 100
+      sliderMenuView.sliderValueChangedCB = {
+        self.appDelegate.player.volume = Float(sliderMenuView.slider.value) / 100.0
+      }
+    #else
+      sliderMenuView.useSystemVolume()
+    #endif
 
     popoverContentController.modalPresentationStyle = .popover
     popoverContentController.preferredContentSize = sliderMenuView.frame.size

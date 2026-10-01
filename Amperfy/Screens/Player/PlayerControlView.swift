@@ -39,7 +39,11 @@ class PlayerControlView: UIView {
   private var player: PlayerFacade!
   private var rootView: PopupPlayerVC?
   private var playerHandler: PlayerUIHandler?
-  private let volumeSlider = PlayerTrackSlider()
+  #if targetEnvironment(macCatalyst)
+    private let volumeSlider = PlayerTrackSlider()
+  #else
+    private let volumeSlider = MPVolumeView(frame: .zero)
+  #endif
   private var audioRouteTask: Task<Void, Never>?
   private static let audioIconPreferencesKey = "player.audioOutputIcons"
   private static var bluetoothIconCache = [String: String]()
@@ -160,15 +164,28 @@ class PlayerControlView: UIView {
 
   private func configureVolumeSlider() {
     volumeSlider.translatesAutoresizingMaskIntoConstraints = false
-    volumeSlider.minimumValue = 0
-    volumeSlider.maximumValue = 1
-    volumeSlider.value = player.volume
-    volumeSlider.minimumTrackTintColor = .white.withAlphaComponent(0.7)
-    volumeSlider.maximumTrackTintColor = .white.withAlphaComponent(0.18)
-    volumeSlider.preferredBehavioralStyle = .pad
-    volumeSlider.sliderStyle = .thumbless
-    volumeSlider.accessibilityLabel = "Volume".localized
-    volumeSlider.addTarget(self, action: #selector(volumeChanged), for: .valueChanged)
+    #if targetEnvironment(macCatalyst)
+      volumeSlider.minimumValue = 0
+      volumeSlider.maximumValue = 1
+      volumeSlider.value = player.volume
+      volumeSlider.minimumTrackTintColor = .white.withAlphaComponent(0.7)
+      volumeSlider.maximumTrackTintColor = .white.withAlphaComponent(0.18)
+      volumeSlider.preferredBehavioralStyle = .pad
+      volumeSlider.sliderStyle = .thumbless
+      volumeSlider.accessibilityLabel = "Volume".localized
+      volumeSlider.addTarget(self, action: #selector(volumeChanged), for: .valueChanged)
+    #else
+      // MPVolumeView owns the system volume, including hardware buttons,
+      // Control Center and output-route changes. AVAudioSession.outputVolume
+      // is read-only; the player's separate gain must not drive this slider.
+      volumeSlider.showsRouteButton = false
+      volumeSlider.showsVolumeSlider = true
+      volumeSlider.tintColor = .white.withAlphaComponent(0.7)
+      volumeSlider.setMinimumVolumeSliderImage(volumeTrackImage(alpha: 0.7), for: .normal)
+      volumeSlider.setMaximumVolumeSliderImage(volumeTrackImage(alpha: 0.18), for: .normal)
+      let invisibleThumb = UIGraphicsImageRenderer(size: CGSize(width: 1, height: 1)).image { _ in }
+      volumeSlider.setVolumeThumbImage(invisibleThumb, for: .normal)
+    #endif
     addSubview(volumeSlider)
 
     let quietSpeaker = UIImageView(image: UIImage(systemName: "speaker.fill"))
@@ -187,6 +204,16 @@ class PlayerControlView: UIView {
       volumeSlider.heightAnchor.constraint(equalToConstant: 32),
     ])
   }
+
+  #if !targetEnvironment(macCatalyst)
+    private func volumeTrackImage(alpha: CGFloat) -> UIImage {
+      let size = CGSize(width: 14, height: 7)
+      return UIGraphicsImageRenderer(size: size).image { _ in
+        UIColor.white.withAlphaComponent(alpha).setFill()
+        UIBezierPath(roundedRect: CGRect(origin: .zero, size: size), cornerRadius: 3.5).fill()
+      }.resizableImage(withCapInsets: UIEdgeInsets(top: 0, left: 4, bottom: 0, right: 4))
+    }
+  #endif
 
   private func configureIconControls() {
     // Keep the player controls as bare icons with their existing touch targets.
@@ -316,10 +343,12 @@ class PlayerControlView: UIView {
     airplayButton.accessibilityHint = "Long press to choose headphone icon".localized
   }
 
-  @objc
-  private func volumeChanged() {
-    player.volume = volumeSlider.value
-  }
+  #if targetEnvironment(macCatalyst)
+    @objc
+    private func volumeChanged() {
+      player.volume = volumeSlider.value
+    }
+  #endif
 
   @objc
   private func lyricsPressed() {
@@ -410,14 +439,17 @@ class PlayerControlView: UIView {
     let sliderMenuView = popoverContentController.sliderMenuView
     sliderMenuView.frame = CGRect(x: 0, y: 0, width: 250, height: 50)
 
-    sliderMenuView.slider.minimumValue = 0
-    sliderMenuView.slider.maximumValue = 100
-    sliderMenuView.slider.value = appDelegate.player.volume * 100
-
-    sliderMenuView.sliderValueChangedCB = {
-      self.appDelegate.player.volume = Float(sliderMenuView.slider.value) / 100.0
-      self.volumeSlider.value = self.appDelegate.player.volume
-    }
+    #if targetEnvironment(macCatalyst)
+      sliderMenuView.slider.minimumValue = 0
+      sliderMenuView.slider.maximumValue = 100
+      sliderMenuView.slider.value = appDelegate.player.volume * 100
+      sliderMenuView.sliderValueChangedCB = {
+        self.appDelegate.player.volume = Float(sliderMenuView.slider.value) / 100.0
+        self.volumeSlider.value = self.appDelegate.player.volume
+      }
+    #else
+      sliderMenuView.useSystemVolume()
+    #endif
 
     popoverContentController.modalPresentationStyle = .popover
     popoverContentController.preferredContentSize = sliderMenuView.frame.size
@@ -447,7 +479,6 @@ class PlayerControlView: UIView {
     case .music:
       appDelegate.player.setPlayerMode(.podcast)
     case .podcast:
-      appDelegate.player.setPlayerMode(.music)
     }
     refreshPlayerModeChangeButton()
   }
@@ -459,9 +490,11 @@ class PlayerControlView: UIView {
   func refreshPlayer() {
     // Playback and metadata changes must not overwrite a settled output icon
     // using a transient route snapshot. Route notifications own that update.
-    if !volumeSlider.isTracking {
-      volumeSlider.value = player.volume
-    }
+    #if targetEnvironment(macCatalyst)
+      if !volumeSlider.isTracking {
+        volumeSlider.value = player.volume
+      }
+    #endif
     refreshLyricsButton()
     playerHandler?.refreshSkipButtons(
       skipBackwardButton: skipBackwardButton,
