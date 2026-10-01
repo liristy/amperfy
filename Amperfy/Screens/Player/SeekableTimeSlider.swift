@@ -107,7 +107,7 @@ struct RelativeVolumeDrag {
       return nil
     }
 
-    func gestureRecognizerShouldBegin(_ gestureRecognizer: UIGestureRecognizer) -> Bool {
+    override func gestureRecognizerShouldBegin(_ gestureRecognizer: UIGestureRecognizer) -> Bool {
       guard let slider = nativeSlider(in: self), slider.isEnabled, !slider.isHidden else { return false }
       let velocity = volumePan.velocity(in: self)
       return abs(velocity.x) > abs(velocity.y)
