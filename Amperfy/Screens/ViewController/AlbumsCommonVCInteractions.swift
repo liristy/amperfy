@@ -62,7 +62,7 @@ class SliderMenuView: UIView {
       guard systemVolume == nil else { return }
       slider.isHidden = true
       sliderValueChangedCB = nil
-      let volumeView = MPVolumeView(frame: .zero)
+      let volumeView = DragOnlySystemVolumeView(frame: .zero)
       volumeView.showsRouteButton = false
       volumeView.showsVolumeSlider = true
       volumeView.translatesAutoresizingMaskIntoConstraints = false

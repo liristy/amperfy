@@ -21,6 +21,7 @@
 
 import AmperfyKit
 import CoreMedia
+import MediaPlayer
 import UIKit
 
 // MARK: - PopupPlayerVC
@@ -326,6 +327,7 @@ class PopupPlayerVC: UIViewController, UIScrollViewDelegate, UIGestureRecognizer
     guard isDismissPan || areLyricsControlsHidden else { return false }
     var touchedView = touch.view
     while let current = touchedView {
+      if isDismissPan, current is MPVolumeView { return false }
       if isDismissPan ? (current is UISlider) : (current is UIControl) { return false }
       if !isDismissPan, current === largeCurrentlyPlayingView?.transitionArtwork { return false }
       touchedView = current.superview

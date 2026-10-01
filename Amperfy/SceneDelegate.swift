@@ -693,6 +693,27 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
               }
               if let controls = popup.controlView {
                 #if !targetEnvironment(macCatalyst)
+                  let invalidVolumeDrag = RelativeVolumeDrag(value: 0.4, minimum: 0, maximum: 1, width: 0)
+                  guard let drag = RelativeVolumeDrag(value: 0.4, minimum: 0, maximum: 1, width: 200),
+                        abs(drag.value(forTranslationX: 0) - 0.4) < 0.001,
+                        abs(drag.value(forTranslationX: 40) - 0.6) < 0.001,
+                        abs(drag.value(forTranslationX: -40) - 0.2) < 0.001,
+                        drag.value(forTranslationX: -4000) == 0,
+                        drag.value(forTranslationX: 4000) == 1,
+                        case nil = invalidVolumeDrag,
+                        let volumeControl = descendants(of: controls).compactMap({ $0 as? DragOnlySystemVolumeView }).first else {
+                    smokeLog("Relative volume drag jumped at contact or failed directional/limit checks")
+                    return
+                  }
+                  volumeControl.layoutIfNeeded()
+                  for x in [CGFloat(1), volumeControl.bounds.width - 1] {
+                    guard let hit = volumeControl.hitTest(CGPoint(x: x, y: volumeControl.bounds.midY), with: nil),
+                          !(hit is UISlider), hit.superview === volumeControl else {
+                      smokeLog("Volume tap reached native slider tracking and could jump to a position")
+                      return
+                    }
+                  }
+                  smokeLog("Volume touch-down stayed unchanged; relative left/right drag, bounds and tap interception passed")
                   let songBeforeVolume = self.appDelegate.player.currentlyPlaying
                   let gainBeforeVolume = self.appDelegate.player.volume
                   let modeBeforeVolume = self.appDelegate.player.playerMode

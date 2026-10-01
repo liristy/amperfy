@@ -42,7 +42,7 @@ class PlayerControlView: UIView {
   #if targetEnvironment(macCatalyst)
     private let volumeSlider = PlayerTrackSlider()
   #else
-    private let volumeSlider = MPVolumeView(frame: .zero)
+    private let volumeSlider = DragOnlySystemVolumeView(frame: .zero)
   #endif
   private var audioRouteTask: Task<Void, Never>?
   private static let audioIconPreferencesKey = "player.audioOutputIcons"

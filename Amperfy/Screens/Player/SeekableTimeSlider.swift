@@ -18,7 +18,143 @@
 //  along with this program.  If not, see <http://www.gnu.org/licenses/>.
 //
 
+import AVFAudio
+import Combine
+import MediaPlayer
 import UIKit
+
+// A drag starts from the current level, independent of where the finger lands.
+struct RelativeVolumeDrag {
+  let initialValue: Float
+  let minimumValue: Float
+  let maximumValue: Float
+  let trackWidth: CGFloat
+
+  init?(value: Float, minimum: Float, maximum: Float, width: CGFloat) {
+    guard value.isFinite, minimum.isFinite, maximum.isFinite,
+          maximum > minimum, width.isFinite, width > 0 else { return nil }
+    initialValue = min(maximum, max(minimum, value))
+    minimumValue = minimum
+    maximumValue = maximum
+    trackWidth = width
+  }
+
+  func value(forTranslationX translation: CGFloat) -> Float {
+    guard translation.isFinite else { return initialValue }
+    let delta = Float(translation / trackWidth) * (maximumValue - minimumValue)
+    return min(maximumValue, max(minimumValue, initialValue + delta))
+  }
+}
+
+#if !targetEnvironment(macCatalyst)
+  final class DragOnlySystemVolumeView: MPVolumeView, UIGestureRecognizerDelegate {
+    private let touchSurface = UIView()
+    private weak var trackedSlider: UISlider?
+    private var volumeDrag: RelativeVolumeDrag?
+    private var routeObserver: AnyCancellable?
+    private lazy var volumePan = UIPanGestureRecognizer(target: self, action: #selector(dragVolume(_:)))
+
+    override init(frame: CGRect) {
+      super.init(frame: frame)
+      configureDragging()
+    }
+
+    required init?(coder: NSCoder) {
+      super.init(coder: coder)
+      configureDragging()
+    }
+
+    private func configureDragging() {
+      showsRouteButton = false
+      touchSurface.backgroundColor = .clear
+      touchSurface.isOpaque = false
+      touchSurface.isAccessibilityElement = false
+      volumePan.maximumNumberOfTouches = 1
+      volumePan.delegate = self
+      touchSurface.addGestureRecognizer(volumePan)
+      addSubview(touchSurface)
+      routeObserver = NotificationCenter.default.publisher(for: AVAudioSession.routeChangeNotification)
+        .sink { [weak self] _ in
+          Task { @MainActor [weak self] in
+            self?.cancelVolumeDragForRouteChange()
+          }
+        }
+    }
+
+    override func layoutSubviews() {
+      super.layoutSubviews()
+      touchSurface.frame = bounds
+      bringSubviewToFront(touchSurface)
+    }
+
+    override func hitTest(_ point: CGPoint, with event: UIEvent?) -> UIView? {
+      guard isUserInteractionEnabled, !isHidden, alpha > 0.01, bounds.contains(point) else { return nil }
+      // A tap must never reach UISlider.beginTracking and jump to its location.
+      // Native slider accessibility actions remain available independently.
+      return touchSurface
+    }
+
+    override func didMoveToWindow() {
+      super.didMoveToWindow()
+      if window == nil { finishVolumeDrag(cancelled: true) }
+    }
+
+    private func nativeSlider(in view: UIView) -> UISlider? {
+      for child in view.subviews where child !== touchSurface {
+        if let slider = child as? UISlider { return slider }
+        if let slider = nativeSlider(in: child) { return slider }
+      }
+      return nil
+    }
+
+    func gestureRecognizerShouldBegin(_ gestureRecognizer: UIGestureRecognizer) -> Bool {
+      guard let slider = nativeSlider(in: self), slider.isEnabled, !slider.isHidden else { return false }
+      let velocity = volumePan.velocity(in: self)
+      return abs(velocity.x) > abs(velocity.y)
+    }
+
+    @objc private func dragVolume(_ pan: UIPanGestureRecognizer) {
+      switch pan.state {
+      case .began:
+        guard let slider = nativeSlider(in: self), slider.isEnabled, !slider.isHidden,
+              let drag = RelativeVolumeDrag(value: slider.value, minimum: slider.minimumValue,
+                maximum: slider.maximumValue, width: slider.trackRect(forBounds: slider.bounds).width) else { return }
+        trackedSlider = slider
+        volumeDrag = drag
+        slider.sendActions(for: .touchDown)
+        applyVolumeDrag(translation: pan.translation(in: self).x)
+      case .changed:
+        applyVolumeDrag(translation: pan.translation(in: self).x)
+      case .ended:
+        applyVolumeDrag(translation: pan.translation(in: self).x)
+        finishVolumeDrag(cancelled: false)
+      case .cancelled, .failed:
+        finishVolumeDrag(cancelled: true)
+      default: break
+      }
+    }
+
+    private func applyVolumeDrag(translation: CGFloat) {
+      guard let slider = trackedSlider, slider.isEnabled, let drag = volumeDrag else { return }
+      // Use only public UISlider properties/events on MPVolumeView's control.
+      // MPVolumeView continues to own system-volume writes and external updates.
+      slider.setValue(drag.value(forTranslationX: translation), animated: false)
+      slider.sendActions(for: .valueChanged)
+    }
+
+    private func finishVolumeDrag(cancelled: Bool) {
+      trackedSlider?.sendActions(for: cancelled ? .touchCancel : .touchUpInside)
+      trackedSlider = nil
+      volumeDrag = nil
+    }
+
+    private func cancelVolumeDragForRouteChange() {
+      finishVolumeDrag(cancelled: true)
+      volumePan.isEnabled = false
+      volumePan.isEnabled = true
+    }
+  }
+#endif
 
 class PlayerTrackSlider: UISlider {
   var restingTrackHeight: CGFloat = 7
