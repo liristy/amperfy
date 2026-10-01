@@ -132,7 +132,7 @@ extension PopupPlayerVC: UITableViewDataSource, UITableViewDelegate {
     case .contextPrev:
       return player.prevQueueCount > 0 ? ContextQueuePrevSectionHeader.frameHeight : .leastNormalMagnitude
     case .currentlyPlaying:
-      return 0.0
+      return .leastNormalMagnitude
     case .userQueue:
       if player.userQueueCount == 0 {
         return CGFloat.leastNormalMagnitude
@@ -142,7 +142,7 @@ extension PopupPlayerVC: UITableViewDataSource, UITableViewDelegate {
     case .contextNext:
       return ContextQueueNextSectionHeader.frameHeight
     case .none:
-      return 0.0
+      return .leastNormalMagnitude
     }
   }
 
@@ -158,12 +158,12 @@ extension PopupPlayerVC: UITableViewDataSource, UITableViewDelegate {
   func tableView(_ tableView: UITableView, heightForFooterInSection section: Int) -> CGFloat {
     switch PlayerSectionCategory(rawValue: section) {
     case .contextPrev: return player.prevQueueCount > 0 ? 16 : .leastNormalMagnitude
-    case .currentlyPlaying, .none, .userQueue: return 0.0
+    case .currentlyPlaying, .none, .userQueue: return .leastNormalMagnitude
     case .contextNext: // calculate footer height to keep currently playing row on top of table view
       let heightOfContextNextRows = tableView.frame.height - ContextQueueNextSectionHeader.frameHeight - CurrentlyPlayingTableCell.rowHeight - 8
       let contextNextRowOccupiedHeight = CGFloat(player.nextQueueCount) * tableView.rowHeight
       let offset = heightOfContextNextRows - contextNextRowOccupiedHeight
-      return offset > 0.0 ? offset : 0.0
+      return offset > 0.0 ? offset : .leastNormalMagnitude
     }
   }
 
