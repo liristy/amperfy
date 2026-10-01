@@ -1007,7 +1007,10 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
               popup.controlView?.lyricsButton.sendActions(for: .touchUpInside)
               guard try await compactHeaderStayedFixed() else { return }
               smokeLog("Shared card survived switching; queue scrolling moved the card and retained fixed transport controls")
-              self.appDelegate.player.play(playerIndex: PlayerIndex(queueType: .next, index: 1))
+              // Long history and upcoming sections expose pinned transparent
+              // headers overlapping partially scrolled rows and the shared card.
+              self.appDelegate.player.appendContextQueue(playables: (0..<24).map { $0.isMultiple(of: 2) ? song : nextSong })
+              self.appDelegate.player.play(playerIndex: PlayerIndex(queueType: .next, index: 6))
               try await Task.sleep(for: .milliseconds(500))
               popup.controlView?.displayPlaylistPressed()
               try await Task.sleep(for: .milliseconds(400))
@@ -1017,6 +1020,49 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
               popup.tableView.setContentOffset(CGPoint(x: 0, y: -popup.tableView.adjustedContentInset.top), animated: false)
               popup.view.layoutIfNeeded()
               try await compositorScreenshot("player-queue-history.png")
+              let queueControlsY = popup.controlPlaceholderView.frame.minY
+              let currentRect = popup.tableView.rectForRow(at: IndexPath(row: 0, section: PlayerSectionCategory.currentlyPlaying.rawValue))
+              let modesRect = popup.tableView.rectForHeader(inSection: PlayerSectionCategory.contextNext.rawValue)
+              let scrollCases: [(String, CGFloat)] = [
+                ("history", 65),
+                ("current", currentRect.minY + 60),
+                ("modes", modesRect.minY + 30),
+                ("beyond", modesRect.maxY + 40),
+              ]
+              for (name, offset) in scrollCases {
+                popup.tableView.setContentOffset(CGPoint(x: 0, y: offset), animated: false)
+                popup.view.layoutIfNeeded()
+                try await Task.sleep(for: .milliseconds(100))
+                try await compositorScreenshot("player-queue-scroll-\(name).png")
+                let headers: [(PlayerSectionCategory, UIView?)] = [
+                  (.contextPrev, popup.contextPrevQueueSectionHeader),
+                  (.userQueue, popup.userQueueSectionHeader),
+                  (.contextNext, popup.contextNextQueueSectionHeader),
+                ]
+                for (section, view) in headers {
+                  guard let view, view.window != nil else { continue }
+                  let frame = view.convert(view.bounds, to: popup.tableView)
+                  let naturalFrame = popup.tableView.rectForHeader(inSection: section.rawValue)
+                  guard abs(frame.minY - naturalFrame.minY) < 0.5,
+                        popup.tableView.visibleCells.allSatisfy({ cell in
+                          let overlap = frame.intersection(cell.frame)
+                          return overlap.isNull || overlap.height < 0.5
+                        }) else {
+                    smokeLog("Long queue \(name): header \(section) pinned or overlapped a song row")
+                    return
+                  }
+                }
+                let modesVisible = CGRect(x: modesRect.minX, y: modesRect.minY,
+                                          width: modesRect.width, height: 44).intersects(popup.tableView.bounds)
+                guard (!modesVisible || queueGlassIsAligned(in: popup)),
+                      popup.controlPlaceholderView.frame.minY == queueControlsY else {
+                  smokeLog("Long queue \(name): glass or transport detached while scrolling")
+                  return
+                }
+              }
+              popup.tableView.setContentOffset(CGPoint(x: 0, y: -popup.tableView.adjustedContentInset.top), animated: false)
+              popup.view.layoutIfNeeded()
+              smokeLog("Long history and upcoming queue scrolled without header/card overlap; native glass and transport stayed aligned")
               let playingBeforeClear = self.appDelegate.player.currentlyPlaying
               let upcomingBeforeClear = self.appDelegate.player.nextQueueCount
               popup.contextPrevQueueSectionHeader?.onClear?()

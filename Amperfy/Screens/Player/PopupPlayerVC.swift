@@ -601,18 +601,10 @@ class PopupPlayerVC: UIViewController, UIScrollViewDelegate, UIGestureRecognizer
   }
 
   func refreshCellMasks() {
-    // Only hide overlap with a header actually pinned above this cell.
+    // Headers and rows share the same scroll surface; only the table viewport
+    // clips them. Clear masks retained by reused rows or context-menu previews.
     for cell in tableView.visibleCells {
-      guard let path = tableView.indexPath(for: cell) else { continue }
-      let header: UIView? = switch PlayerSectionCategory(rawValue: path.section) {
-      case .contextPrev: contextPrevQueueSectionHeader
-      case .contextNext: contextNextQueueSectionHeader
-      case .userQueue: userQueueSectionHeader
-      default: nil
-      }
-      let headerFrame = header?.convert(header?.bounds ?? .zero, to: tableView) ?? .zero
-      let overlap = headerFrame.minY <= cell.frame.minY ? headerFrame.maxY - cell.frame.minY : 0
-      (cell as? PlayableTableCell)?.maskCell(fromTop: min(cell.bounds.height, max(0, overlap)))
+      (cell as? PlayableTableCell)?.maskCell(fromTop: 0)
     }
     updateQueueModeBackgrounds()
   }

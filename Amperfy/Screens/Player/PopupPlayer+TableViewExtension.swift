@@ -35,6 +35,8 @@ enum PlayerSectionCategory: Int, CaseIterable {
 
 extension PopupPlayerVC: UITableViewDataSource, UITableViewDelegate {
   func setupTableView() {
+    // Grouped headers scroll with the queue. Transparent pinned headers would
+    // overlap both song rows and the shared current-song card.
     tableView.register(nibName: PlayableTableCell.typeName)
     tableView.register(nibName: CurrentlyPlayingTableCell.typeName)
     tableView.rowHeight = 56
