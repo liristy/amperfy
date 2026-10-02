@@ -183,6 +183,7 @@ class PlayIndicator {
   func applyStyle() {
     addIndicatorIfNeeded()
     removeIndicatorIfNeeded()
+    updateLayout()
 
     if playable == appDelegate.player.currentlyPlaying, let accountInfo = playable?.account?.info {
       let indicator = PlayIndicatorHandler.shared.getIndicator(for: rootViewTypeName)
@@ -199,6 +200,21 @@ class PlayIndicator {
         }
       }
     }
+  }
+
+  func updateLayout() {
+    guard let rootView else { return }
+    CATransaction.begin()
+    CATransaction.setDisableActions(true)
+    for layer in rootView.layer.sublayers ?? [] {
+      if layer is OverlayLayer {
+        layer.frame = rootView.bounds
+        layer.cornerRadius = rootView.layer.cornerRadius
+      } else if layer is VYPlayIndicator {
+        layer.frame = calcIndicatorFrame(rootFrame: rootView.bounds)
+      }
+    }
+    CATransaction.commit()
   }
 
   @objc

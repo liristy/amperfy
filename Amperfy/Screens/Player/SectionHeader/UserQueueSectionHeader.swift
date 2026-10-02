@@ -55,11 +55,20 @@ class UserQueueSectionHeader: UIView {
   }
 
   func display(name: String, buttonPressAction: @escaping (() -> ())) {
+    backgroundColor = .clear
+    isOpaque = false
+    nameLabel.backgroundColor = .clear
     nameLabel.text = name
     nameLabel.isHidden = false
     nameLabel.applyAmperfyStyle()
     rightButton.isHidden = false
     rightButton.isEnabled = true
+    var configuration = UIButton.Configuration.plain()
+    configuration.title = "Clear".localized
+    configuration.buttonSize = .small
+    configuration.background = .clear()
+    configuration.baseForegroundColor = .label
+    rightButton.configuration = configuration
     self.buttonPressAction = buttonPressAction
   }
 

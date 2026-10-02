@@ -256,6 +256,9 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
     didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?
   )
     -> Bool {
+    AmperKit.shared.playerVisualUpdatesEnabledAtCreation = {
+      UIApplication.shared.applicationState != .background
+    }
     if let options = launchOptions {
       os_log("application launch with options:", log: self.log, type: .info)
       options
@@ -328,6 +331,9 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
 
   func setAppTheme(color: UIColor) {
     UIView.appearance().tintColor = color
+    // The global appearance proxy otherwise also tints UIKit's internal glass
+    // layers orange, overriding the full player's neutral control palette.
+    UIView.appearance(whenContainedInInstancesOf: [PopupPlayerVC.self]).tintColor = .white
   }
 
   // the following applies the tint color to already loaded views in all windows (UIKit)

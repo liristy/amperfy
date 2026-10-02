@@ -32,6 +32,8 @@ class MiniPlayerView: UIView, UIGestureRecognizerDelegate {
 
   private var hoverOverlayView: UIView?
   private var trackPan: UIPanGestureRecognizer?
+  private var expandPan: UIPanGestureRecognizer?
+  private weak var expandingPlayer: PopupPlayerVC?
   private var trackViewport: UIView?
   private var trackContent: UIView?
   private var trackDragOverlay: UIView?
@@ -72,7 +74,7 @@ class MiniPlayerView: UIView, UIGestureRecognizerDelegate {
     return view
   }()
 
-  fileprivate lazy var artworkImage: LibraryEntityImage = {
+  private(set) lazy var artworkImage: LibraryEntityImage = {
     let imageView = LibraryEntityImage(frame: .zero)
     imageView.backgroundColor = .clear
     #if targetEnvironment(macCatalyst) // ok
@@ -592,10 +594,17 @@ class MiniPlayerView: UIView, UIGestureRecognizerDelegate {
   }
 
   public var tabAccessoryTraitChangeCB: VoidFunctionCallback?
+  private var compactPresentationOverride: Bool?
+
+  func setCompactPresentation(_ compact: Bool?) {
+    guard compactPresentationOverride != compact else { return }
+    compactPresentationOverride = compact
+    refreshForTabAccessoryTraitChange()
+  }
 
   private func refreshForTabAccessoryTraitChange() {
     resetTrackDrag()
-    let isInline = traitCollection.tabAccessoryEnvironment == .inline
+    let isInline = compactPresentationOverride ?? (traitCollection.tabAccessoryEnvironment == .inline)
     playButtonTrailingConstraint?.isActive = false
     if isInline {
       nextButton.isHidden = true
@@ -657,6 +666,8 @@ class MiniPlayerView: UIView, UIGestureRecognizerDelegate {
 
   public func configureForiOS() {
     playerHandler = PlayerUIHandler(player: player, style: .miniPlayeriOS)
+    clipsToBounds = true
+    layer.cornerCurve = .continuous
     titleLabel.textAlignment = .natural
     subtitleLabel.textAlignment = .natural
     artworkImage.layer.cornerRadius = 7
@@ -664,6 +675,10 @@ class MiniPlayerView: UIView, UIGestureRecognizerDelegate {
     artworkImage.clipsToBounds = true
     timeSlider.minimumTrackTintColor = .secondaryLabel
     timeSlider.maximumTrackTintColor = .clear
+    timeSlider.sliderStyle = .thumbless
+    timeSlider.restingTrackHeight = 2
+    timeSlider.activeTrackHeight = 2
+    timeSlider.isUserInteractionEnabled = false
     let miniPlayerGotTouchedView = UIView()
     miniPlayerGotTouchedView.clipsToBounds = true
     let content = UIView()
@@ -679,6 +694,12 @@ class MiniPlayerView: UIView, UIGestureRecognizerDelegate {
     trackPan = pan
     miniPlayerGotTouchedView.addGestureRecognizer(pan)
     tapGesture.require(toFail: pan)
+    let expandPan = UIPanGestureRecognizer(target: self, action: #selector(handleExpandPan(_:)))
+    expandPan.maximumNumberOfTouches = 1
+    expandPan.delegate = self
+    self.expandPan = expandPan
+    miniPlayerGotTouchedView.addGestureRecognizer(expandPan)
+    tapGesture.require(toFail: expandPan)
     miniPlayerGotTouchedView.addGestureRecognizer(tapGesture)
     miniPlayerGotTouchedView.isAccessibilityElement = true
     miniPlayerGotTouchedView.accessibilityLabel = "Open Now Playing".localized
@@ -697,8 +718,6 @@ class MiniPlayerView: UIView, UIGestureRecognizerDelegate {
     content.addSubview(artworkImage)
     content.addSubview(titleLabel)
     content.addSubview(subtitleLabel)
-    addSubview(timeSlider)
-    addSubview(liveLabel)
     addSubview(playButton)
     addSubview(nextButton)
 
@@ -715,29 +734,19 @@ class MiniPlayerView: UIView, UIGestureRecognizerDelegate {
         constant: -8
       ),
 
-      timeSlider.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 6),
-      timeSlider.heightAnchor.constraint(equalToConstant: 3),
-      timeSlider.bottomAnchor.constraint(equalTo: bottomAnchor),
-      timeSlider.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -6),
-
-      liveLabel.centerXAnchor.constraint(equalTo: timeSlider.centerXAnchor, constant: 0),
-      liveLabel.centerYAnchor.constraint(equalTo: timeSlider.centerYAnchor, constant: 0),
-      liveLabel.widthAnchor.constraint(equalToConstant: 0),
-      liveLabel.heightAnchor.constraint(equalTo: liveLabel.widthAnchor),
-
-      artworkImage.topAnchor.constraint(equalTo: topAnchor, constant: 7),
-      artworkImage.bottomAnchor.constraint(equalTo: timeSlider.topAnchor, constant: -4),
+      artworkImage.topAnchor.constraint(equalTo: topAnchor, constant: 8),
+      artworkImage.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -8),
       artworkImage.widthAnchor.constraint(equalTo: artworkImage.heightAnchor),
       artworkImage.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 10),
 
-      titleLabel.topAnchor.constraint(equalTo: topAnchor, constant: 6),
+      titleLabel.topAnchor.constraint(equalTo: topAnchor, constant: 8),
       titleLabel.bottomAnchor.constraint(equalTo: playButton.centerYAnchor, constant: 1),
-      titleLabel.leadingAnchor.constraint(equalTo: artworkImage.trailingAnchor, constant: 12),
+      titleLabel.leadingAnchor.constraint(equalTo: artworkImage.trailingAnchor, constant: 10),
       titleLabel.trailingAnchor.constraint(equalTo: playButton.leadingAnchor, constant: -8),
 
       subtitleLabel.topAnchor.constraint(equalTo: playButton.centerYAnchor, constant: 1),
-      subtitleLabel.bottomAnchor.constraint(equalTo: timeSlider.topAnchor, constant: -5),
-      subtitleLabel.leadingAnchor.constraint(equalTo: artworkImage.trailingAnchor, constant: 12),
+      subtitleLabel.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -8),
+      subtitleLabel.leadingAnchor.constraint(equalTo: artworkImage.trailingAnchor, constant: 10),
       subtitleLabel.trailingAnchor.constraint(equalTo: playButton.leadingAnchor, constant: -8),
 
       playButton.centerYAnchor.constraint(equalTo: artworkImage.centerYAnchor, constant: 0),
@@ -768,7 +777,18 @@ class MiniPlayerView: UIView, UIGestureRecognizerDelegate {
     }
   }
 
+  override func layoutSubviews() {
+    super.layoutSubviews()
+    // Clip only the content; clipping the effect view would cut off native glass.
+    if trackViewport != nil { layer.cornerRadius = bounds.height / 2 }
+  }
+
   override func gestureRecognizerShouldBegin(_ gestureRecognizer: UIGestureRecognizer) -> Bool {
+    if gestureRecognizer === expandPan, let pan = gestureRecognizer as? UIPanGestureRecognizer {
+      let velocity = pan.velocity(in: self)
+      return velocity.y < -abs(velocity.x) && trackDragAnimator == nil &&
+        (AppDelegate.mainWindowHostVC as? UIViewController)?.presentedViewController == nil
+    }
     guard gestureRecognizer === trackPan, let pan = gestureRecognizer as? UIPanGestureRecognizer else { return true }
     let velocity = pan.velocity(in: self)
     return player.currentlyPlaying != nil && trackDragAnimator == nil && abs(velocity.x) > abs(velocity.y)
@@ -899,8 +919,8 @@ class MiniPlayerView: UIView, UIGestureRecognizerDelegate {
   }
 
   public func refreshForTraitChange(horizontalSizeClass: UIUserInterfaceSizeClass) {
-    titleLabel.font = .systemFont(ofSize: 15, weight: .semibold)
-    subtitleLabel.font = .systemFont(ofSize: 12, weight: .regular)
+    titleLabel.font = .systemFont(ofSize: 15, weight: .medium)
+    subtitleLabel.font = .systemFont(ofSize: 13, weight: .regular)
   }
 
   private var playButtonTrailingConstraint: NSLayoutConstraint?
@@ -911,10 +931,51 @@ class MiniPlayerView: UIView, UIGestureRecognizerDelegate {
   }
 
   public func openPlayerView(completion: (() -> ())? = nil) {
-    guard let hostVC = AppDelegate.mainWindowHostVC as? UIViewController else { return }
+    guard let hostVC = AppDelegate.mainWindowHostVC as? UIViewController,
+          hostVC.presentedViewController == nil else { return }
     let popupPlayer = PopupPlayerVC()
-    popupPlayer.configurePresentation(sourceArtwork: artworkImage)
+    popupPlayer.configurePresentation(sourcePlayer: glassContainer, sourceArtwork: artworkImage)
     hostVC.present(popupPlayer, animated: true, completion: completion)
+  }
+
+  @objc private func handleExpandPan(_ pan: UIPanGestureRecognizer) {
+    let translation = -pan.translation(in: window).y
+    switch pan.state {
+    case .began: beginPlayerExpansion()
+    case .changed: updatePlayerExpansion(translation: translation)
+    case .ended:
+      endPlayerExpansion(translation: translation, velocity: -pan.velocity(in: window).y)
+    case .cancelled, .failed:
+      endPlayerExpansion(translation: 0, velocity: 0, cancelled: true)
+    default: break
+    }
+  }
+
+  func beginPlayerExpansion() {
+    guard let hostVC = AppDelegate.mainWindowHostVC as? UIViewController,
+          hostVC.presentedViewController == nil else { return }
+    let popup = PopupPlayerVC()
+    popup.configurePresentation(sourcePlayer: glassContainer, sourceArtwork: artworkImage)
+    let interaction = UIPercentDrivenInteractiveTransition()
+    // Preserve each animation's curve; a global spring also makes the cover bounce.
+    popup.surfaceTransition.presentationInteraction = interaction
+    expandingPlayer = popup
+    hostVC.present(popup, animated: true)
+  }
+
+  func updatePlayerExpansion(translation: CGFloat) {
+    let distance = max((window?.bounds.height ?? 800) * 0.6, 1)
+    let progress = min(0.99, max(0, translation / distance))
+    expandingPlayer?.surfaceTransition.presentationInteraction?.update(progress)
+    expandingPlayer?.surfaceTransition.updateArtwork(progress)
+  }
+
+  func endPlayerExpansion(translation: CGFloat, velocity: CGFloat, cancelled: Bool = false) {
+    guard let interaction = expandingPlayer?.surfaceTransition.presentationInteraction else { return }
+    let finish = !cancelled && velocity > -100 && (translation > 70 || (translation > 12 && velocity > 550))
+    expandingPlayer?.surfaceTransition.finishArtwork(completed: finish)
+    if finish { interaction.finish() } else { interaction.cancel() }
+    expandingPlayer = nil
   }
 
   @objc
@@ -1053,8 +1114,9 @@ class MiniPlayerView: UIView, UIGestureRecognizerDelegate {
   public lazy var glassContainer: UIVisualEffectView = {
     let container = UIVisualEffectView()
     let glassEffect = UIGlassEffect(style: .regular)
-    glassEffect.isInteractive = false
+    glassEffect.isInteractive = true
     container.effect = glassEffect
+    container.cornerConfiguration = .capsule()
     container.contentView.addSubview(self)
 
     container.translatesAutoresizingMaskIntoConstraints = false
@@ -1075,13 +1137,16 @@ class MiniPlayerView: UIView, UIGestureRecognizerDelegate {
     let sliderMenuView = popoverContentController.sliderMenuView
     sliderMenuView.frame = CGRect(x: 0, y: 0, width: 250, height: 50)
 
-    sliderMenuView.slider.minimumValue = 0
-    sliderMenuView.slider.maximumValue = 100
-    sliderMenuView.slider.value = appDelegate.player.volume * 100
-
-    sliderMenuView.sliderValueChangedCB = {
-      self.appDelegate.player.volume = Float(sliderMenuView.slider.value) / 100.0
-    }
+    #if targetEnvironment(macCatalyst)
+      sliderMenuView.slider.minimumValue = 0
+      sliderMenuView.slider.maximumValue = 100
+      sliderMenuView.slider.value = appDelegate.player.volume * 100
+      sliderMenuView.sliderValueChangedCB = {
+        self.appDelegate.player.volume = Float(sliderMenuView.slider.value) / 100.0
+      }
+    #else
+      sliderMenuView.useSystemVolume()
+    #endif
 
     popoverContentController.modalPresentationStyle = .popover
     popoverContentController.preferredContentSize = sliderMenuView.frame.size

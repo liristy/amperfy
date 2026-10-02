@@ -25,6 +25,7 @@ import AVFoundation
 import CoreData
 import MediaPlayer
 import XCTest
+import UIKit
 
 // MARK: - MOCK_AudioStreamingPlayer
 
@@ -277,6 +278,8 @@ final class MOCK_NetworkMonitor: NetworkMonitorFacade {
 
 class MOCK_MusicPlayable: MusicPlayable {
   var thrownError: Error?
+  var lyricsTimes: [CMTime] = []
+  var elapsedTimeChangeCount = 0
 
   var expectationDidStartPlaying: XCTestExpectation?
   var expectationErrorOccurred: XCTestExpectation?
@@ -288,7 +291,8 @@ class MOCK_MusicPlayable: MusicPlayable {
 
   func didPause() {}
   func didStopPlaying() {}
-  func didElapsedTimeChange() {}
+  func didElapsedTimeChange() { elapsedTimeChangeCount += 1 }
+  func didLyricsTimeChange(time: CMTime) { lyricsTimes.append(time) }
   func didPlaylistChange() {}
   func didArtworkChange() {}
   func didShuffleChange() {}
@@ -346,6 +350,7 @@ class MusicPlayerTest: XCTestCase {
   var playlistThreeCached: Playlist!
   var playlistAllCached: Playlist!
   let fillCount = 5
+  private var savedAutoplayEnabled: Bool?
 
   override func setUp() async throws {
     cdHelper = CoreDataHelper()
@@ -410,6 +415,10 @@ class MusicPlayerTest: XCTestCase {
   }
 
   override func tearDown() async throws {
+    if let savedAutoplayEnabled {
+      testPlayer.setAutoplayEnabled(false)
+      storage.settings.user.isAutoplayEnabled = savedAutoplayEnabled
+    }
     backendPlayer.stop()
     mockAudioStreamingPlayer.delegate = nil
   }
@@ -425,6 +434,79 @@ class MusicPlayerTest: XCTestCase {
     }
     XCTAssertEqual(testPlayer.playType, .stream)
     XCTAssertEqual(testPlayer.currentlyPlaying, songToDownload)
+  }
+
+  func testBackgroundStopsLyricsButKeepsPlaybackAndProgress() async throws {
+    NotificationCenter.default.post(name: UIApplication.didBecomeActiveNotification, object: nil)
+    try await startScrobbleStream()
+    for _ in 0..<100 {
+      if !mockMusicPlayable.lyricsTimes.isEmpty { break }
+      try await Task.sleep(for: .milliseconds(20))
+    }
+    XCTAssertFalse(mockMusicPlayable.lyricsTimes.isEmpty)
+
+    NotificationCenter.default.post(name: UIApplication.didEnterBackgroundNotification, object: nil)
+    let backgroundLyricsCount = mockMusicPlayable.lyricsTimes.count
+    let progressCount = mockMusicPlayable.elapsedTimeChangeCount
+    mockAudioStreamingPlayer.mockElapsedTime = 21
+    for _ in 0..<150 {
+      if mockMusicPlayable.elapsedTimeChangeCount > progressCount { break }
+      try await Task.sleep(for: .milliseconds(20))
+    }
+    XCTAssertEqual(mockMusicPlayable.lyricsTimes.count, backgroundLyricsCount)
+    XCTAssertGreaterThan(mockMusicPlayable.elapsedTimeChangeCount, progressCount)
+    XCTAssertTrue(testPlayer.isPlaying)
+    XCTAssertTrue(mockAudioStreamingPlayer.isPlaying)
+    XCTAssertFalse(backendPlayer.audioAnalyzer.isInForeground)
+
+    NotificationCenter.default.post(name: UIApplication.didBecomeActiveNotification, object: nil)
+    XCTAssertEqual(mockMusicPlayable.lyricsTimes.last?.seconds, 21)
+    let foregroundLyricsCount = mockMusicPlayable.lyricsTimes.count
+    for _ in 0..<100 {
+      if mockMusicPlayable.lyricsTimes.count > foregroundLyricsCount { break }
+      try await Task.sleep(for: .milliseconds(20))
+    }
+    XCTAssertGreaterThan(mockMusicPlayable.lyricsTimes.count, foregroundLyricsCount)
+    XCTAssertTrue(backendPlayer.audioAnalyzer.isInForeground)
+
+    testPlayer.pause()
+    NotificationCenter.default.post(name: UIApplication.didEnterBackgroundNotification, object: nil)
+    NotificationCenter.default.post(name: UIApplication.didBecomeActiveNotification, object: nil)
+    let pausedLyricsCount = mockMusicPlayable.lyricsTimes.count
+    try await Task.sleep(for: .milliseconds(250))
+    XCTAssertEqual(mockMusicPlayable.lyricsTimes.count, pausedLyricsCount)
+    XCTAssertFalse(testPlayer.isPlaying)
+  }
+
+  func testBackgroundDropsQueuedVisualizerUpdateAndForegroundResumes() async throws {
+    let analyzer = backendPlayer.audioAnalyzer
+    backendPlayer.setVisualUpdatesEnabled(true)
+    analyzer.isActive = true
+    analyzer.playing(sampleRate: 16_000)
+    analyzer.play()
+    let format = try XCTUnwrap(AVAudioFormat(standardFormatWithSampleRate: 16_000, channels: 1))
+    let buffer = try XCTUnwrap(AVAudioPCMBuffer(pcmFormat: format, frameCapacity: 256))
+    buffer.frameLength = 256
+    let data = try XCTUnwrap(buffer.floatChannelData).pointee
+    for index in 0..<256 { data[index] = 0.5 }
+    let time = AVAudioTime(sampleTime: 0, atRate: 16_000)
+
+    analyzer.calculate(buffer: buffer, audioTime: time)
+    backendPlayer.setVisualUpdatesEnabled(false)
+    await Task.yield()
+    XCTAssertEqual(analyzer.rms, 0, "A queued foreground result must not publish in the background")
+    analyzer.calculate(buffer: buffer, audioTime: time)
+    await Task.yield()
+    XCTAssertEqual(analyzer.rms, 0)
+    XCTAssertTrue(analyzer.isActive, "Backgrounding must preserve the selected visualizer")
+
+    backendPlayer.setVisualUpdatesEnabled(true)
+    analyzer.calculate(buffer: buffer, audioTime: time)
+    for _ in 0..<10 {
+      if analyzer.rms > 0 { break }
+      await Task.yield()
+    }
+    XCTAssertGreaterThan(analyzer.rms, 0)
   }
 
   func testStreamScrobbleSubmitsAtThresholdOnlyOnceAcrossPauseAndResume() async throws {
@@ -2280,6 +2362,164 @@ class MusicPlayerTest: XCTestCase {
     XCTAssertEqual(testPlayer.currentlyPlaying, nil)
   }
 
+  private func startAutoplayFixture() async throws {
+    savedAutoplayEnabled = storage.settings.user.isAutoplayEnabled
+    testPlayer.setAutoplayEnabled(false)
+    testPlayer.play(context: PlayContext(name: "Single song", playables: [songCached]))
+    for _ in 0..<200 {
+      if testPlayer.isPlaying, backendPlayer.canBeContinued { break }
+      try await Task.sleep(for: .milliseconds(10))
+    }
+    XCTAssertTrue(testPlayer.isPlaying)
+    XCTAssertTrue(backendPlayer.canBeContinued)
+  }
+
+  func testNextAtQueueEndPausesAndKeepsSongPosition() async throws {
+    try await startAutoplayFixture()
+    mockAudioStreamingPlayer.mockElapsedTime = 23
+    testPlayer.playNext()
+    XCTAssertFalse(testPlayer.isPlaying)
+    XCTAssertFalse(mockAudioStreamingPlayer.isStopped)
+    XCTAssertEqual(testPlayer.currentlyPlaying, songCached)
+    XCTAssertEqual(playerData.currentIndex, 0)
+    XCTAssertEqual(testPlayer.elapsedTime, 23)
+    testPlayer.play()
+    XCTAssertTrue(testPlayer.isPlaying)
+    XCTAssertEqual(testPlayer.elapsedTime, 23)
+  }
+
+  func testNextDuringFirstPreparationStaysPausedAfterEngineStarts() async throws {
+    savedAutoplayEnabled = storage.settings.user.isAutoplayEnabled
+    testPlayer.setAutoplayEnabled(false)
+    testPlayer.play(context: PlayContext(name: "Cold-start single song", playables: [songCached]))
+    testPlayer.playNext()
+    try await Task.sleep(for: .milliseconds(50))
+    XCTAssertFalse(testPlayer.isPlaying)
+    XCTAssertFalse(mockAudioStreamingPlayer.isPlaying)
+    XCTAssertEqual(testPlayer.currentlyPlaying, songCached)
+    XCTAssertEqual(playerData.currentIndex, 0)
+  }
+
+  func testAutoplayPrefetchDeduplicatesAndKeepsExplicitQueueSeparate() async throws {
+    try await startAutoplayFixture()
+    let recommended = playlistAllCached.playables.filterSongs().filter { $0 != songCached }.prefix(2)
+    let ready = expectation(description: "recommendations ready")
+    testMusicPlayer.autoplayCB = { song, _, _ in
+      ready.fulfill()
+      return [song] + Array(recommended) + Array(recommended)
+    }
+    testPlayer.setAutoplayEnabled(true)
+    await fulfillment(of: [ready], timeout: 2)
+    XCTAssertEqual(testPlayer.autoplayQueue.count, recommended.count)
+    XCTAssertEqual(testPlayer.nextQueueCount, 0)
+    XCTAssertEqual(testPlayer.currentlyPlaying, songCached)
+    testPlayer.setAutoplayEnabled(false)
+    XCTAssertTrue(testPlayer.autoplayQueue.isEmpty)
+    XCTAssertEqual(testPlayer.currentlyPlaying, songCached)
+    XCTAssertTrue(testPlayer.isPlaying)
+  }
+
+  func testAutoplayContinuesAfterExplicitQueueAndRespectsUserQueue() async throws {
+    try await startAutoplayFixture()
+    let songs = playlistAllCached.playables.filterSongs().filter { $0 != songCached }
+    let recommended = songs[0]
+    let ready = expectation(description: "recommendations ready")
+    testMusicPlayer.autoplayCB = { _, _, _ in ready.fulfill(); return [recommended] }
+    testPlayer.setAutoplayEnabled(true)
+    await fulfillment(of: [ready], timeout: 2)
+    testMusicPlayer.autoplayCB = nil
+    testPlayer.insertUserQueue(playables: [songs[1]])
+    testPlayer.playNext()
+    XCTAssertEqual(testPlayer.currentlyPlaying, songs[1])
+    testPlayer.playNext()
+    XCTAssertEqual(testPlayer.currentlyPlaying, recommended)
+    XCTAssertTrue(testPlayer.autoplayQueue.isEmpty)
+  }
+
+  func testPendingAutoplayCoalescesNextAndCannotOverrideNewContext() async throws {
+    try await startAutoplayFixture()
+    var reply: CheckedContinuation<Void, Never>?
+    let staleSong = songCached!
+    var requests = 0
+    let started = expectation(description: "request started")
+    testMusicPlayer.autoplayCB = { _, _, _ in
+      requests += 1
+      await withCheckedContinuation { reply = $0; started.fulfill() }
+      return [staleSong]
+    }
+    testPlayer.setAutoplayEnabled(true)
+    await fulfillment(of: [started], timeout: 2)
+    testPlayer.playNext()
+    testPlayer.playNext()
+    XCTAssertEqual(requests, 1)
+    let other = playlistAllCached.playables.filterSongs().first { $0 != songCached }!
+    testMusicPlayer.autoplayCB = nil
+    testPlayer.play(context: PlayContext(name: "New selection", playables: [other]))
+    reply?.resume()
+    try await Task.sleep(for: .milliseconds(50))
+    XCTAssertEqual(testPlayer.currentlyPlaying, other)
+    XCTAssertTrue(testPlayer.autoplayQueue.isEmpty)
+    XCTAssertEqual(testPlayer.contextName, "New selection")
+  }
+
+  func testPauseCancelsPendingAutoplayAdvance() async throws {
+    try await startAutoplayFixture()
+    var reply: CheckedContinuation<Void, Never>?
+    let started = expectation(description: "request started")
+    testMusicPlayer.autoplayCB = { _, _, _ in
+      await withCheckedContinuation { reply = $0; started.fulfill() }
+      return self.playlistAllCached.playables.filterSongs()
+    }
+    testPlayer.setAutoplayEnabled(true)
+    await fulfillment(of: [started], timeout: 2)
+    testPlayer.playNext()
+    testPlayer.pause()
+    reply?.resume()
+    try await Task.sleep(for: .milliseconds(50))
+    XCTAssertFalse(testPlayer.isPlaying)
+    XCTAssertEqual(testPlayer.currentlyPlaying, songCached)
+    XCTAssertTrue(testPlayer.autoplayQueue.isEmpty)
+  }
+
+  func testAutoplayEmptyOrFailedRecommendationPausesWithoutResettingQueue() async throws {
+    try await startAutoplayFixture()
+    testMusicPlayer.autoplayCB = { _, _, _ in [] }
+    testPlayer.setAutoplayEnabled(true)
+    testPlayer.playNext()
+    try await Task.sleep(for: .milliseconds(50))
+    XCTAssertFalse(testPlayer.isPlaying)
+    XCTAssertEqual(testPlayer.currentlyPlaying, songCached)
+    testMusicPlayer.autoplayCB = { _, _, _ in throw BackendError.notSupported }
+    testPlayer.play()
+    testPlayer.playNext()
+    try await Task.sleep(for: .milliseconds(50))
+    XCTAssertFalse(testPlayer.isPlaying)
+    XCTAssertEqual(testPlayer.currentlyPlaying, songCached)
+  }
+
+  func testRepeatModeSuppressesAutoplayAndDisablingKeepsUserSongs() async throws {
+    try await startAutoplayFixture()
+    var requests = 0
+    testMusicPlayer.autoplayCB = { _, _, _ in requests += 1; return [] }
+    testPlayer.setRepeatMode(.all)
+    testPlayer.setAutoplayEnabled(true)
+    try await Task.sleep(for: .milliseconds(30))
+    XCTAssertEqual(requests, 0)
+    XCTAssertTrue(testPlayer.autoplayQueue.isEmpty)
+    testPlayer.insertUserQueue(playables: [songToDownload])
+    testPlayer.setAutoplayEnabled(false)
+    XCTAssertEqual(testPlayer.getAllUserQueueItems(), [songToDownload])
+  }
+
+  func testLocalAutoplayFallbackUsesAccountCacheAndExclusions() {
+    let songs = library.getAutoplaySongs(seed: songCached,
+      excluding: [songCached.managedObject.objectID], recent: [], count: 4, onlyCached: true)
+    XCTAssertFalse(songs.isEmpty)
+    XCTAssertLessThanOrEqual(songs.count, 4)
+    XCTAssertTrue(songs.allSatisfy { $0.account == account && $0.isCached && $0 != songCached })
+    XCTAssertEqual(Set(songs.map { $0.managedObject.objectID }).count, songs.count)
+  }
+
   func testPlayNext_Normal() {
     prepareWithCachedPlaylist()
     testPlayer.play(playerIndex: PlayerIndex(queueType: .next, index: 2))
@@ -2726,10 +2966,10 @@ class MusicPlayerTest: XCTestCase {
     testPlayer.setRepeatMode(.single)
     testPlayer.playNext()
     XCTAssertFalse(testPlayer.isPlaying)
-    XCTAssertFalse(playerData.isUserQueuePlaying)
-    checkCurrentlyPlaying(idToBe: 0)
-    checkQueueItems(queue: testQueueHandler.getAllPrevQueueItems(), seedIds: [Int]())
-    checkQueueItems(queue: testQueueHandler.getAllNextQueueItems(), seedIds: [1, 2, 3, 4])
+    XCTAssertTrue(playerData.isUserQueuePlaying)
+    checkCurrentlyPlaying(idToBe: 8)
+    checkQueueItems(queue: testQueueHandler.getAllPrevQueueItems(), seedIds: [0, 1, 2, 3, 4])
+    checkQueueItems(queue: testQueueHandler.getAllNextQueueItems(), seedIds: [Int]())
     checkQueueItems(queue: testQueueHandler.getAllUserQueueItems(), seedIds: [Int]())
     checkQueueInfoConsistency()
   }
@@ -3214,7 +3454,7 @@ class MusicPlayerTest: XCTestCase {
 
     backendPlayer.responder?.didItemFinishedPlaying()
     XCTAssertFalse(testPlayer.isPlaying)
-    XCTAssertEqual(testPlayer.currentlyPlaying?.id, playlistAllCached.playables[0].id)
+    XCTAssertEqual(testPlayer.currentlyPlaying?.id, playlistAllCached.playables[3].id)
   }
 
   func testSongFinishedPlaying_RepeatSingleOffMix() {
@@ -3250,7 +3490,7 @@ class MusicPlayerTest: XCTestCase {
 
     backendPlayer.responder?.didItemFinishedPlaying()
     XCTAssertFalse(testPlayer.isPlaying) // not playing
-    XCTAssertEqual(testPlayer.currentlyPlaying?.id, playlistAllCached.playables[0].id)
+    XCTAssertEqual(testPlayer.currentlyPlaying?.id, playlistAllCached.playables[3].id)
   }
 
   func testSongFinishedPlaying_RepeatSingleAllMix() {

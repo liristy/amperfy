@@ -535,6 +535,9 @@
 		63DCDB7A2C674B5D00522F68 /* SettingsSceneDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 63DCDB792C674B5D00522F68 /* SettingsSceneDelegate.swift */; };
 		641708592C13BF5100BA2619 /* Haptics.swift in Sources */ = {isa = PBXBuildFile; fileRef = 641708582C13BF5100BA2619 /* Haptics.swift */; };
 		3CDD2EA4533BFE67121E94E0 /* Localizable.xcstrings in Resources */ = {isa = PBXBuildFile; fileRef = DDFDA7D0CEFB8C6B7C53EE6A; };
+		AD3EC09FB038456D8446BDFA /* ListeningAPI.swift in Sources */ = {isa = PBXBuildFile; fileRef = BA29A4D5DCFD4A608C4CC56A /* ListeningAPI.swift */; };
+		1E400938848B412CBACCCB35 /* ListeningStatisticsVC.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9F5165622C4D42559EC9542F /* ListeningStatisticsVC.swift */; };
+		DDE96B53DFD84D3F96FB4FA0 /* ListeningStatisticsSmoke.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4B296E1AE7AF41D0A6EF115A /* ListeningStatisticsSmoke.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -1166,6 +1169,9 @@
 		CF79E984E049A3A06287EAA7 /* zh-Hans */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = "zh-Hans"; path = "Amperfy/Localization/zh-Hans.lproj/PlainDetailsVC.strings"; sourceTree = SOURCE_ROOT; };
 		56D08B1B7040C62102427A8D /* Base */ = {isa = PBXFileReference; lastKnownFileType = file.xib; name = Base; path = "Amperfy/Screens/ViewController/PlainDetailsVC.xib"; sourceTree = SOURCE_ROOT; };
 		0B69720E14F24DC0C3C98327 /* zh-Hans */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = "zh-Hans"; path = "Amperfy/Localization/zh-Hans.lproj/Main.strings"; sourceTree = SOURCE_ROOT; };
+		BA29A4D5DCFD4A608C4CC56A /* ListeningAPI.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ListeningAPI.swift; sourceTree = "<group>"; };
+		9F5165622C4D42559EC9542F /* ListeningStatisticsVC.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ListeningStatisticsVC.swift; sourceTree = "<group>"; };
+		4B296E1AE7AF41D0A6EF115A /* ListeningStatisticsSmoke.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ListeningStatisticsSmoke.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -1844,6 +1850,9 @@
 				5003D8FA267B3390006946BF /* LibrarySyncPopupVC.swift */,
 				50E1D3992B8BEA540001A572 /* SplitVC.swift */,
 				508FDE4F21F64ED6005A0724 /* TabBarVC.swift */,
+				4B296E1AE7AF41D0A6EF115A /* ListeningStatisticsSmoke.swift */,
+				9F5165622C4D42559EC9542F /* ListeningStatisticsVC.swift */,
+				BA29A4D5DCFD4A608C4CC56A /* ListeningAPI.swift */,
 				50BA92FF21CFDEBD00E5901D /* LibraryVC.swift */,
 				50B166AB2ED4E68400F7A1D6 /* HomeVC.swift */,
 				50AB3B4C2F032D6200556CE4 /* HomeManager.swift */,
@@ -2542,6 +2551,9 @@
 				50E1D39C2B8BED4C0001A572 /* SideBarVC.swift in Sources */,
 				505CA20E2B88EB9A00AA81CD /* BasicFetchedResultsTableViewController.swift in Sources */,
 				508FDE5021F64ED6005A0724 /* TabBarVC.swift in Sources */,
+				DDE96B53DFD84D3F96FB4FA0 /* ListeningStatisticsSmoke.swift in Sources */,
+				1E400938848B412CBACCCB35 /* ListeningStatisticsVC.swift in Sources */,
+				AD3EC09FB038456D8446BDFA /* ListeningAPI.swift in Sources */,
 				50C16C2821E8680A00F086F0 /* CommonScreenOperations.swift in Sources */,
 				5020D51A2E3B6FF6000A6F85 /* WelcomePopupPresenter.swift in Sources */,
 				50AC4E5328D909730091FF33 /* EventLogSettingsView.swift in Sources */,
@@ -3092,7 +3104,7 @@
 				CODE_SIGN_ENTITLEMENTS = Amperfy/Amperfy.entitlements;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1;
+				CURRENT_PROJECT_VERSION = 2;
 				INFOPLIST_FILE = Amperfy/Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
 				LD_RUNPATH_SEARCH_PATHS = (
@@ -3131,7 +3143,7 @@
 				CODE_SIGN_ENTITLEMENTS = Amperfy/Amperfy.entitlements;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1;
+				CURRENT_PROJECT_VERSION = 2;
 				INFOPLIST_FILE = Amperfy/Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
 				LD_RUNPATH_SEARCH_PATHS = (

@@ -23,6 +23,10 @@ import MarqueeLabel
 import UIKit
 
 class ContextQueuePrevSectionHeader: UIView {
+  var onClear: (() -> Void)? {
+    didSet { clearButton.isHidden = onClear == nil }
+  }
+  private let clearButton = UIButton(type: .system)
   @IBOutlet
   weak var nameLabel: MarqueeLabel!
 
@@ -44,8 +48,27 @@ class ContextQueuePrevSectionHeader: UIView {
   }
 
   func display(name: String) {
+    backgroundColor = .clear
+    isOpaque = false
+    nameLabel.backgroundColor = .clear
     nameLabel.text = name
     nameLabel.isHidden = name.isEmpty
     nameLabel.applyAmperfyStyle()
+    if clearButton.superview == nil {
+      NSLayoutConstraint.deactivate(constraints)
+      nameLabel.translatesAutoresizingMaskIntoConstraints = true
+      clearButton.setTitle("Clear".localized, for: .normal)
+      clearButton.tintColor = .white.withAlphaComponent(0.65)
+      clearButton.titleLabel?.font = .systemFont(ofSize: 15)
+      clearButton.addAction(UIAction { [weak self] _ in self?.onClear?() }, for: .touchUpInside)
+      addSubview(clearButton)
+      clearButton.isHidden = onClear == nil
+    }
+  }
+
+  override func layoutSubviews() {
+    super.layoutSubviews()
+    nameLabel.frame = CGRect(x: 8, y: 8, width: max(0, bounds.width - 100), height: 22)
+    clearButton.frame = CGRect(x: bounds.width - 76, y: 0, width: 68, height: Self.frameHeight)
   }
 }

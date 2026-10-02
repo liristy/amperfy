@@ -45,6 +45,15 @@ public final class AudioAnalyzer: ObservableObject, AudioAnalyzerProtocol {
     }
   }
 
+  // Preserve the user's selected visualizer while suspending its work in
+  // the background. The audio tap continues to serve uninterrupted playback.
+  nonisolated(unsafe) private var _isInForeground = true
+  private let _isInForegroundLock = NSLock()
+  nonisolated var isInForeground: Bool {
+    get { _isInForegroundLock.withLock { _isInForeground } }
+    set { _isInForegroundLock.withLock { _isInForeground = newValue } }
+  }
+
   nonisolated(unsafe) private var _sampleRate: Float = 0.0
   private let _sampleRateLock = NSLock()
   nonisolated private var sampleRate: Float {
@@ -96,11 +105,12 @@ public final class AudioAnalyzer: ObservableObject, AudioAnalyzerProtocol {
   }
 
   nonisolated func calculate(buffer: AVAudioPCMBuffer, audioTime: AVAudioTime) {
-    if isActive, isPlaying, let data = buffer.floatChannelData {
+    if isInForeground, isActive, isPlaying, let data = buffer.floatChannelData {
       let magnitudesCalculated = fft.compute(sampleRate: sampleRate, audioData: data.pointee)
       let rmsCalculated = fft.rms(audioData: data.pointee)
 
       Task { @MainActor in
+        guard self.isInForeground, self.isActive, self.isPlaying else { return }
         self.magnitudes = magnitudesCalculated
         self.rms = rmsCalculated
       }

@@ -1,6 +1,83 @@
 {
   "sourceLanguage": "en",
   "strings": {
+    "History": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "历史记录"
+          }
+        }
+      }
+    },
+    "Clear": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "清除"
+          }
+        }
+      }
+    },
+    "See All": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "查看全部"
+          }
+        }
+      }
+    },
+    "Automatic": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "自动"
+          }
+        }
+      }
+    },
+    "Headphones": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "耳机"
+          }
+        }
+      }
+    },
+    "Headphone Icon": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "耳机图标"
+          }
+        }
+      }
+    },
+    "Long press to choose headphone icon": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "长按可选择耳机图标"
+          }
+        }
+      }
+    },
     "API Error": {
       "extractionState": "manual",
       "localizations": {
@@ -604,6 +681,12 @@
             "value": "根据 ReplayGain 信息调整歌曲音量，使响度保持一致。"
           }
         }
+      }
+    },
+    "Autoplay": {
+      "localizations": {
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "自动续播" } },
+        "zh-Hant": { "stringUnit": { "state": "translated", "value": "自動續播" } }
       }
     },
     "Autoplay After End": {
@@ -3565,6 +3648,17 @@
         }
       }
     },
+    "Show navigation": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "展开导航栏"
+          }
+        }
+      }
+    },
     "Show Lyrics": {
       "extractionState": "manual",
       "localizations": {
@@ -4374,7 +4468,7 @@
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "年份"
+            "value": "年"
           }
         }
       }
@@ -5076,6 +5170,523 @@
           "stringUnit": {
             "state": "translated",
             "value": "没有可播放的收藏歌曲；离线时请先下载收藏。"
+          }
+        }
+      }
+    },
+    "Listening Statistics": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "聆听统计"
+          }
+        }
+      }
+    },
+    "Overview": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "总览"
+          }
+        }
+      }
+    },
+    "Rankings": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "排行"
+          }
+        }
+      }
+    },
+    "Listening Trend": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "趋势"
+          }
+        }
+      }
+    },
+    "Period Winners": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "分时榜单"
+          }
+        }
+      }
+    },
+    "Listening History": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "聆听历史"
+          }
+        }
+      }
+    },
+    "Statistics Settings": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "统计设置"
+          }
+        }
+      }
+    },
+    "Your Music, in Numbers": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "听见你的音乐足迹"
+          }
+        }
+      }
+    },
+    "Connect the same Maloja server used in Feishin to see your listening history across devices.": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "连接与 Feishin 相同的 Maloja 服务器，查看跨设备的聆听记录。"
+          }
+        }
+      }
+    },
+    "Connect Maloja": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "连接 Maloja"
+          }
+        }
+      }
+    },
+    "Today": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "今天"
+          }
+        }
+      }
+    },
+    "This Week": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "本周"
+          }
+        }
+      }
+    },
+    "This Month": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "本月"
+          }
+        }
+      }
+    },
+    "This Year": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "今年"
+          }
+        }
+      }
+    },
+    "All Time": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "全部时间"
+          }
+        }
+      }
+    },
+    "Custom Range": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "自定时间"
+          }
+        }
+      }
+    },
+    "Category": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "类别"
+          }
+        }
+      }
+    },
+    "Interval": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "时间间隔"
+          }
+        }
+      }
+    },
+    "Day": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "日"
+          }
+        }
+      }
+    },
+    "Week": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "周"
+          }
+        }
+      }
+    },
+    "Month": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "月"
+          }
+        }
+      }
+    },
+    "Cumulative": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "累计统计"
+          }
+        }
+      }
+    },
+    "Moving Window": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "滚动窗口"
+          }
+        }
+      }
+    },
+    "Listens": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "聆听次数"
+          }
+        }
+      }
+    },
+    "Data Table": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "查看数据"
+          }
+        }
+      }
+    },
+    "Lifetime Statistics": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "历来统计"
+          }
+        }
+      }
+    },
+    "Weeks at Number One": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "榜首周数"
+          }
+        }
+      }
+    },
+    "Certification": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "认证"
+          }
+        }
+      }
+    },
+    "Gold": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "金牌"
+          }
+        }
+      }
+    },
+    "Silver": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "银牌"
+          }
+        }
+      }
+    },
+    "Bronze": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "铜牌"
+          }
+        }
+      }
+    },
+    "Associated Artists": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "关联歌手"
+          }
+        }
+      }
+    },
+    "Ranking Over Time": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "排名走势"
+          }
+        }
+      }
+    },
+    "No listens in this period.": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "这段时间还没有聆听记录。"
+          }
+        }
+      }
+    },
+    "Unable to Load Statistics": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "无法加载统计"
+          }
+        }
+      }
+    },
+    "Previous Page": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "上一页"
+          }
+        }
+      }
+    },
+    "Next Page": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "下一页"
+          }
+        }
+      }
+    },
+    "Page": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "页码"
+          }
+        }
+      }
+    },
+    "From": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "起始日期"
+          }
+        }
+      }
+    },
+    "Until": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "结束日期"
+          }
+        }
+      }
+    },
+    "Maloja Server": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Maloja 服务器"
+          }
+        }
+      }
+    },
+    "Use the same address as Feishin. Statistics come from Maloja; your existing music server continues to handle playback and scrobbling.": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "填写 Feishin 中使用的服务器地址。统计数据来自 Maloja，播放与听歌记录提交仍由现有音乐服务器处理。"
+          }
+        }
+      }
+    },
+    "Enter a valid HTTP or HTTPS Maloja address without a username or password.": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "请输入有效的 HTTP 或 HTTPS Maloja 地址，地址中不要包含用户名或密码。"
+          }
+        }
+      }
+    },
+    "The server did not return valid Maloja statistics.": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "服务器未返回有效的 Maloja 统计数据。"
+          }
+        }
+      }
+    },
+    "Maloja request failed": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Maloja 请求失败"
+          }
+        }
+      }
+    },
+    "This track was not found in the current music library.": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "当前音乐资料库中未找到这首歌。"
+          }
+        }
+      }
+    },
+    "Unable to Play": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "无法播放"
           }
         }
       }

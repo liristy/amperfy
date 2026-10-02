@@ -21,6 +21,7 @@
 
 import AmperfyKit
 import CoreMedia
+import MediaPlayer
 import UIKit
 
 // MARK: - PopupPlayerVC
@@ -40,6 +41,11 @@ class PopupPlayerVC: UIViewController, UIScrollViewDelegate, UIGestureRecognizer
   @IBOutlet
   weak var controlPlaceholderHeightConstraint: NSLayoutConstraint!
   private let safetyMarginOnBottom = 8.0
+  internal static let backgroundPaletteCache: NSCache<NSString, NSArray> = {
+    let cache = NSCache<NSString, NSArray>()
+    cache.countLimit = 16
+    return cache
+  }()
   internal var artworkGradientColors = [UIColor]()
   internal let artworkGradientLayer = CAGradientLayer()
   internal var backgroundArtworkKey: String?
@@ -49,7 +55,7 @@ class PopupPlayerVC: UIViewController, UIScrollViewDelegate, UIGestureRecognizer
   private var usesLandscapeLayout = false
   private var lyricsControlsTask: Task<Void, Never>?
   private(set) var areLyricsControlsHidden = false
-  let artworkTransition = PlayerArtworkTransitionDelegate()
+  let surfaceTransition = PlayerSurfaceTransitionDelegate()
   private lazy var dismissPan = UIPanGestureRecognizer(target: self, action: #selector(dragToDismiss(_:)))
   override var preferredStatusBarStyle: UIStatusBarStyle { .lightContent }
 
@@ -70,7 +76,22 @@ class PopupPlayerVC: UIViewController, UIScrollViewDelegate, UIGestureRecognizer
   var contextPrevQueueSectionHeader: ContextQueuePrevSectionHeader?
   var userQueueSectionHeader: UserQueueSectionHeader?
   var contextNextQueueSectionHeader: ContextQueueNextSectionHeader?
-  var activeDisplayedSectionHeader = Set<PlayerSectionCategory>()
+  let autoplayQueueSectionHeader: UIView = {
+    let header = UIView()
+    let title = UILabel()
+    title.text = "∞  " + "Autoplay".localized
+    title.textColor = .white
+    title.font = .systemFont(ofSize: 20, weight: .semibold)
+    title.translatesAutoresizingMaskIntoConstraints = false
+    header.addSubview(title)
+    NSLayoutConstraint.activate([
+      title.leadingAnchor.constraint(equalTo: header.leadingAnchor, constant: 8),
+      title.trailingAnchor.constraint(equalTo: header.trailingAnchor, constant: -8),
+      title.centerYAnchor.constraint(equalTo: header.centerYAnchor),
+    ])
+    return header
+  }()
+  private(set) var queueModeBackgrounds: QueueModeGlassBackground?
   lazy var clearEmptySectionFooter = {
     let view = UIView()
     view.backgroundColor = .clear
@@ -90,6 +111,11 @@ class PopupPlayerVC: UIViewController, UIScrollViewDelegate, UIGestureRecognizer
     player = appDelegate.player
     player.addNotifier(notifier: self)
     playerHandler = PlayerUIHandler(player: player, style: .popupPlayer)
+    if appDelegate.storage.settings.user.playerDisplayStyle == .compact {
+      // Normalize queue state persisted by older versions that stacked lyrics behind it.
+      appDelegate.storage.settings.user.isPlayerLyricsDisplayed = false
+      appDelegate.storage.settings.user.isPlayerVisualizerDisplayed = false
+    }
 
     // Keep controls legible over every artwork palette, in either app appearance.
     overrideUserInterfaceStyle = .dark
@@ -119,6 +145,7 @@ class PopupPlayerVC: UIViewController, UIScrollViewDelegate, UIGestureRecognizer
     dismissPan.maximumNumberOfTouches = 1
     view.addGestureRecognizer(dismissPan)
     tableView.panGestureRecognizer.require(toFail: dismissPan)
+    setupTableView()
     if let createdLargeCurrentlyPlayingView = ViewCreator<LargeCurrentlyPlayingPlayerView>
       .createFromNib(withinFixedFrame: CGRect(
         x: 0,
@@ -134,6 +161,7 @@ class PopupPlayerVC: UIViewController, UIScrollViewDelegate, UIGestureRecognizer
     closeButtonPlaceholderView.isHidden = true
     let closePlayer = UIButton(type: .system)
     closePlayer.translatesAutoresizingMaskIntoConstraints = false
+    closePlayer.configuration = .player(isSelected: false)
     closePlayer.accessibilityLabel = "Close".localized
     closePlayer.addTarget(self, action: #selector(dismissFullScreenPlayer), for: .touchUpInside)
     let handle = UIView()
@@ -155,7 +183,6 @@ class PopupPlayerVC: UIViewController, UIScrollViewDelegate, UIGestureRecognizer
     ])
     configureAdaptiveLayout()
 
-    setupTableView()
     fetchSongInfoAndUpdateViews()
 
     if let sectionView = ViewCreator<ContextQueuePrevSectionHeader>
@@ -166,7 +193,14 @@ class PopupPlayerVC: UIViewController, UIScrollViewDelegate, UIGestureRecognizer
         height: ContextQueuePrevSectionHeader.frameHeight
       )) {
       contextPrevQueueSectionHeader = sectionView
-      contextPrevQueueSectionHeader?.display(name: "Previous".localized)
+      contextPrevQueueSectionHeader?.display(name: "History".localized)
+      contextPrevQueueSectionHeader?.onClear = { [weak self] in
+        guard let self else { return }
+        for index in (0..<self.player.prevQueueCount).reversed() {
+          self.player.removePlayable(at: PlayerIndex(queueType: .prev, index: index))
+        }
+        self.reloadData()
+      }
     }
     if let sectionView = ViewCreator<UserQueueSectionHeader>.createFromNib(withinFixedFrame: CGRect(
       x: 0,
@@ -246,6 +280,7 @@ class PopupPlayerVC: UIViewController, UIScrollViewDelegate, UIGestureRecognizer
 
   override func viewDidAppear(_ animated: Bool) {
     super.viewDidAppear(animated)
+    updateQueueModeBackgrounds()
     lyricsModeDidChange()
   }
 
@@ -306,6 +341,10 @@ class PopupPlayerVC: UIViewController, UIScrollViewDelegate, UIGestureRecognizer
     guard isDismissPan || areLyricsControlsHidden else { return false }
     var touchedView = touch.view
     while let current = touchedView {
+      #if !targetEnvironment(macCatalyst)
+        if isDismissPan, current is DragOnlySystemVolumeView { return false }
+      #endif
+      if isDismissPan, current is MPVolumeView { return false }
       if isDismissPan ? (current is UISlider) : (current is UIControl) { return false }
       if !isDismissPan, current === largeCurrentlyPlayingView?.transitionArtwork { return false }
       touchedView = current.superview
@@ -320,6 +359,9 @@ class PopupPlayerVC: UIViewController, UIScrollViewDelegate, UIGestureRecognizer
           presentedViewController == nil else { return false }
     var touchedView = view.hitTest(dismissPan.location(in: view), with: nil)
     while let current = touchedView {
+      // Lyrics own both directions: down reveals transport controls, up hides
+      // them. Dismissal remains available from the fixed header/handle.
+      if current is LyricsView { return false }
       // Keep downward scrolling available when reading earlier lyrics or queue items.
       if let scrollView = current as? UIScrollView,
          scrollView.contentOffset.y > -scrollView.adjustedContentInset.top + 1 { return false }
@@ -332,14 +374,22 @@ class PopupPlayerVC: UIViewController, UIScrollViewDelegate, UIGestureRecognizer
     lyricsView.panGestureRecognizer.require(toFail: dismissPan)
   }
 
-  func configurePresentation(sourceArtwork: UIImageView?) {
-    artworkTransition.sourceArtwork = sourceArtwork
+  func configurePresentation(sourcePlayer: UIView?, sourceArtwork: UIImageView?) {
+    surfaceTransition.sourcePlayer = sourcePlayer
+    surfaceTransition.sourceArtwork = sourceArtwork
     modalPresentationStyle = .fullScreen
-    transitioningDelegate = artworkTransition
+    transitioningDelegate = surfaceTransition
   }
 
   var transitionArtwork: UIImageView? {
-    return largeCurrentlyPlayingView?.transitionArtwork
+    guard let artwork = largeCurrentlyPlayingView?.transitionArtwork else { return nil }
+    if appDelegate.storage.settings.user.playerDisplayStyle == .compact {
+      let path = IndexPath(row: 0, section: PlayerSectionCategory.currentlyPlaying.rawValue)
+      guard tableView.indexPathsForVisibleRows?.contains(path) == true else { return nil }
+      let frame = artwork.convert(artwork.bounds, to: tableView)
+      guard tableView.bounds.contains(frame) else { return nil }
+    }
+    return artwork
   }
 
   @objc private func dragToDismiss(_ pan: UIPanGestureRecognizer) {
@@ -355,24 +405,27 @@ class PopupPlayerVC: UIViewController, UIScrollViewDelegate, UIGestureRecognizer
   }
 
   func beginInteractiveDismissal() {
-    guard artworkTransition.interaction == nil, !isBeingDismissed else { return }
+    guard surfaceTransition.interaction == nil, !isBeingDismissed else { return }
     lyricsControlsTask?.cancel()
     let interaction = UIPercentDrivenInteractiveTransition()
-    interaction.completionCurve = .easeOut
-    artworkTransition.interaction = interaction
-    dismiss(animated: true) { [weak self] in self?.artworkTransition.interaction = nil }
+    // Let the surface spring and the cover's easing retain their own curves.
+    surfaceTransition.interaction = interaction
+    dismiss(animated: true) { [weak self] in self?.surfaceTransition.interaction = nil }
   }
 
   func updateInteractiveDismissal(translation: CGFloat) {
-    artworkTransition.interaction?.update(min(0.99, max(0, translation / max(view.bounds.height, 1))))
+    let progress = min(0.99, max(0, translation / max(view.bounds.height, 1)))
+    surfaceTransition.interaction?.update(progress)
+    surfaceTransition.updateArtwork(progress)
   }
 
   func endInteractiveDismissal(translation: CGFloat, velocity: CGFloat, cancelled: Bool = false) {
-    guard let interaction = artworkTransition.interaction else { return }
+    guard let interaction = surfaceTransition.interaction else { return }
     let shouldFinish = !cancelled && velocity > -100 &&
       (translation > 90 || (translation > 12 && velocity > 650))
+    surfaceTransition.finishArtwork(completed: shouldFinish)
     if shouldFinish { interaction.finish() } else { interaction.cancel() }
-    artworkTransition.interaction = nil
+    surfaceTransition.interaction = nil
     if !shouldFinish { scheduleLyricsControlsHide() }
   }
 
@@ -394,13 +447,12 @@ class PopupPlayerVC: UIViewController, UIScrollViewDelegate, UIGestureRecognizer
   }
 
   private func configureAdaptiveLayout() {
-    // The queue begins below the same fixed header used by lyrics.
+    // Include the current song card in the scrollable queue, below history.
     for constraint in view.constraints where
       (constraint.firstItem as? UIView) === tableView && constraint.firstAttribute == .top {
       constraint.isActive = false
     }
-    tableView.topAnchor.constraint(equalTo: largePlayerPlaceholderView.topAnchor,
-                                   constant: CurrentlyPlayingTableCell.rowHeight + 8).isActive = true
+    tableView.topAnchor.constraint(equalTo: largePlayerPlaceholderView.topAnchor).isActive = true
     let contentViews: [UIView] = [largePlayerPlaceholderView, tableView, controlPlaceholderView]
     portraitLayoutConstraints = view.constraints.filter { constraint in
       (constraint.firstItem as? UIView) !== largeCurrentlyPlayingView?.compactHeader &&
@@ -436,8 +488,7 @@ class PopupPlayerVC: UIViewController, UIScrollViewDelegate, UIGestureRecognizer
       ),
       tableView.leadingAnchor.constraint(equalTo: largePlayerPlaceholderView.leadingAnchor),
       tableView.trailingAnchor.constraint(equalTo: largePlayerPlaceholderView.trailingAnchor),
-      tableView.topAnchor.constraint(equalTo: largePlayerPlaceholderView.topAnchor,
-                                     constant: CurrentlyPlayingTableCell.rowHeight + 8),
+      tableView.topAnchor.constraint(equalTo: largePlayerPlaceholderView.topAnchor),
       tableView.bottomAnchor.constraint(equalTo: largePlayerPlaceholderView.bottomAnchor),
     ]
   }
@@ -456,9 +507,19 @@ class PopupPlayerVC: UIViewController, UIScrollViewDelegate, UIGestureRecognizer
     }}
   }
 
-  func reloadData() {
+  func reloadData(preservingScrollOffset: Bool = false) {
+    let previousOffset = tableView.contentOffset
     tableView.reloadData()
-    scrollToCurrentlyPlayingRow()
+    tableView.layoutIfNeeded()
+    if preservingScrollOffset {
+      let minimumY = -tableView.adjustedContentInset.top
+      let maximumY = max(minimumY, tableView.contentSize.height - tableView.bounds.height + tableView.adjustedContentInset.bottom)
+      tableView.setContentOffset(CGPoint(x: previousOffset.x,
+        y: min(maximumY, max(minimumY, previousOffset.y))), animated: false)
+    } else {
+      scrollToCurrentlyPlayingRow()
+    }
+    refreshCellMasks()
   }
 
   func scrollToCurrentlyPlayingRow() {
@@ -569,21 +630,38 @@ class PopupPlayerVC: UIViewController, UIScrollViewDelegate, UIGestureRecognizer
   }
 
   func refreshCellMasks() {
-    guard let topSection = Array(activeDisplayedSectionHeader)
-      .sorted(by: { $0.rawValue < $1.rawValue }).first
-    else { return }
-
-    let topSectionHeight = tableView(tableView, heightForHeaderInSection: topSection.rawValue)
-    let scrollOffset = tableView.contentOffset.y
-
+    layoutQueueSectionHeaders()
+    // Headers and rows share the same scroll surface; only the table viewport
+    // clips them. Clear masks retained by reused rows or context-menu previews.
     for cell in tableView.visibleCells {
-      let hiddenFrameHeight = scrollOffset + topSectionHeight - cell.frame.origin.y
-      if hiddenFrameHeight >= 0 || hiddenFrameHeight <= cell.frame.size.height {
-        if let customCell = cell as? PlayableTableCell {
-          customCell.maskCell(fromTop: hiddenFrameHeight)
-        }
-      }
+      (cell as? PlayableTableCell)?.maskCell(fromTop: 0)
     }
+    updateQueueModeBackgrounds()
+  }
+
+  func updateQueueModeBackgrounds() {
+    guard isViewLoaded, view.mask == nil, tableView.mask == nil else { return }
+    guard let header = contextNextQueueSectionHeader, view.window != nil else {
+      queueModeBackgrounds?.isHidden = true
+      return
+    }
+    let buttons = [header.shuffleButton, header.repeatButton, header.autoplayButton].compactMap { $0 }
+    guard buttons.count == 3, buttons.allSatisfy({ $0.window != nil }), !tableView.isHidden else {
+      queueModeBackgrounds?.isHidden = true
+      return
+    }
+    if queueModeBackgrounds == nil {
+      let background = QueueModeGlassBackground()
+      view.insertSubview(background, belowSubview: tableView)
+      queueModeBackgrounds = background
+    }
+    queueModeBackgrounds?.update(buttons: buttons, table: tableView)
+  }
+
+  func rebuildQueueModeBackgrounds() {
+    queueModeBackgrounds?.removeFromSuperview()
+    queueModeBackgrounds = nil
+    updateQueueModeBackgrounds()
   }
 
   func refreshCellsContent() {
@@ -605,6 +683,7 @@ extension PopupPlayerVC: MusicPlayable {
   func didStartPlaying() {
     reloadData()
     refresh()
+    largeCurrentlyPlayingView?.refreshPlaybackAppearance(animated: true)
   }
 
   func didStopPlaying() {
@@ -613,11 +692,13 @@ extension PopupPlayerVC: MusicPlayable {
   }
 
   func didPlaylistChange() {
-    reloadData()
+    reloadData(preservingScrollOffset: true)
     refresh()
   }
 
-  func didPause() {}
+  func didPause() {
+    largeCurrentlyPlayingView?.refreshPlaybackAppearance(animated: true)
+  }
   func didElapsedTimeChange() {}
 
   func didLyricsTimeChange(time: CMTime) {

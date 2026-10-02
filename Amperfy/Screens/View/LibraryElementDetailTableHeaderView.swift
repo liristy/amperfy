@@ -154,13 +154,29 @@ class LibraryElementDetailTableHeaderView: UIView {
   /// isShuffleOnContextNeccessary: In AlbumsVC the albums are shuffled, keep the order when shuffle button is pressed
   func prepare(configuration: PlayShuffleInfoConfiguration) {
     config = configuration
-    playAllButton.setTitle(config?.customPlayName ?? "Play".localized, for: .normal)
-    playAllButton.layer.cornerRadius = 10.0
-    playShuffledButton.setTitle(
-      configuration.isShuffleOnContextNeccessary ? "Shuffle".localized : "Random".localized,
-      for: .normal
-    )
-    playShuffledButton.layer.cornerRadius = 10.0
+    var playConfiguration = UIButton.Configuration.prominentGlass()
+    playConfiguration.title = config?.customPlayName ?? "Play".localized
+    playConfiguration.image = UIImage(systemName: "play.fill")
+    var shuffleConfiguration = UIButton.Configuration.glass()
+    shuffleConfiguration.title = configuration.isShuffleOnContextNeccessary ?
+      "Shuffle".localized : "Random".localized
+    shuffleConfiguration.image = UIImage(systemName: "shuffle")
+    for (button, baseStyle) in [(playAllButton!, playConfiguration),
+                               (playShuffledButton!, shuffleConfiguration)] {
+      var style = baseStyle
+      style.cornerStyle = .capsule
+      style.imagePadding = 6
+      style.preferredSymbolConfigurationForImage = UIImage.SymbolConfiguration(pointSize: 14)
+      style.contentInsets = NSDirectionalEdgeInsets(top: 8, leading: 8, bottom: 8, trailing: 8)
+      style.titleTextAttributesTransformer = UIConfigurationTextAttributesTransformer { incoming in
+        var outgoing = incoming
+        outgoing.font = .systemFont(ofSize: 15, weight: .semibold)
+        return outgoing
+      }
+      button.backgroundColor = .clear
+      button.layer.cornerRadius = 0
+      button.configuration = style
+    }
     playShuffledButton.isHidden = configuration.isShuffleHidden
     activate()
     registerForTraitChanges(

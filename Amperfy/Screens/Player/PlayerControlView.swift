@@ -20,14 +20,176 @@
 //
 
 import AmperfyKit
+import AVFAudio
 import MarqueeLabel
 import MediaPlayer
 import UIKit
 
+// MARK: - PlayerTransportButton
+
+final class PlayerTransportButton: UIButton {
+  private let pressDisc = UIView()
+  private let symbolContainer = UIView()
+  private let symbolView = UIImageView()
+  private var symbolIdentifier: String?
+  private var symbolAnimator: UIViewPropertyAnimator?
+  private var symbolTransitionID = UUID()
+  private var skipOverlay: UIView?
+  private var skipAnimationID = UUID()
+
+  override func awakeFromNib() {
+    super.awakeFromNib()
+    pressDisc.backgroundColor = .white.withAlphaComponent(0.12)
+    pressDisc.alpha = 0
+    for view in [pressDisc, symbolContainer] {
+      view.isUserInteractionEnabled = false
+      addSubview(view)
+    }
+    symbolContainer.addSubview(symbolView)
+    symbolView.contentMode = .center
+    symbolView.tintColor = .white
+  }
+
+  override func layoutSubviews() {
+    super.layoutSubviews()
+    imageView?.isHidden = true
+    let side = min(56, min(bounds.width, bounds.height))
+    pressDisc.bounds = CGRect(x: 0, y: 0, width: side, height: side)
+    pressDisc.center = CGPoint(x: bounds.midX, y: bounds.midY)
+    pressDisc.layer.cornerRadius = side / 2
+    // Keep the center and drawing canvas fixed while the glyph changes size.
+    // Touch feedback belongs to the parent, independently of symbol replacement.
+    symbolContainer.bounds = bounds
+    symbolContainer.center = pressDisc.center
+    symbolView.bounds = symbolContainer.bounds
+    symbolView.center = CGPoint(x: symbolContainer.bounds.midX, y: symbolContainer.bounds.midY)
+    skipOverlay?.center = pressDisc.center
+  }
+
+  override var isHighlighted: Bool {
+    didSet {
+      guard oldValue != isHighlighted else { return }
+      let pressed = isHighlighted
+      UIView.animate(withDuration: pressed ? 0.09 : 0.18, delay: 0,
+        usingSpringWithDamping: pressed ? 1 : 0.9, initialSpringVelocity: 0,
+        options: [.beginFromCurrentState, .allowUserInteraction]) {
+        self.pressDisc.alpha = pressed ? 1 : 0
+        self.symbolContainer.transform = pressed && !UIAccessibility.isReduceMotionEnabled ?
+          CGAffineTransform(scaleX: 0.94, y: 0.94) : .identity
+      }
+    }
+  }
+
+  func renderSymbol(_ image: UIImage, identifier: String) {
+    guard symbolIdentifier != identifier else { return }
+    let animated = symbolIdentifier != nil && window != nil && !UIAccessibility.isReduceMotionEnabled
+    symbolIdentifier = identifier
+    let transitionID = UUID()
+    symbolTransitionID = transitionID
+    // Finish at the rendered position so rapid taps don't restart from full size
+    // or allow an older completion to install an outdated play/pause symbol.
+    if let animator = symbolAnimator {
+      animator.stopAnimation(false)
+      animator.finishAnimation(at: .current)
+      symbolAnimator = nil
+    }
+    guard animated else {
+      symbolView.image = image
+      symbolView.transform = .identity
+      symbolView.alpha = 1
+      setNeedsLayout()
+      return
+    }
+    let shrink = UIViewPropertyAnimator(duration: 0.07, curve: .easeIn) {
+      self.symbolView.transform = CGAffineTransform(scaleX: 0.15, y: 0.15)
+      self.symbolView.alpha = 0
+    }
+    shrink.addCompletion { [weak self] _ in
+      guard let self, symbolTransitionID == transitionID else { return }
+      symbolView.image = image
+      let expand = UIViewPropertyAnimator(duration: 0.2, dampingRatio: 0.9) {
+        self.symbolView.transform = .identity
+        self.symbolView.alpha = 1
+      }
+      expand.addCompletion { [weak self] _ in
+        guard let self, symbolTransitionID == transitionID else { return }
+        symbolAnimator = nil
+      }
+      symbolAnimator = expand
+      expand.startAnimation()
+    }
+    symbolAnimator = shrink
+    shrink.startAnimation()
+  }
+
+  func animateActivation(direction: CGFloat = 0) {
+    // Play/pause touch highlighting already fades on release. Re-triggering it
+    // here would flash the circle a second time after every successful tap.
+    guard direction != 0 else { return }
+    pressDisc.layer.removeAllAnimations()
+    pressDisc.alpha = 1
+    UIView.animate(withDuration: 0.3, delay: 0.05, options: [.allowUserInteraction, .beginFromCurrentState]) {
+      self.pressDisc.alpha = 0
+    }
+    guard direction != 0, !UIAccessibility.isReduceMotionEnabled,
+          let image = symbolView.image else { return }
+    skipOverlay?.removeFromSuperview()
+    let animationID = UUID()
+    skipAnimationID = animationID
+    let overlay = UIView(frame: CGRect(origin: .zero, size: image.size))
+    overlay.center = pressDisc.center
+    overlay.clipsToBounds = true
+    overlay.isUserInteractionEnabled = false
+    let slotWidth = image.size.width / 2
+    var triangles: [UIImageView] = []
+    for slot in -1...1 {
+      let triangle = UIImageView(image: UIImage(systemName: "play.fill"))
+      triangle.tintColor = .white
+      triangle.contentMode = .scaleAspectFit
+      triangle.frame = CGRect(x: CGFloat(slot) * slotWidth, y: 0, width: slotWidth, height: image.size.height)
+      if direction < 0 {
+        triangle.frame.origin.x = CGFloat(slot + 1) * slotWidth
+        triangle.transform = CGAffineTransform(rotationAngle: .pi)
+      }
+      overlay.addSubview(triangle)
+      triangles.append(triangle)
+    }
+    addSubview(overlay)
+    skipOverlay = overlay
+    symbolView.alpha = 0
+    UIView.animate(withDuration: 0.26, delay: 0, options: [.curveEaseOut, .allowUserInteraction]) {
+      for triangle in triangles { triangle.center.x += direction * slotWidth }
+    } completion: { [weak self, weak overlay] _ in
+      overlay?.removeFromSuperview()
+      guard let self, skipAnimationID == animationID else { return }
+      skipOverlay = nil
+      symbolView.alpha = 1
+    }
+  }
+
+  #if DEBUG && targetEnvironment(simulator)
+    var isRenderedSymbolSettled: Bool {
+      func pixels(_ image: UIImage?) -> Data? {
+        guard let image else { return nil }
+        return UIGraphicsImageRenderer(size: bounds.size).image { _ in
+          image.draw(at: CGPoint(x: (bounds.width - image.size.width) / 2,
+            y: (bounds.height - image.size.height) / 2))
+        }.pngData()
+      }
+      guard let rendered = pixels(symbolView.image), let expected = pixels(image(for: .normal)) else { return false }
+      return rendered == expected && symbolAnimator == nil &&
+        symbolView.alpha == 1 && symbolView.transform == .identity &&
+        symbolContainer.transform == .identity &&
+        abs(symbolView.center.x - symbolContainer.bounds.midX) < 0.5 &&
+        abs(symbolView.center.y - symbolContainer.bounds.midY) < 0.5
+    }
+  #endif
+}
+
 // MARK: - PlayerControlView
 
 class PlayerControlView: UIView {
-  static let frameHeight: CGFloat = 255
+  static let frameHeight: CGFloat = 268
   static private let margin = UIEdgeInsets(
     top: 0,
     left: 0,
@@ -38,7 +200,24 @@ class PlayerControlView: UIView {
   private var player: PlayerFacade!
   private var rootView: PopupPlayerVC?
   private var playerHandler: PlayerUIHandler?
-  private let volumeSlider = UISlider()
+  #if targetEnvironment(macCatalyst)
+    private let volumeSlider = PlayerTrackSlider()
+  #else
+    private let volumeSlider = DragOnlySystemVolumeView(frame: .zero)
+  #endif
+  private var audioRouteTask: Task<Void, Never>?
+  private static let audioIconPreferencesKey = "player.audioOutputIcons"
+  private static var bluetoothIconCache = [String: String]()
+  private var displayedAudioOutput: AudioOutput?
+  private(set) var audioOutputIconName = "airplay.audio"
+  struct AudioOutput {
+    let portType: AVAudioSession.Port
+    let name: String
+    let uid: String
+    var isBluetooth: Bool {
+      [.bluetoothA2DP, .bluetoothHFP, .bluetoothLE].contains(portType)
+    }
+  }
   #if targetEnvironment(macCatalyst) // ok
     var airplayVolume: MPVolumeView?
   #endif
@@ -76,9 +255,7 @@ class PlayerControlView: UIView {
   @IBOutlet
   weak var displayPlaylistButton: UIButton!
   @IBOutlet
-  weak var volumeButton: UIButton!
-  @IBOutlet
-  weak var optionsButton: UIButton!
+  weak var loudSpeaker: UIImageView!
   @IBOutlet
   weak var lyricsButton: UIButton!
 
@@ -93,6 +270,10 @@ class PlayerControlView: UIView {
     self.layoutMargins = Self.margin
     self.player = appDelegate.player
     player.addNotifier(notifier: self)
+    NotificationCenter.default.addObserver(self, selector: #selector(audioRouteChanged(_:)),
+      name: AVAudioSession.routeChangeNotification, object: nil)
+    NotificationCenter.default.addObserver(self, selector: #selector(audioRouteChanged(_:)),
+      name: UIApplication.didBecomeActiveNotification, object: nil)
 
     #if targetEnvironment(macCatalyst) // ok
       addSubview(airplayVolume!)
@@ -103,6 +284,7 @@ class PlayerControlView: UIView {
     rootView = toWorkOnRootView
 
     playerHandler = PlayerUIHandler(player: player, style: .popupPlayer)
+    configureIconControls()
     configureVolumeSlider()
     timeSlider.minimumTrackTintColor = .white.withAlphaComponent(0.8)
     timeSlider.maximumTrackTintColor = .white.withAlphaComponent(0.18)
@@ -113,8 +295,6 @@ class PlayerControlView: UIView {
     }
     airplayButton.accessibilityLabel = "AirPlay"
     displayPlaylistButton.accessibilityLabel = "Playing next".localized
-    optionsButton.accessibilityLabel = "Player options".localized
-    volumeButton.accessibilityLabel = "Volume options".localized
     lyricsButton.addTarget(self, action: #selector(lyricsPressed), for: .touchUpInside)
 
     playButton.imageView?.tintColor = .label
@@ -124,13 +304,7 @@ class PlayerControlView: UIView {
     skipForwardButton.tintColor = .label
     airplayButton.tintColor = .label
     playerModeButton.tintColor = .label
-    volumeButton.tintColor = .label
-    optionsButton.imageView?.tintColor = .label
     refreshPlayer()
-    playerHandler?.refreshPlayerOptions(
-      optionsButton: optionsButton,
-      menuCreateCB: createPlayerOptionsMenu
-    )
 
     registerForTraitChanges(
       [UITraitUserInterfaceStyle.self, UITraitHorizontalSizeClass.self],
@@ -148,16 +322,32 @@ class PlayerControlView: UIView {
   }
 
   private func configureVolumeSlider() {
+    loudSpeaker.tintColor = .white.withAlphaComponent(0.5)
+    loudSpeaker.isAccessibilityElement = false
     volumeSlider.translatesAutoresizingMaskIntoConstraints = false
-    volumeSlider.minimumValue = 0
-    volumeSlider.maximumValue = 1
-    volumeSlider.value = player.volume
-    volumeSlider.minimumTrackTintColor = .white.withAlphaComponent(0.7)
-    volumeSlider.maximumTrackTintColor = .white.withAlphaComponent(0.18)
-    volumeSlider.preferredBehavioralStyle = .pad
-    volumeSlider.sliderStyle = .thumbless
-    volumeSlider.accessibilityLabel = "Volume".localized
-    volumeSlider.addTarget(self, action: #selector(volumeChanged), for: .valueChanged)
+    #if targetEnvironment(macCatalyst)
+      volumeSlider.minimumValue = 0
+      volumeSlider.maximumValue = 1
+      volumeSlider.value = player.volume
+      volumeSlider.minimumTrackTintColor = .white.withAlphaComponent(0.7)
+      volumeSlider.maximumTrackTintColor = .white.withAlphaComponent(0.18)
+      volumeSlider.preferredBehavioralStyle = .pad
+      volumeSlider.sliderStyle = .thumbless
+      volumeSlider.accessibilityLabel = "Volume".localized
+      volumeSlider.addTarget(self, action: #selector(volumeChanged), for: .valueChanged)
+    #else
+      // MPVolumeView owns the system volume, including hardware buttons,
+      // Control Center and output-route changes. AVAudioSession.outputVolume
+      // is read-only; the player's separate gain must not drive this slider.
+      volumeSlider.showsRouteButton = false
+      volumeSlider.showsVolumeSlider = true
+      volumeSlider.isTrackExpansionEnabled = true
+      volumeSlider.tintColor = .white.withAlphaComponent(0.7)
+      volumeSlider.setMinimumVolumeSliderImage(volumeTrackImage(alpha: 0.7), for: .normal)
+      volumeSlider.setMaximumVolumeSliderImage(volumeTrackImage(alpha: 0.18), for: .normal)
+      let invisibleThumb = UIGraphicsImageRenderer(size: CGSize(width: 1, height: 1)).image { _ in }
+      volumeSlider.setVolumeThumbImage(invisibleThumb, for: .normal)
+    #endif
     addSubview(volumeSlider)
 
     let quietSpeaker = UIImageView(image: UIImage(systemName: "speaker.fill"))
@@ -167,20 +357,160 @@ class PlayerControlView: UIView {
     addSubview(quietSpeaker)
     NSLayoutConstraint.activate([
       quietSpeaker.leadingAnchor.constraint(equalTo: layoutMarginsGuide.leadingAnchor),
-      quietSpeaker.centerYAnchor.constraint(equalTo: volumeButton.centerYAnchor),
+      quietSpeaker.centerYAnchor.constraint(equalTo: loudSpeaker.centerYAnchor),
       quietSpeaker.widthAnchor.constraint(equalToConstant: 16),
       quietSpeaker.heightAnchor.constraint(equalToConstant: 16),
       volumeSlider.leadingAnchor.constraint(equalTo: quietSpeaker.trailingAnchor, constant: 12),
-      volumeSlider.trailingAnchor.constraint(equalTo: volumeButton.leadingAnchor, constant: -4),
-      volumeSlider.centerYAnchor.constraint(equalTo: volumeButton.centerYAnchor),
+      volumeSlider.trailingAnchor.constraint(equalTo: loudSpeaker.leadingAnchor, constant: -4),
+      volumeSlider.centerYAnchor.constraint(equalTo: loudSpeaker.centerYAnchor),
       volumeSlider.heightAnchor.constraint(equalToConstant: 32),
     ])
   }
 
-  @objc
-  private func volumeChanged() {
-    player.volume = volumeSlider.value
+  #if !targetEnvironment(macCatalyst)
+    private func volumeTrackImage(alpha: CGFloat) -> UIImage {
+      let size = CGSize(width: 14, height: 7)
+      return UIGraphicsImageRenderer(size: size).image { _ in
+        UIColor.white.withAlphaComponent(alpha).setFill()
+        UIBezierPath(roundedRect: CGRect(origin: .zero, size: size), cornerRadius: 3.5).fill()
+      }.resizableImage(withCapInsets: UIEdgeInsets(top: 0, left: 4, bottom: 0, right: 4))
+    }
+  #endif
+
+  private func configureIconControls() {
+    // Keep the player controls as bare icons with their existing touch targets.
+    for button in [playButton, previousButton, nextButton, skipBackwardButton,
+                   skipForwardButton, airplayButton, playerModeButton] {
+      guard let button else { continue }
+      var configuration = UIButton.Configuration.player(isSelected: false)
+      configuration.image = button.image(for: .normal)
+      button.backgroundColor = .clear
+      button.clipsToBounds = false
+      button.configuration = configuration
+    }
+    for (button, symbol) in [(lyricsButton!, "quote.bubble"), (displayPlaylistButton!, "list.bullet")] {
+      button.configurationUpdateHandler = { button in
+        let color: UIColor = button.isSelected ? .black : .white
+        var configuration = UIButton.Configuration.playerAccessory(isSelected: button.isSelected)
+        configuration.image = UIImage(systemName: symbol)?.withTintColor(color, renderingMode: .alwaysOriginal)
+        if button.tintColor != color { button.tintColor = color }
+        button.configuration = configuration
+      }
+    }
+    refreshAudioOutputButton()
   }
+
+  // The route name cannot identify a generation reliably. Plain "AirPods"
+  // uses the modern 3/4 silhouette; a per-device choice can correct renamed
+  // devices and older models without claiming to detect their hardware.
+  static func audioOutputSymbol(portType: AVAudioSession.Port, portName: String,
+                                preferredSymbol: String? = nil) -> String {
+    switch portType {
+    case .bluetoothA2DP, .bluetoothHFP, .bluetoothLE:
+      if let preferredSymbol,
+         ["airpods", "airpods.gen3", "airpodspro", "airpodsmax", "headphones"].contains(preferredSymbol) {
+        return preferredSymbol
+      }
+      let name = portName.folding(options: [.caseInsensitive, .widthInsensitive], locale: nil)
+        .filter { $0.isLetter || $0.isNumber }
+        .lowercased()
+      if name.contains("airpodsmax") { return "airpodsmax" }
+      if name.contains("airpodspro") { return "airpodspro" }
+      if name.contains("airpods1") || name.contains("airpods2") { return "airpods" }
+      if name.contains("airpods") { return "airpods.gen3" }
+      return "airplay.audio"
+    case .headphones: return "headphones"
+    case .carAudio: return "car.fill"
+    default: return "airplay.audio"
+    }
+  }
+
+  @objc nonisolated private func audioRouteChanged(_ notification: Notification) {
+    Task { @MainActor [weak self] in self?.scheduleAudioOutputRefresh() }
+  }
+
+  override func didMoveToWindow() {
+    super.didMoveToWindow()
+    if window != nil { scheduleAudioOutputRefresh() }
+    else { audioRouteTask?.cancel() }
+  }
+
+  private func scheduleAudioOutputRefresh() {
+    audioRouteTask?.cancel()
+    audioRouteTask = Task { @MainActor [weak self] in
+      // Profile/category changes can briefly report no output or the built-in
+      // speaker. Coalesce them, then confirm the settled route once more.
+      do { try await Task.sleep(for: .milliseconds(250)) } catch { return }
+      guard !Task.isCancelled else { return }
+      self?.refreshAudioOutputButton(settled: false)
+      do { try await Task.sleep(for: .milliseconds(650)) } catch { return }
+      guard !Task.isCancelled else { return }
+      self?.refreshAudioOutputButton()
+    }
+  }
+
+  private func refreshAudioOutputButton(settled: Bool = true) {
+    let outputs = AVAudioSession.sharedInstance().currentRoute.outputs
+    let port = outputs.first { $0.portType != .builtInSpeaker && $0.portType != .builtInReceiver } ?? outputs.first
+    renderAudioOutput(port.map { AudioOutput(portType: $0.portType, name: $0.portName, uid: $0.uid) },
+                      settled: settled)
+  }
+
+  func renderAudioOutput(_ output: AudioOutput?, settled: Bool = true) {
+    guard let airplayButton else { return }
+    if !settled, output == nil || (displayedAudioOutput?.isBluetooth == true && output?.isBluetooth != true) {
+      return
+    }
+    let preferences = UserDefaults.standard.dictionary(forKey: Self.audioIconPreferencesKey) as? [String: String] ?? [:]
+    let preferred = output.flatMap { preferences[$0.uid] }
+    let inferredSymbol = output.map { Self.audioOutputSymbol(portType: $0.portType, portName: $0.name) }
+      ?? "airplay.audio"
+    var symbol = inferredSymbol
+    if let output, output.isBluetooth, !output.uid.isEmpty {
+      if inferredSymbol != "airplay.audio" {
+        if Self.bluetoothIconCache.count > 64 { Self.bluetoothIconCache.removeAll() }
+        Self.bluetoothIconCache[output.uid] = inferredSymbol
+      } else {
+        // The same endpoint can temporarily have a generic name during a
+        // profile change. Never borrow another device's model by name.
+        symbol = Self.bluetoothIconCache[output.uid] ?? inferredSymbol
+      }
+      if let preferred {
+        symbol = Self.audioOutputSymbol(portType: output.portType, portName: output.name, preferredSymbol: preferred)
+      }
+    }
+    displayedAudioOutput = output
+    audioOutputIconName = symbol
+    var configuration = UIButton.Configuration.playerAccessory(isSelected: false)
+    configuration.image = UIImage(systemName: symbol) ?? UIImage(systemName: "airplay.audio")
+    airplayButton.configuration = configuration
+    airplayButton.accessibilityValue = output?.name
+    airplayButton.menu = nil
+    airplayButton.accessibilityHint = nil
+    guard let output, output.isBluetooth, !output.uid.isEmpty else { return }
+    let choices: [(String, String?)] = [
+      ("Automatic".localized, nil), ("AirPods 1 / 2", "airpods"),
+      ("AirPods 3 / 4", "airpods.gen3"), ("AirPods Pro", "airpodspro"),
+      ("AirPods Max", "airpodsmax"), ("Headphones".localized, "headphones"),
+    ]
+    airplayButton.menu = UIMenu(title: "Headphone Icon".localized, children: choices.map { title, value in
+      UIAction(title: title, image: value.flatMap { UIImage(systemName: $0) },
+               state: preferred == value ? .on : .off) { [weak self] _ in
+        var saved = UserDefaults.standard.dictionary(forKey: Self.audioIconPreferencesKey) as? [String: String] ?? [:]
+        saved[output.uid] = value
+        UserDefaults.standard.set(saved, forKey: Self.audioIconPreferencesKey)
+        self?.refreshAudioOutputButton()
+      }
+    })
+    airplayButton.accessibilityHint = "Long press to choose headphone icon".localized
+  }
+
+  #if targetEnvironment(macCatalyst)
+    @objc
+    private func volumeChanged() {
+      player.volume = volumeSlider.value
+    }
+  #endif
 
   @objc
   private func lyricsPressed() {
@@ -198,30 +528,32 @@ class PlayerControlView: UIView {
   func refreshLyricsButton() {
     let selected = appDelegate.storage.settings.user.isPlayerLyricsDisplayed &&
       appDelegate.storage.settings.user.playerDisplayStyle == .large
-    var configuration = UIButton.Configuration.plain()
-    configuration.image = UIImage(systemName: "quote.bubble")
-    configuration.baseForegroundColor = .white
-    configuration.background.backgroundColor = selected ? .white.withAlphaComponent(0.18) : .clear
-    configuration.background.cornerRadius = 12
-    lyricsButton.configuration = configuration
+    var configuration = UIButton.Configuration.playerAccessory(isSelected: selected)
+    configuration.image = UIImage(systemName: "quote.bubble")?
+      .withTintColor(selected ? .black : .white, renderingMode: .alwaysOriginal)
+    lyricsButton.tintColor = selected ? .black : .white
     lyricsButton.isSelected = selected
+    lyricsButton.configuration = configuration
     lyricsButton.isEnabled = playerHandler?.isLyricsButtonAllowedToDisplay ?? false
     lyricsButton.accessibilityLabel = selected ? "Hide Lyrics".localized : "Show Lyrics".localized
   }
 
   @IBAction
   func playButtonPushed(_ sender: Any) {
+    (playButton as? PlayerTransportButton)?.animateActivation()
     playerHandler?.playButtonPushed()
     playerHandler?.refreshPlayButton(playButton)
   }
 
   @IBAction
   func previousButtonPushed(_ sender: Any) {
+    (previousButton as? PlayerTransportButton)?.animateActivation(direction: player.playerMode == .music ? -1 : 0)
     playerHandler?.previousButtonPushed()
   }
 
   @IBAction
   func nextButtonPushed(_ sender: Any) {
+    (nextButton as? PlayerTransportButton)?.animateActivation(direction: player.playerMode == .music ? 1 : 0)
     playerHandler?.nextButtonPushed()
   }
 
@@ -263,48 +595,10 @@ class PlayerControlView: UIView {
   }
 
   @IBAction
-  func volumeButtonPressed(_ sender: Any) {
-    showVolumeSliderMenu()
-  }
-
-  func showVolumeSliderMenu() {
-    let popoverContentController = SliderMenuPopover()
-    let sliderMenuView = popoverContentController.sliderMenuView
-    sliderMenuView.frame = CGRect(x: 0, y: 0, width: 250, height: 50)
-
-    sliderMenuView.slider.minimumValue = 0
-    sliderMenuView.slider.maximumValue = 100
-    sliderMenuView.slider.value = appDelegate.player.volume * 100
-
-    sliderMenuView.sliderValueChangedCB = {
-      self.appDelegate.player.volume = Float(sliderMenuView.slider.value) / 100.0
-      self.volumeSlider.value = self.appDelegate.player.volume
-    }
-
-    popoverContentController.modalPresentationStyle = .popover
-    popoverContentController.preferredContentSize = sliderMenuView.frame.size
-
-    if let popoverPresentationController = popoverContentController.popoverPresentationController {
-      popoverPresentationController.permittedArrowDirections = .down
-      popoverPresentationController.delegate = popoverContentController
-      popoverPresentationController.sourceView = volumeButton
-      rootView?.present(
-        popoverContentController,
-        animated: true,
-        completion: nil
-      )
-    }
-  }
-
-  @IBAction
   func displayPlaylistPressed() {
     rootView?.switchDisplayStyleOptionPersistent()
     playerHandler?.refreshDisplayPlaylistButton(displayPlaylistButton: displayPlaylistButton)
     refreshLyricsButton()
-    playerHandler?.refreshPlayerOptions(
-      optionsButton: optionsButton,
-      menuCreateCB: createPlayerOptionsMenu
-    )
   }
 
   @IBAction
@@ -323,9 +617,13 @@ class PlayerControlView: UIView {
   }
 
   func refreshPlayer() {
-    if !volumeSlider.isTracking {
-      volumeSlider.value = player.volume
-    }
+    // Playback and metadata changes must not overwrite a settled output icon
+    // using a transient route snapshot. Route notifications own that update.
+    #if targetEnvironment(macCatalyst)
+      if !volumeSlider.isTracking {
+        volumeSlider.value = player.volume
+      }
+    #endif
     refreshLyricsButton()
     playerHandler?.refreshSkipButtons(
       skipBackwardButton: skipBackwardButton,
@@ -518,8 +816,10 @@ class PlayerControlView: UIView {
     switch player.playerMode {
     case .music:
       playerModeButton.setImage(UIImage.musicalNotes, for: .normal)
+      playerModeButton.configuration?.image = .musicalNotes
     case .podcast:
       playerModeButton.setImage(UIImage.podcast, for: .normal)
+      playerModeButton.configuration?.image = .podcast
     }
     optionsStackView.layoutIfNeeded()
   }

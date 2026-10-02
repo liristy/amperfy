@@ -37,9 +37,11 @@ enum PlayerUIStyle {
 class PlayerUIHandler: NSObject {
   public static let playButtonImagePointSize: CGFloat = 25
   public static let bigButtonImagePointSize: CGFloat = 17
-  public static let playAndNextiOSButtonImagePointSize: CGFloat = 15
+  public static let playAndNextiOSButtonImagePointSize: CGFloat = 20
 
   private var player: PlayerFacade
+  var usesGlassModeButtons = false
+
   private var style: PlayerUIStyle
 
   init(player: PlayerFacade, style: PlayerUIStyle) {
@@ -86,7 +88,7 @@ class PlayerUIHandler: NSObject {
   }
 
   func autoplayButtonPushed() {
-    appDelegate.storage.settings.user.isAutoplayEnabled.toggle()
+    player.setAutoplayEnabled(!appDelegate.storage.settings.user.isAutoplayEnabled)
   }
 
   func refreshPlayButton(_ button: UIButton) {
@@ -113,12 +115,14 @@ class PlayerUIHandler: NSObject {
         )
     case .popupPlayer:
       buttonImg = buttonImg.withConfiguration(
-        UIImage.SymbolConfiguration(pointSize: 44, weight: .semibold)
+        UIImage.SymbolConfiguration(pointSize: 34, weight: .semibold)
       )
     }
 
     button.setImage(buttonImg, for: UIControl.State.normal)
     button.configuration?.image = buttonImg
+    (button as? PlayerTransportButton)?.renderSymbol(buttonImg,
+      identifier: player.isPlaying ? (player.isStopInsteadOfPause ? "stop" : "pause") : "play")
     button.accessibilityLabel = player.isPlaying ?
       (player.isStopInsteadOfPause ? "Stop".localized : "Pause".localized) : "Play".localized
   }
@@ -163,10 +167,10 @@ class PlayerUIHandler: NSObject {
       nextImg = nextImg.withConfiguration(UIImage.SymbolConfiguration(scale: .medium))
     case .popupPlayer:
       previouseImg = previouseImg.withConfiguration(
-        UIImage.SymbolConfiguration(pointSize: 30, weight: .semibold)
+        UIImage.SymbolConfiguration(pointSize: 26, weight: .regular)
       )
       nextImg = nextImg.withConfiguration(
-        UIImage.SymbolConfiguration(pointSize: 30, weight: .semibold)
+        UIImage.SymbolConfiguration(pointSize: 26, weight: .regular)
       )
     case .miniPlayeriOS:
       previouseImg = previouseImg
@@ -185,9 +189,17 @@ class PlayerUIHandler: NSObject {
     previousButton.configuration?.image = previouseImg
     nextButton.setImage(nextImg, for: UIControl.State.normal)
     nextButton.configuration?.image = nextImg
+    (previousButton as? PlayerTransportButton)?.renderSymbol(previouseImg,
+      identifier: player.playerMode == .music ? "backward" : "skipBackward")
+    (nextButton as? PlayerTransportButton)?.renderSymbol(nextImg,
+      identifier: player.playerMode == .music ? "forward" : "skipForward")
     previousButton.accessibilityLabel = player.playerMode == .podcast ?
       "Back 15 seconds".localized : "Previous track".localized
     nextButton.accessibilityLabel = player.playerMode == .podcast ? "Forward 30 seconds".localized : "Next track".localized
+  }
+
+  private func modeButtonConfiguration(isSelected: Bool) -> UIButton.Configuration {
+    usesGlassModeButtons ? .playerQueueMode(isSelected: isSelected) : .player(isSelected: isSelected)
   }
 
   func refreshRepeatButton(repeatButton: UIButton) {
@@ -209,7 +221,7 @@ class PlayerUIHandler: NSObject {
       repeatButton.tintColor = isSelected ? .tintColor : .secondaryLabel
       repeatButton.backgroundColor = isSelected ? .tintColor.withAlphaComponent(0.2) : .clear
     case .popupPlayer:
-      var config = UIButton.Configuration.player(isSelected: isSelected)
+      var config = modeButtonConfiguration(isSelected: isSelected)
       config.image = image?
         .withConfiguration(UIImage.SymbolConfiguration(scale: .medium))
       repeatButton.configuration = config
@@ -230,7 +242,7 @@ class PlayerUIHandler: NSObject {
       shuffleButton.tintColor = player.isShuffle ? .tintColor : .secondaryLabel
       shuffleButton.backgroundColor = player.isShuffle ? .tintColor.withAlphaComponent(0.2) : .clear
     case .popupPlayer:
-      var config = UIButton.Configuration.player(isSelected: player.isShuffle)
+      var config = modeButtonConfiguration(isSelected: player.isShuffle)
       config.image = .shuffle
         .withConfiguration(UIImage.SymbolConfiguration(scale: .medium))
       shuffleButton.configuration = config
@@ -245,7 +257,8 @@ class PlayerUIHandler: NSObject {
   }
 
   func refreshAutoplayButton(autoplayButton: UIButton) {
-    let isActive = appDelegate.storage.settings.user.isAutoplayEnabled
+    let isAvailable = player.playerMode == .music && player.repeatMode == .off
+    let isActive = appDelegate.storage.settings.user.isAutoplayEnabled && isAvailable
 
     switch style {
     case .miniPlayeriOS, .miniPlayerMac:
@@ -254,12 +267,12 @@ class PlayerUIHandler: NSObject {
       autoplayButton.tintColor = isActive ? .tintColor : .secondaryLabel
       autoplayButton.backgroundColor = isActive ? .tintColor.withAlphaComponent(0.2) : .clear
     case .popupPlayer:
-      var config = UIButton.Configuration.player(isSelected: isActive)
+      var config = modeButtonConfiguration(isSelected: isActive)
       config.image = .infinity
         .withConfiguration(UIImage.SymbolConfiguration(scale: .medium))
       autoplayButton.configuration = config
     }
-    autoplayButton.isEnabled = player.playerMode == .music
+    autoplayButton.isEnabled = isAvailable
     autoplayButton.isSelected = isActive
   }
 
@@ -270,12 +283,12 @@ class PlayerUIHandler: NSObject {
     case .miniPlayeriOS, .miniPlayerMac:
       displayPlaylistButton.tintColor = isSelected ? .tintColor : .label
     case .popupPlayer:
-      var config = UIButton.Configuration.plain()
-      config.image = UIImage(systemName: "list.bullet")
-      config.baseForegroundColor = .white
-      config.background.backgroundColor = isSelected ? .white.withAlphaComponent(0.18) : .clear
-      config.background.cornerRadius = 12
+      var config = UIButton.Configuration.playerAccessory(isSelected: isSelected)
+      config.image = UIImage(systemName: "list.bullet")?
+        .withTintColor(isSelected ? .black : .white, renderingMode: .alwaysOriginal)
+      displayPlaylistButton.tintColor = isSelected ? .black : .white
       displayPlaylistButton.isSelected = isSelected
+      displayPlaylistButton.clipsToBounds = false
       displayPlaylistButton.configuration = config
     }
   }

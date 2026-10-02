@@ -87,6 +87,7 @@ class PlayableTableCell: BasicTableCell {
   private var style = PlayableTableCellStyle.none
   private var playerIndexCb: GetPlayerIndexFromTableCellCallback?
   private var playContextCb: GetPlayContextFromTableCellCallback?
+  private var playAction: (() -> Void)?
   private var playable: AbstractPlayable?
   private var download: Download?
   private var rootView: UIViewController?
@@ -192,7 +193,8 @@ class PlayableTableCell: BasicTableCell {
     playerIndexCb: GetPlayerIndexFromTableCellCallback? = nil,
     isDislayAlbumTrackNumberStyle: Bool = false,
     download: Download? = nil,
-    isMarked: Bool = false
+    isMarked: Bool = false,
+    playAction: (() -> Void)? = nil
   ) {
     if playIndicator?.rootViewTypeName != rootView.typeName {
       playIndicator = PlayIndicator(rootViewTypeName: rootView.typeName)
@@ -201,6 +203,7 @@ class PlayableTableCell: BasicTableCell {
     self.playable = playable
     self.displayMode = displayMode
     self.playContextCb = playContextCb
+    self.playAction = playAction
     self.playerIndexCb = playerIndexCb
     self.rootView = rootView
     self.isDislayAlbumTrackNumberStyle = isDislayAlbumTrackNumberStyle
@@ -215,8 +218,35 @@ class PlayableTableCell: BasicTableCell {
     #else
       singleTapGestureRecognizer.isEnabled = (displayMode == .normal)
     #endif
-    backgroundColor = .systemBackground
+    backgroundColor = rootView is PopupPlayerVC ? .clear : .systemBackground
+    if rootView is PopupPlayerVC {
+      configurePlayerBackground()
+    } else {
+      backgroundConfiguration = nil
+    }
     refresh()
+  }
+
+  override func layoutSubviews() {
+    super.layoutSubviews()
+    contentView.layoutIfNeeded()
+    playIndicator?.updateLayout()
+  }
+
+  override func updateConfiguration(using state: UICellConfigurationState) {
+    super.updateConfiguration(using: state)
+    if rootView is PopupPlayerVC {
+      configurePlayerBackground()
+    }
+  }
+
+  private func configurePlayerBackground() {
+    var background = UIBackgroundConfiguration.clear()
+    // Keep transparency explicit when selection and reuse update the cell state.
+    background.backgroundColor = .clear
+    backgroundConfiguration = background
+    backgroundColor = .clear
+    contentView.backgroundColor = .clear
   }
 
   private func configureStyle(playable: AbstractPlayable, newStyle: PlayableTableCellStyle) {
@@ -331,10 +361,18 @@ class PlayableTableCell: BasicTableCell {
     trackNumberLabel.text = playable.track > 0 ? "\(playable.track)" : ""
   }
 
+  override func tintColorDidChange() {
+    super.tintColorDidChange()
+    guard let playable else { return }
+    favoriteIconImage?.tintColor = appDelegate.storage.settings.accounts
+      .getSetting(playable.account?.info).read.themePreference.asColor
+  }
+
   func refreshCacheAndDuration() {
     guard let playable = playable else { return }
     favoriteIconImage.isHidden = !playable.isFavorite
-    favoriteIconImage.tintColor = tintColor
+    favoriteIconImage.tintColor = appDelegate.storage.settings.accounts
+      .getSetting(playable.account?.info).read.themePreference.asColor
 
     let isDurationVisible = !playable.isRadio &&
       (
@@ -398,6 +436,25 @@ class PlayableTableCell: BasicTableCell {
     if isDurationVisible {
       durationLabel.text = playable.duration.asColonDurationString
     }
+    if rootView is PopupPlayerVC {
+      // Queue rows have their own compact geometry; library rows retain their
+      // duration/cache/favourite columns and existing appearance.
+      contentView.preservesSuperviewLayoutMargins = false
+      contentView.layoutMargins = UIEdgeInsets(top: 6, left: 8, bottom: 6, right: 8)
+      entityImage.constraints.first { $0.firstAttribute == .width && $0.secondItem == nil }?.constant = 44
+      favoriteIconImage.superview?.constraints.first {
+        $0.firstAttribute == .width && $0.secondItem == nil
+      }?.constant = 0
+      favoriteIconImage.superview?.isHidden = true
+      titleContainerLeadingConstraint.constant = 52
+      labelTrailingCellConstraint.constant = 0
+      titleLabel.font = .systemFont(ofSize: 16)
+      artistLabel.font = .systemFont(ofSize: 12)
+      artistLabel.textColor = .white.withAlphaComponent(0.55)
+      durationLabel.isHidden = true
+      cacheIconImage.isHidden = true
+      accessoryView?.tintColor = .white.withAlphaComponent(0.3)
+    }
   }
 
   private func refreshSubtitleColor() {
@@ -414,6 +471,11 @@ class PlayableTableCell: BasicTableCell {
 
   func playThisSong() {
     guard let playable = playable else { return }
+    if let playAction {
+      guard playable.isCached || appDelegate.storage.settings.user.isOnlineMode else { return }
+      playAction()
+      return
+    }
     if let playerIndex = playerIndexCb?(self) {
       appDelegate.player.play(playerIndex: playerIndex)
     } else if let context = playContextCb?(self),

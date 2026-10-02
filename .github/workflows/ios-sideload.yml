@@ -2,12 +2,22 @@ name: qMusic Build & Release
 
 on:
   workflow_dispatch:
+    inputs:
+      profile_player_resources:
+        description: 'Measure simulator process CPU/RSS (not battery power)'
+        type: boolean
+        default: false
   push:
+    branches:
+      - master
+    paths:
+      - '.github/release-version'
     tags:
       - 'v*'
   pull_request:
     branches:
       - master
+      - codex/liquid-glass-controls
 
 permissions:
   contents: read
@@ -28,10 +38,55 @@ jobs:
         with:
           persist-credentials: false
           fetch-depth: 2
+      - name: Restore simulator build cache
+        id: simulator-cache
+        uses: actions/cache/restore@v4
+        with:
+          path: build/validation/DerivedData
+          key: simulator-v1-${{ runner.os }}-${{ runner.arch }}-xcode26.3-${{ hashFiles('Amperfy.xcodeproj/project.pbxproj', '**/Package.resolved') }}-${{ github.sha }}
+          restore-keys: |
+            simulator-v1-${{ runner.os }}-${{ runner.arch }}-xcode26.3-${{ hashFiles('Amperfy.xcodeproj/project.pbxproj', '**/Package.resolved') }}-
+      - name: Preserve timestamps of unchanged sources
+        run: |
+          python3 -m unittest discover -s BuildTools -p test_build_cache_mtimes.py
+          python3 BuildTools/build-cache-mtimes.py restore build/validation/DerivedData/source-mtimes.json
       - name: Validate iPhone UI and affected library tests
         env:
           BASE_SHA: ${{ github.event.before }}
         run: bash BuildTools/test-iphone-changes.sh
+      - name: Record source timestamps
+        if: always()
+        run: python3 BuildTools/build-cache-mtimes.py save build/validation/DerivedData/source-mtimes.json
+      - name: Profile player resources on simulator (not battery power)
+        if: inputs.profile_player_resources || contains(github.event.pull_request.body, '<!-- profile-player-resources -->')
+        run: python3 BuildTools/profile-player-resources.py
+      - name: Upload simulator resource measurements
+        if: always() && (inputs.profile_player_resources || contains(github.event.pull_request.body, '<!-- profile-player-resources -->'))
+        uses: actions/upload-artifact@v4
+        with:
+          name: Amperfy-resource-profile-${{ github.run_number }}
+          path: build/resource-profile/
+          retention-days: 7
+      - name: Upload compact player review artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: Amperfy-player-review-${{ github.run_number }}
+          path: |
+            build/validation/player.stdout.log
+            build/validation/player.stderr.log
+            build/validation/server.log
+            build/validation/*-preview.jpg
+            build/validation/player-queue-glass-*.png
+            build/validation/player-queue-history.png
+            build/validation/player-statistics-detail.png
+          retention-days: 7
+      - name: Save simulator build cache even after a UI failure
+        if: always() && !cancelled() && steps.simulator-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: build/validation/DerivedData
+          key: ${{ steps.simulator-cache.outputs.cache-primary-key }}
       - name: Upload test log and language screenshots
         if: always()
         uses: actions/upload-artifact@v4
@@ -41,8 +96,11 @@ jobs:
             build/validation/*.log
             build/validation/PlaylistTests.xcresult
             build/validation/*.png
+            build/validation/*.jpg
+            build/validation/player-motion.mp4
             build/validation/crashes
           retention-days: 7
+
 
   build:
     # Standard hosted runners are free for public repositories only.
@@ -101,7 +159,7 @@ jobs:
           EOF
 
   release:
-    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+    if: github.event_name == 'push' && (startsWith(github.ref, 'refs/tags/v') || github.ref == 'refs/heads/master')
     needs: [tests, build]
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -114,22 +172,41 @@ jobs:
           fetch-depth: 0
       - name: Require release commit on master
         run: git merge-base --is-ancestor HEAD origin/master
+      - name: Resolve release version
+        id: version
+        env:
+          TAG_REF: ${{ startsWith(github.ref, 'refs/tags/') && github.ref_name || '' }}
+        run: |
+          tag="$TAG_REF"
+          if [[ -z "$tag" ]]; then tag="$(cat .github/release-version)"; fi
+          if [[ ! "$tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z]+([.-][0-9A-Za-z]+)*)?$ ]]; then
+            echo "Invalid release version: $tag" >&2
+            exit 1
+          fi
+          test -f "docs/releases/$tag.md"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
       - uses: actions/download-artifact@v4
         with:
           name: Amperfy-iPhone-unsigned-${{ github.run_number }}
           path: build/release-input
       - name: Verify release version, source and IPA
         env:
-          RELEASE_TAG: ${{ github.ref_name }}
+          RELEASE_TAG: ${{ steps.version.outputs.tag }}
         run: |
           python3 BuildTools/prepare-release.py build/release-input build/release "$RELEASE_TAG" "$(git rev-parse HEAD)"
           python3 BuildTools/verify_ipa.py --require-signature "build/release/qMusic-${RELEASE_TAG#v}.ipa"
-      - name: Publish GitHub Release
+      - name: Create release tag and publish GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
-          RELEASE_TAG: ${{ github.ref_name }}
+          RELEASE_TAG: ${{ steps.version.outputs.tag }}
         run: |
+          if git rev-parse --verify "$RELEASE_TAG^{commit}" >/dev/null 2>&1; then
+            test "$(git rev-parse "$RELEASE_TAG^{commit}")" = "$GITHUB_SHA"
+          else
+            gh api "repos/$GH_REPO/git/refs" --method POST \
+              -f "ref=refs/tags/$RELEASE_TAG" -f "sha=$GITHUB_SHA"
+          fi
           notes="docs/releases/$RELEASE_TAG.md"
           title="$(head -n 1 "$notes" | sed 's/^# //')"
           flags=()

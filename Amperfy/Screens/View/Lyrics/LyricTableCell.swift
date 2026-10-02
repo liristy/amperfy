@@ -21,6 +21,7 @@
 
 import AmperfyKit
 import CoreData
+import CoreImage
 import UIKit
 
 @MainActor
@@ -54,6 +55,11 @@ class LyricTableCellModel {
 class LyricTableCell: UITableViewCell {
   private weak var viewModel: LyricTableCellModel?
   private let lyricLabel = UILabel()
+  private let blurredLyrics = UIImageView()
+  private static let blurContext = CIContext(options: [.cacheIntermediates: false])
+  private var renderedText: NSAttributedString?
+  private var renderedSize: CGSize = .zero
+  private var renderedScale: CGFloat = 0
 
   override init(style: UITableViewCell.CellStyle, reuseIdentifier: String?) {
     super.init(style: style, reuseIdentifier: reuseIdentifier)
@@ -70,6 +76,9 @@ class LyricTableCell: UITableViewCell {
     selectionStyle = .none
     lyricLabel.numberOfLines = 0
     lyricLabel.textAlignment = .natural
+    blurredLyrics.isUserInteractionEnabled = false
+    blurredLyrics.isAccessibilityElement = false
+    contentView.addSubview(blurredLyrics)
     contentView.addSubview(lyricLabel)
     isAccessibilityElement = true
   }
@@ -77,6 +86,8 @@ class LyricTableCell: UITableViewCell {
   override func layoutSubviews() {
     super.layoutSubviews()
     lyricLabel.frame = CGRect(x: 8, y: 15, width: max(0, bounds.width - 16), height: max(0, bounds.height - 30))
+    blurredLyrics.frame = lyricLabel.frame.insetBy(dx: -8, dy: -8)
+    if renderBlurredLyricsIfNeeded() { updateEmphasis(animated: false) }
   }
 
   override func prepareForReuse() {
@@ -84,6 +95,9 @@ class LyricTableCell: UITableViewCell {
     if viewModel?.cell === self { viewModel?.cell = nil }
     viewModel = nil
     lyricLabel.layer.removeAllAnimations()
+    blurredLyrics.layer.removeAllAnimations()
+    blurredLyrics.image = nil
+    renderedText = nil
   }
 
   func display(model: LyricTableCellModel) {
@@ -93,6 +107,7 @@ class LyricTableCell: UITableViewCell {
     viewModel = model
     model.cell = self
     lyricLabel.layer.removeAllAnimations()
+    blurredLyrics.layer.removeAllAnimations()
     refresh()
   }
 
@@ -101,9 +116,47 @@ class LyricTableCell: UITableViewCell {
     lyricLabel.attributedText = model.displayString
     accessibilityLabel = model.lyric?.value
     accessibilityTraits = model.isActiveLine ? [.staticText, .selected] : .staticText
-    let changes = { self.lyricLabel.alpha = model.isActiveLine ? 1 : 0.32 }
+    _ = renderBlurredLyricsIfNeeded()
+    updateEmphasis(animated: animated)
+    setNeedsLayout()
+  }
+
+  private func updateEmphasis(animated: Bool) {
+    guard let model = viewModel else { return }
+    let changes = {
+      self.lyricLabel.alpha = model.isActiveLine ? 1 : (self.blurredLyrics.image == nil ? 0.32 : 0)
+      self.blurredLyrics.alpha = model.isActiveLine ? 0 : 0.5
+    }
     if animated, !UIAccessibility.isReduceMotionEnabled {
       UIView.animate(withDuration: 0.3, delay: 0, options: [.beginFromCurrentState, .allowUserInteraction], animations: changes)
     } else { changes() }
+  }
+
+  // Rasterize only when the text, wrapping width or display scale changes.
+  // Playback emphasis crossfades these two layers without rerunning the filter.
+  @discardableResult
+  private func renderBlurredLyricsIfNeeded() -> Bool {
+    guard let text = lyricLabel.attributedText,
+          lyricLabel.bounds.width > 0, lyricLabel.bounds.height > 0 else { return false }
+    let size = lyricLabel.bounds.size
+    let scale = max(1, traitCollection.displayScale)
+    guard renderedSize != size || renderedScale != scale || renderedText?.isEqual(to: text) != true else { return false }
+    let padding: CGFloat = 8
+    let format = UIGraphicsImageRendererFormat()
+    format.scale = scale
+    format.opaque = false
+    let image = UIGraphicsImageRenderer(size: CGSize(width: size.width + padding * 2,
+      height: size.height + padding * 2), format: format).image { _ in
+      lyricLabel.drawText(in: CGRect(origin: CGPoint(x: padding, y: padding), size: size))
+    }
+    guard let source = CIImage(image: image) else { return false }
+    let blurred = source.applyingFilter("CIGaussianBlur", parameters: [kCIInputRadiusKey: 1.8 * scale])
+      .cropped(to: source.extent)
+    guard let result = Self.blurContext.createCGImage(blurred, from: source.extent) else { return false }
+    blurredLyrics.image = UIImage(cgImage: result, scale: scale, orientation: .up)
+    renderedText = text
+    renderedSize = size
+    renderedScale = scale
+    return true
   }
 }

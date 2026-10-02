@@ -131,19 +131,50 @@ class LargeCurrentlyPlayingPlayerView: UIView {
   private var displayElement: LargeDisplayElement = .artwork
   private let artworkShadowView = UIView()
   private let lyricsHeader = UIView()
+  private var headerConstraints: [NSLayoutConstraint] = []
   private let lyricsArtwork = LibraryEntityImage(frame: .zero)
   private let lyricsTitle = UILabel()
   private let lyricsArtist = UILabel()
   private let lyricsOptions = UIButton(type: .system)
   private let compactFavorite = UIButton(type: .system)
   private var displayAnimator: UIViewPropertyAnimator?
+  private var artworkIsPlaying: Bool?
   var isDisplayingLyrics: Bool { displayElement == .lyrics }
   var transitionArtwork: UIImageView { lyricsHeader.isHidden ? artworkImage : lyricsArtwork }
+  var transitionArtworkShadow: UIView? { lyricsHeader.isHidden ? artworkShadowView : nil }
   var compactHeader: UIView { lyricsHeader }
   var compactHeaderElements: [UIView] { [lyricsArtwork, lyricsTitle, lyricsArtist] }
 
   func updateCompactHeaderVisibility() {
+    if let rootView {
+      if appDelegate.storage.settings.user.playerDisplayStyle == .compact {
+        rootView.tableView.layoutIfNeeded()
+        let path = IndexPath(row: 0, section: PlayerSectionCategory.currentlyPlaying.rawValue)
+        if let cell = rootView.tableView.cellForRow(at: path) {
+          attachCompactHeader(to: cell.contentView, anchor: cell.contentView)
+        }
+      } else {
+        attachCompactHeader(to: rootView.view, anchor: rootView.largePlayerPlaceholderView)
+      }
+    }
     lyricsHeader.isHidden = appDelegate.storage.settings.user.playerDisplayStyle != .compact && !isDisplayingLyrics
+  }
+
+  func attachCompactHeader(to host: UIView, anchor: UIView) {
+    guard lyricsHeader.superview !== host else { return }
+    NSLayoutConstraint.deactivate(headerConstraints)
+    lyricsHeader.removeFromSuperview()
+    lyricsHeader.translatesAutoresizingMaskIntoConstraints = false
+    host.addSubview(lyricsHeader)
+    headerConstraints = [
+      lyricsHeader.leadingAnchor.constraint(equalTo: anchor.leadingAnchor, constant: 8),
+      lyricsHeader.trailingAnchor.constraint(equalTo: anchor.trailingAnchor, constant: -8),
+      lyricsHeader.topAnchor.constraint(equalTo: anchor.topAnchor),
+      lyricsHeader.heightAnchor.constraint(equalToConstant: CurrentlyPlayingTableCell.rowHeight),
+    ]
+    NSLayoutConstraint.activate(headerConstraints)
+    host.setNeedsLayout()
+    setNeedsLayout()
   }
 
   @IBOutlet
@@ -176,10 +207,12 @@ class LargeCurrentlyPlayingPlayerView: UIView {
     super.layoutSubviews()
     // Force a layout to prevent wrong size on first appearance on macOS
     upperContainerView.layoutIfNeeded()
-    artworkShadowView.frame = artworkImage.frame
+    // Use untransformed geometry; a paused artwork must not shrink its shadow twice.
+    artworkShadowView.bounds = artworkImage.bounds
+    artworkShadowView.center = artworkImage.center
     artworkShadowView.layer.shadowPath = UIBezierPath(
       roundedRect: artworkShadowView.bounds,
-      cornerRadius: 12
+      cornerRadius: 8
     ).cgPath
 
     let headerHeight = CurrentlyPlayingTableCell.rowHeight
@@ -199,15 +232,15 @@ class LargeCurrentlyPlayingPlayerView: UIView {
     titleLabel.applyAmperfyStyle()
     albumLabel.applyAmperfyStyle()
     artistLabel.applyAmperfyStyle()
-    titleLabel.font = .systemFont(ofSize: 26, weight: .bold)
+    titleLabel.font = .systemFont(ofSize: 20, weight: .semibold)
     titleLabel.adjustsFontSizeToFitWidth = false
-    artistLabel.font = .systemFont(ofSize: 18, weight: .regular)
+    artistLabel.font = .systemFont(ofSize: 20, weight: .regular)
     albumLabel.font = .systemFont(ofSize: 13, weight: .medium)
     titleLabel.textColor = .white
     artistLabel.textColor = .white.withAlphaComponent(0.72)
     albumLabel.textColor = .white.withAlphaComponent(0.65)
     artworkImage.contentMode = .scaleAspectFit
-    artworkImage.layer.cornerRadius = 12
+    artworkImage.layer.cornerRadius = 8
     artworkImage.layer.cornerCurve = .continuous
     artworkImage.clipsToBounds = true
     artworkShadowView.isUserInteractionEnabled = false
@@ -227,6 +260,9 @@ class LargeCurrentlyPlayingPlayerView: UIView {
     }
     lyricsView!.onUpwardDrag = { [weak self] in
       self?.rootView?.setLyricsControlsHidden(true)
+    }
+    lyricsView!.onDownwardDrag = { [weak self] in
+      self?.rootView?.restoreLyricsControls()
     }
     addSubview(lyricsView!)
     lyricsArtwork.contentMode = .scaleAspectFit
@@ -248,17 +284,9 @@ class LargeCurrentlyPlayingPlayerView: UIView {
     compactFavorite.accessibilityLabel = "Favorite".localized
     compactFavorite.addTarget(self, action: #selector(compactFavoritePressed), for: .touchUpInside)
     [lyricsArtwork, lyricsTitle, lyricsArtist, compactFavorite, lyricsOptions].forEach { lyricsHeader.addSubview($0) }
-    // One persistent header lives outside both switching/scrolling content views.
-    // Its parent, constraints, typography and image stay identical in queue and lyrics.
+    // Reuse this card in the queue's current-song row and the lyrics header.
     if let rootView {
-      lyricsHeader.translatesAutoresizingMaskIntoConstraints = false
-      rootView.view.addSubview(lyricsHeader)
-      NSLayoutConstraint.activate([
-        lyricsHeader.leadingAnchor.constraint(equalTo: rootView.largePlayerPlaceholderView.leadingAnchor, constant: 8),
-        lyricsHeader.trailingAnchor.constraint(equalTo: rootView.largePlayerPlaceholderView.trailingAnchor, constant: -8),
-        lyricsHeader.topAnchor.constraint(equalTo: rootView.largePlayerPlaceholderView.topAnchor),
-        lyricsHeader.heightAnchor.constraint(equalToConstant: CurrentlyPlayingTableCell.rowHeight),
-      ])
+      attachCompactHeader(to: rootView.view, anchor: rootView.largePlayerPlaceholderView)
     }
     updateCompactHeaderVisibility()
 
@@ -272,52 +300,12 @@ class LargeCurrentlyPlayingPlayerView: UIView {
       )
     }
 
-    addSwipeGesturesToArtwork()
-
     displayElement = getDisplayElementBasedOnConfig()
     refresh()
   }
 
-  private func addSwipeGesturesToArtwork() {
-    func createLeftSwipe() -> UISwipeGestureRecognizer {
-      let swipeLeft = UISwipeGestureRecognizer(
-        target: self,
-        action: #selector(handleSwipe(_:))
-      )
-      swipeLeft.direction = .left
-      return swipeLeft
-    }
-
-    func createRightSwipe() -> UISwipeGestureRecognizer {
-      let swipeRight = UISwipeGestureRecognizer(
-        target: self,
-        action: #selector(handleSwipe(_:))
-      )
-      swipeRight.direction = .right
-      return swipeRight
-    }
-
-    artworkImage.isUserInteractionEnabled = true
-    artworkImage.addGestureRecognizer(createLeftSwipe())
-    artworkImage.addGestureRecognizer(createRightSwipe())
-    visualizerHostingView?.hostingController?.view.isUserInteractionEnabled = true
-    visualizerHostingView?.hostingController?.view.addGestureRecognizer(createRightSwipe())
-    visualizerHostingView?.hostingController?.view.addGestureRecognizer(createLeftSwipe())
-  }
-
-  @objc
-  private func handleSwipe(_ gesture: UISwipeGestureRecognizer) {
-    switch gesture.direction {
-    case .left:
-      rootView?.controlView?.nextButtonPushed(self)
-    case .right:
-      rootView?.controlView?.previousButtonPushed(self)
-    default:
-      break
-    }
-  }
-
   func refreshLyricsTime(time: CMTime) {
+    guard isDisplayingLyrics else { return }
     lyricsView?.scroll(toTime: time)
   }
 
@@ -506,6 +494,8 @@ class LargeCurrentlyPlayingPlayerView: UIView {
       albumContainerView: albumContainerView
     )
     lyricsTitle.text = titleLabel.text
+    // Keep the two-line song/artist hierarchy; album actions remain in the menu.
+    albumContainerView.isHidden = true
     lyricsArtist.text = artistLabel.text
     rootView?.playerHandler?.refreshArtwork(artworkImage: lyricsArtwork)
     rootView?.refreshOptionButton(button: lyricsOptions, rootView: rootView)
@@ -513,16 +503,31 @@ class LargeCurrentlyPlayingPlayerView: UIView {
     rootView?.refreshFavoriteButton(button: favoriteButton)
     rootView?.refreshOptionButton(button: optionsButton, rootView: rootView)
     display(element: displayElement, animated: false)
+    refreshPlaybackAppearance(animated: window != nil)
+  }
+
+  func refreshPlaybackAppearance(animated: Bool) {
+    let playing = appDelegate.player.isPlaying
+    guard artworkIsPlaying != playing else { return }
+    artworkIsPlaying = playing
+    let scale: CGFloat = playing ? 1 : 0.74
+    let changes = {
+      self.artworkImage.transform = CGAffineTransform(scaleX: scale, y: scale)
+      self.artworkShadowView.transform = CGAffineTransform(scaleX: scale, y: scale)
+      self.artworkShadowView.layer.shadowOpacity = playing ? 0.3 : 0.16
+    }
+    if animated && !UIAccessibility.isReduceMotionEnabled {
+      UIView.animate(withDuration: 0.4, delay: 0,
+                     options: [.beginFromCurrentState, .allowUserInteraction, .curveEaseInOut],
+                     animations: changes)
+    } else {
+      UIView.performWithoutAnimation(changes)
+    }
   }
 
   func refreshArtwork() {
     rootView?.playerHandler?.refreshArtwork(artworkImage: lyricsArtwork)
     rootView?.playerHandler?.refreshArtwork(artworkImage: artworkImage)
-  }
-
-  @IBAction
-  func artworkPressed(_ sender: Any) {
-    rootView?.controlView?.displayPlaylistPressed()
   }
 
   @objc

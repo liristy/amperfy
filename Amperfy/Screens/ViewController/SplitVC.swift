@@ -72,8 +72,7 @@ class SplitVC: UISplitViewController {
     // Set up constraints to pin it to the bottom, left, and right
     miniPlayer.glassContainer.translatesAutoresizingMaskIntoConstraints = false
 
-    miniPlayer.glassContainer.layer.cornerRadius = 25
-    miniPlayer.glassContainer.clipsToBounds = true
+    miniPlayer.glassContainer.cornerConfiguration = .capsule()
 
     miniPlayerLeadingConstraint = miniPlayer.glassContainer.leadingAnchor.constraint(
       equalTo: view.safeAreaLayoutGuide.leadingAnchor,

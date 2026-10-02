@@ -189,7 +189,8 @@ class SettingsHostVC: UIViewController {
 
     settings.isAutoplayEnabled = appDelegate.storage.settings.user.isAutoplayEnabled
     changesAgent.append(settings.$isAutoplayEnabled.sink(receiveValue: { newValue in
-      self.appDelegate.storage.settings.user.isAutoplayEnabled = newValue
+      guard newValue != self.appDelegate.storage.settings.user.isAutoplayEnabled else { return }
+      self.appDelegate.player.setAutoplayEnabled(newValue)
     }))
 
     settings.swipeActionSettings = appDelegate.storage.settings.user.swipeActionSettings

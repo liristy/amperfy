@@ -1,5 +1,12 @@
 #!/bin/sh
 
+# CI must test the checked-in source, never rewrite it or cached dependencies.
+# Formatting remains available during local development.
+if [ "${CI:-}" = "true" ]; then
+  echo "Skipping source-mutating formatter during CI validation"
+  exit 0
+fi
+
 # Get the current working directory
 cwd=$(pwd)
 

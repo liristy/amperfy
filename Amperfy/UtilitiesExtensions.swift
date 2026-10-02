@@ -134,28 +134,53 @@ extension UIColor {
 
 extension UIButton.Configuration {
   static func player(isSelected: Bool) -> UIButton.Configuration {
-    var config = UIButton.Configuration.tinted()
-    if isSelected {
-      config.background.strokeColor = .label
-      config.background.strokeWidth = 1.0
-      config.preferredSymbolConfigurationForImage = UIImage.SymbolConfiguration(scale: .medium)
-    }
+    var config = UIButton.Configuration.plain()
+    config.preferredSymbolConfigurationForImage = UIImage.SymbolConfiguration(scale: .medium)
     config.buttonSize = .small
-    #if targetEnvironment(macCatalyst)
-      config.baseForegroundColor = .label
-      config.baseBackgroundColor = .clear
-    #else
-      config.baseForegroundColor = !isSelected ? .label : .systemBackground
-      config.baseBackgroundColor = !isSelected ? .clear : .label
-    #endif
-    config.cornerStyle = .medium
+    config.baseForegroundColor = .label
+    config.background = .clear()
+    config.cornerStyle = .capsule
+    config.background.cornerRadius = 22
+    config.background.backgroundColorTransformer = UIConfigurationColorTransformer { _ in
+      isSelected ? UIColor.white.withAlphaComponent(0.16) : .clear
+    }
+    config.contentInsets = NSDirectionalEdgeInsets(top: 8, leading: 8, bottom: 8, trailing: 8)
+    return config
+  }
+
+  static func playerQueueMode(isSelected: Bool) -> UIButton.Configuration {
+    let color: UIColor = isSelected ? UIColor(white: 0.2, alpha: 1) : .white
+    // The player owns the native glass backdrops outside the scrolling table.
+    var config = UIButton.Configuration.plain()
+    config.background = .clear()
+    config.background.backgroundColorTransformer = UIConfigurationColorTransformer { _ in .clear }
+    config.baseForegroundColor = color
+    config.imageColorTransformer = UIConfigurationColorTransformer { _ in color }
+    config.preferredSymbolConfigurationForImage = .init(pointSize: 17, weight: .medium)
+    config.cornerStyle = .capsule
+    return config
+  }
+
+  static func playerAccessory(isSelected: Bool) -> UIButton.Configuration {
+    var config = isSelected ? UIButton.Configuration.glass() : player(isSelected: false)
+    config.baseForegroundColor = isSelected ? .black : .white
+    // Pin symbol contrast across UIKit's selected-state and presentation updates.
+    config.imageColorTransformer = UIConfigurationColorTransformer { _ in
+      isSelected ? .black : .white
+    }
+    if isSelected { config.baseBackgroundColor = .white.withAlphaComponent(0.16) }
+    config.cornerStyle = .capsule
+    config.preferredSymbolConfigurationForImage = .init(pointSize: 24, weight: .regular, scale: .medium)
+    config.contentInsets = NSDirectionalEdgeInsets(top: 6, leading: 6, bottom: 6, trailing: 6)
     return config
   }
 
   static func playerRound() -> UIButton.Configuration {
-    var config = UIButton.Configuration.gray()
+    var config = UIButton.Configuration.plain()
     config.preferredSymbolConfigurationForImage = UIImage.SymbolConfiguration(scale: .medium)
     config.buttonSize = .small
+    config.background = .clear()
+    config.background.backgroundColorTransformer = UIConfigurationColorTransformer { _ in .clear }
     return config
   }
 }
@@ -189,14 +214,15 @@ extension UIView {
       .forceTouchCapability ?? .unknown
   }
 
-  public func setBackgroundBlur(style: UIBlurEffect.Style, alpha: CGFloat = 1.0) {
+  public func setBackgroundGlass() {
     backgroundColor = UIColor.clear
-    let blurEffect = UIBlurEffect(style: style)
-    let blurEffectView = UIVisualEffectView(effect: blurEffect)
-    blurEffectView.alpha = alpha
-    blurEffectView.frame = bounds
-    blurEffectView.autoresizingMask = [.flexibleWidth, .flexibleHeight]
-    insertSubview(blurEffectView, at: 0)
+    let effect = UIGlassEffect(style: .regular)
+    effect.isInteractive = false
+    let material = UIVisualEffectView(effect: effect)
+    material.frame = bounds
+    material.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+    material.isUserInteractionEnabled = false
+    insertSubview(material, at: 0)
   }
 
   func addLeftSideBorder() {

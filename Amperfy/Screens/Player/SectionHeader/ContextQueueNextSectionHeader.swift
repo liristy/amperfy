@@ -26,7 +26,7 @@ import UIKit
 // MARK: - ContextQueueNextSectionHeader
 
 class ContextQueueNextSectionHeader: UIView {
-  static let frameHeight: CGFloat = 40.0 + margin.top + margin.bottom
+  static let frameHeight: CGFloat = 100
   static let margin = UIEdgeInsets(
     top: 8,
     left: UIView.defaultMarginX,
@@ -37,6 +37,7 @@ class ContextQueueNextSectionHeader: UIView {
   private var player: PlayerFacade!
   private var rootView: PopupPlayerVC?
   private var playerHandler: PlayerUIHandler?
+  private var usesPlayerLayout = false
 
   @IBOutlet
   weak var queueNameLabel: UILabel!
@@ -63,8 +64,66 @@ class ContextQueueNextSectionHeader: UIView {
 
   func prepare(toWorkOnRootView: PopupPlayerVC?) {
     rootView = toWorkOnRootView
+    usesPlayerLayout = toWorkOnRootView != nil
+    playerHandler?.usesGlassModeButtons = usesPlayerLayout
+    if usesPlayerLayout {
+      isOpaque = false
+      backgroundColor = .clear
+      queueNameLabel.backgroundColor = .clear
+      contextNameLabel.backgroundColor = .clear
+      NSLayoutConstraint.deactivate(constraints)
+      let views: [UIView?] = [queueNameLabel, contextNameLabel, shuffleButton, repeatButton, autoplayButton]
+      for view in views {
+        guard let view else { continue }
+        NSLayoutConstraint.deactivate(view.constraints)
+        view.translatesAutoresizingMaskIntoConstraints = true
+      }
+      queueNameLabel.text = "Playing next".localized
+      queueNameLabel.font = .systemFont(ofSize: 17, weight: .semibold)
+      queueNameLabel.textColor = .white
+      contextNameLabel.font = .systemFont(ofSize: 12)
+      contextNameLabel.textColor = .white.withAlphaComponent(0.55)
+      shuffleButton.accessibilityLabel = "Shuffle".localized
+      repeatButton.accessibilityLabel = "Repeat".localized
+      autoplayButton.accessibilityLabel = "Autoplay".localized
+      for button in [shuffleButton, repeatButton, autoplayButton].compactMap({ $0 }) {
+        button.configurationUpdateHandler = { [weak self] button in
+          Self.applyModeStyle(to: button)
+          self?.rootView?.updateQueueModeBackgrounds()
+        }
+      }
+    }
     contextNameLabel.applyAmperfyStyle()
     refresh()
+  }
+
+  override func layoutSubviews() {
+    super.layoutSubviews()
+    guard usesPlayerLayout else { return }
+    let width = max(0, bounds.width - 16)
+    let itemWidth = (width - 16) / 3
+    for (index, button) in [shuffleButton, repeatButton, autoplayButton].enumerated() {
+      button?.frame = CGRect(x: 8 + CGFloat(index) * (itemWidth + 8), y: 0,
+                             width: itemWidth, height: 44)
+    }
+    queueNameLabel.frame = CGRect(x: 8, y: 54, width: width, height: 22)
+    contextNameLabel.frame = CGRect(x: 8, y: 77, width: width, height: 16)
+    rootView?.updateQueueModeBackgrounds()
+  }
+
+  private func styleModeButtons() {
+    guard usesPlayerLayout else { return }
+    for button in [shuffleButton, repeatButton, autoplayButton] {
+      guard let button else { continue }
+      Self.applyModeStyle(to: button)
+    }
+  }
+
+  private static func applyModeStyle(to button: UIButton) {
+    let image = button.configuration?.image
+    var config = UIButton.Configuration.playerQueueMode(isSelected: button.isSelected)
+    config.image = image
+    button.configuration = config
   }
 
   func refresh() {
@@ -74,9 +133,11 @@ class ContextQueueNextSectionHeader: UIView {
     playerHandler?.refreshRepeatButton(repeatButton: repeatButton)
     playerHandler?.refreshShuffleButton(shuffleButton: shuffleButton)
     playerHandler?.refreshAutoplayButton(autoplayButton: autoplayButton)
+    styleModeButtons()
   }
 
   func configureAutoplayButtonPosition() {
+    guard !usesPlayerLayout else { return }
     autoplayTrailingConstraint.isActive = false
     #if targetEnvironment(macCatalyst)
       if appDelegate.isShowingMiniPlayer {
@@ -118,6 +179,7 @@ class ContextQueueNextSectionHeader: UIView {
   func pressedShuffle(_ sender: Any) {
     playerHandler?.shuffleButtonPushed()
     playerHandler?.refreshShuffleButton(shuffleButton: shuffleButton)
+    styleModeButtons()
     rootView?.scrollToCurrentlyPlayingRow()
   }
 
@@ -125,12 +187,14 @@ class ContextQueueNextSectionHeader: UIView {
   func pressedRepeat(_ sender: Any) {
     playerHandler?.repeatButtonPushed()
     playerHandler?.refreshRepeatButton(repeatButton: repeatButton)
+    styleModeButtons()
   }
 
   @IBAction
   func pressedAutoplay(_ sender: Any) {
     playerHandler?.autoplayButtonPushed()
     playerHandler?.refreshAutoplayButton(autoplayButton: autoplayButton)
+    styleModeButtons()
   }
 }
 
@@ -157,11 +221,58 @@ extension ContextQueueNextSectionHeader: MusicPlayable {
 
   func didShuffleChange() {
     playerHandler?.refreshShuffleButton(shuffleButton: shuffleButton)
+    styleModeButtons()
   }
 
   func didRepeatChange() {
     playerHandler?.refreshRepeatButton(repeatButton: repeatButton)
+    playerHandler?.refreshAutoplayButton(autoplayButton: autoplayButton)
+    styleModeButtons()
   }
 
   func didPlaybackRateChange() {}
+}
+
+// The controls stay in UITableView so its pan, drag and accessibility behavior
+// remain native. Their glass samples the player background in a sibling layer;
+// the table's compositing group suppresses glass placed inside its content.
+final class QueueModeGlassBackground: UIView {
+  private let materials = (0..<3).map { _ in UIVisualEffectView(effect: nil) }
+  private var states = [Int?](repeating: nil, count: 3)
+
+  init() {
+    super.init(frame: .zero)
+    isOpaque = false
+    clipsToBounds = true
+    isUserInteractionEnabled = false
+    accessibilityElementsHidden = true
+    for material in materials {
+      material.cornerConfiguration = .capsule()
+      addSubview(material)
+    }
+  }
+
+  required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
+
+  func update(buttons: [UIButton], table: UITableView) {
+    frame = table.frame
+    alpha = table.alpha
+    isHidden = table.isHidden || buttons.allSatisfy(\.isHidden)
+    for (index, button) in buttons.enumerated() {
+      let material = materials[index]
+      material.frame = button.convert(button.bounds, to: self)
+      material.isHidden = button.isHidden
+      let state = (button.isSelected ? 1 : 0) + (button.isHighlighted ? 2 : 0)
+      if states[index] != state {
+        let glass = UIGlassEffect(style: .regular)
+        if button.isSelected {
+          glass.tintColor = .white.withAlphaComponent(button.isHighlighted ? 0.85 : 0.7)
+        } else if button.isHighlighted {
+          glass.tintColor = .white.withAlphaComponent(0.18)
+        }
+        material.effect = glass
+        states[index] = state
+      }
+    }
+  }
 }

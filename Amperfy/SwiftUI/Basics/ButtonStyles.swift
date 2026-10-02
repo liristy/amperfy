@@ -23,26 +23,24 @@ import SwiftUI
 
 // MARK: - DefaultButtonStyle
 
-struct DefaultButtonStyle: ButtonStyle {
+struct DefaultButtonStyle: PrimitiveButtonStyle {
   func makeBody(configuration: Self.Configuration) -> some View {
-    configuration.label
-      .foregroundColor(.systemBackground)
-      .padding([.top, .bottom], 8)
-      .background(configuration.isPressed ? Color.blue.opacity(0.75) : Color.blue)
-      .cornerRadius(15.0)
-      .contentShape(Rectangle())
+    Button(role: configuration.role, action: configuration.trigger) {
+      configuration.label.padding(.vertical, 8)
+    }
+    .buttonStyle(.glassProminent)
+    .tint(.accentColor)
   }
 }
 
 // MARK: - ErrorButtonStyle
 
-struct ErrorButtonStyle: ButtonStyle {
+struct ErrorButtonStyle: PrimitiveButtonStyle {
   func makeBody(configuration: Self.Configuration) -> some View {
-    configuration.label
-      .foregroundColor(.systemBackground)
-      .padding([.top, .bottom], 8)
-      .background(configuration.isPressed ? Color.error.opacity(0.75) : Color.error)
-      .cornerRadius(15.0)
-      .contentShape(Rectangle())
+    Button(role: configuration.role, action: configuration.trigger) {
+      configuration.label.padding(.vertical, 8)
+    }
+    .buttonStyle(.glassProminent)
+    .tint(Color.error)
   }
 }
