@@ -1050,15 +1050,35 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
               popup.controlView?.lyricsButton.sendActions(for: .touchUpInside)
               guard try await compactHeaderStayedFixed() else { return }
               smokeLog("Shared card survived switching; queue scrolling moved the card and retained fixed transport controls")
-              // Long history and upcoming sections expose pinned transparent
-              // headers overlapping partially scrolled rows and the shared card.
+              func queueHeadersScrollWithSongs(in player: PopupPlayerVC) -> Bool {
+                let headers: [(PlayerSectionCategory, UIView?)] = [
+                  (.contextPrev, player.contextPrevQueueSectionHeader),
+                  (.userQueue, player.userQueueSectionHeader),
+                  (.contextNext, player.contextNextQueueSectionHeader),
+                ]
+                return headers.allSatisfy { section, view in
+                  guard let view, view.window != nil else { return true }
+                  let frame = view.convert(view.bounds, to: player.tableView)
+                  let naturalFrame = player.tableView.rectForHeader(inSection: section.rawValue)
+                  return view.superview === player.tableView && view.clipsToBounds &&
+                    abs(frame.minY - naturalFrame.minY) < 0.5 &&
+                    abs(frame.height - naturalFrame.height) < 0.5 &&
+                    player.tableView.visibleCells.allSatisfy { cell in
+                      let overlap = frame.intersection(cell.frame)
+                      return overlap.isNull || overlap.height < 0.5
+                    }
+                }
+              }
+              // Use a history taller than the viewport and a plain table, whose
+              // native section headers would otherwise float over the songs.
               self.appDelegate.player.appendContextQueue(playables: (0..<24).map { $0.isMultiple(of: 2) ? song : nextSong })
-              self.appDelegate.player.play(playerIndex: PlayerIndex(queueType: .next, index: 6))
+              self.appDelegate.player.play(playerIndex: PlayerIndex(queueType: .next, index: 12))
               try await Task.sleep(for: .milliseconds(500))
               popup.controlView?.displayPlaylistPressed()
               try await Task.sleep(for: .milliseconds(400))
-              guard self.appDelegate.player.prevQueueCount > 0 else {
-                smokeLog("History fixture did not create past songs"); return
+              guard self.appDelegate.player.prevQueueCount > 0, popup.tableView.style == .plain,
+                    CGFloat(self.appDelegate.player.prevQueueCount) * popup.tableView.rowHeight > popup.tableView.bounds.height else {
+                smokeLog("History fixture did not exercise floating headers in a tall plain-table section"); return
               }
               popup.tableView.setContentOffset(CGPoint(x: 0, y: -popup.tableView.adjustedContentInset.top), animated: false)
               popup.view.layoutIfNeeded()
@@ -1066,7 +1086,10 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
               let queueControlsY = popup.controlPlaceholderView.frame.minY
               let currentRect = popup.tableView.rectForRow(at: IndexPath(row: 0, section: PlayerSectionCategory.currentlyPlaying.rawValue))
               let modesRect = popup.tableView.rectForHeader(inSection: PlayerSectionCategory.contextNext.rawValue)
+              let historyRect = popup.tableView.rectForHeader(inSection: PlayerSectionCategory.contextPrev.rawValue)
               let scrollCases: [(String, CGFloat)] = [
+                ("history-near-top", 1),
+                ("history-title-edge", historyRect.maxY - 1),
                 ("history", 65),
                 ("current", currentRect.minY + 60),
                 ("modes", modesRect.minY + 30),
@@ -1077,23 +1100,9 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
                 popup.view.layoutIfNeeded()
                 try await Task.sleep(for: .milliseconds(100))
                 try await compositorScreenshot("player-queue-scroll-\(name).png")
-                let headers: [(PlayerSectionCategory, UIView?)] = [
-                  (.contextPrev, popup.contextPrevQueueSectionHeader),
-                  (.userQueue, popup.userQueueSectionHeader),
-                  (.contextNext, popup.contextNextQueueSectionHeader),
-                ]
-                for (section, view) in headers {
-                  guard let view, view.window != nil else { continue }
-                  let frame = view.convert(view.bounds, to: popup.tableView)
-                  let naturalFrame = popup.tableView.rectForHeader(inSection: section.rawValue)
-                  guard abs(frame.minY - naturalFrame.minY) < 0.5,
-                        popup.tableView.visibleCells.allSatisfy({ cell in
-                          let overlap = frame.intersection(cell.frame)
-                          return overlap.isNull || overlap.height < 0.5
-                        }) else {
-                    smokeLog("Long queue \(name): header \(section) pinned or overlapped a song row")
-                    return
-                  }
+                guard queueHeadersScrollWithSongs(in: popup) else {
+                  smokeLog("Long queue \(name): visible heading entered a floating container or overlapped a song row")
+                  return
                 }
                 let modesVisible = CGRect(x: modesRect.minX, y: modesRect.minY,
                                           width: modesRect.width, height: 44).intersects(popup.tableView.bounds)
@@ -1106,6 +1115,32 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
               popup.tableView.setContentOffset(CGPoint(x: 0, y: -popup.tableView.adjustedContentInset.top), animated: false)
               popup.view.layoutIfNeeded()
               smokeLog("Long history and upcoming queue scrolled without header/card overlap; native glass and transport stayed aligned")
+              popup.controlView?.lyricsButton.sendActions(for: .touchUpInside)
+              try await Task.sleep(for: .milliseconds(250))
+              popup.controlView?.displayPlaylistPressed()
+              try await Task.sleep(for: .milliseconds(250))
+              popup.dismiss(animated: false)
+              try await Task.sleep(for: .milliseconds(200))
+              miniPlayer.openPlayerView()
+              for _ in 0..<30 {
+                try await Task.sleep(for: .milliseconds(100))
+                if let current = vc.presentedViewController as? PopupPlayerVC,
+                   current !== popup, !current.isBeingPresented, current.view.mask == nil { break }
+              }
+              guard let historyReopened = vc.presentedViewController as? PopupPlayerVC,
+                    historyReopened !== popup, !historyReopened.isBeingPresented,
+                    self.appDelegate.player.prevQueueCount > 0 else {
+                smokeLog("Long history did not survive switching and reopening the player"); return
+              }
+              popup = historyReopened
+              popup.tableView.setContentOffset(CGPoint(x: 0, y: historyRect.maxY - 1), animated: false)
+              popup.view.layoutIfNeeded()
+              try await Task.sleep(for: .milliseconds(200))
+              guard queueHeadersScrollWithSongs(in: popup) else {
+                smokeLog("Reopened history title floated over the first song"); return
+              }
+              try await compositorScreenshot("player-queue-history-reopened.png")
+              smokeLog("Plain-table headings stayed in scroll content near the top and after lyrics switching and reopening")
               let playingBeforeClear = self.appDelegate.player.currentlyPlaying
               let upcomingBeforeClear = self.appDelegate.player.nextQueueCount
               popup.contextPrevQueueSectionHeader?.onClear?()

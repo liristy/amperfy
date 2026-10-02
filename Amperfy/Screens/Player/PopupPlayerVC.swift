@@ -77,7 +77,6 @@ class PopupPlayerVC: UIViewController, UIScrollViewDelegate, UIGestureRecognizer
   var userQueueSectionHeader: UserQueueSectionHeader?
   var contextNextQueueSectionHeader: ContextQueueNextSectionHeader?
   private(set) var queueModeBackgrounds: QueueModeGlassBackground?
-  var activeDisplayedSectionHeader = Set<PlayerSectionCategory>()
   lazy var clearEmptySectionFooter = {
     let view = UIView()
     view.backgroundColor = .clear
@@ -492,7 +491,9 @@ class PopupPlayerVC: UIViewController, UIScrollViewDelegate, UIGestureRecognizer
 
   func reloadData() {
     tableView.reloadData()
+    tableView.layoutIfNeeded()
     scrollToCurrentlyPlayingRow()
+    refreshCellMasks()
   }
 
   func scrollToCurrentlyPlayingRow() {
@@ -603,6 +604,7 @@ class PopupPlayerVC: UIViewController, UIScrollViewDelegate, UIGestureRecognizer
   }
 
   func refreshCellMasks() {
+    layoutQueueSectionHeaders()
     // Headers and rows share the same scroll surface; only the table viewport
     // clips them. Clear masks retained by reused rows or context-menu previews.
     for cell in tableView.visibleCells {

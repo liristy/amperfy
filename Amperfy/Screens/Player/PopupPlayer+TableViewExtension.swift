@@ -35,8 +35,8 @@ enum PlayerSectionCategory: Int, CaseIterable {
 
 extension PopupPlayerVC: UITableViewDataSource, UITableViewDelegate {
   func setupTableView() {
-    // Grouped headers scroll with the queue. Transparent pinned headers would
-    // overlap both song rows and the shared current-song card.
+    // Visible headings are scroll-content subviews, outside UIKit's floating
+    // section-header containers. Native headers only reserve transparent space.
     tableView.register(nibName: PlayableTableCell.typeName)
     tableView.register(nibName: CurrentlyPlayingTableCell.typeName)
     tableView.rowHeight = 56
@@ -89,41 +89,41 @@ extension PopupPlayerVC: UITableViewDataSource, UITableViewDelegate {
     willDisplayHeaderView view: UIView,
     forSection section: Int
   ) {
-    guard let category = PlayerSectionCategory(rawValue: section) else { return }
     view.backgroundColor = .clear
     view.isOpaque = false
     if let header = view as? UITableViewHeaderFooterView {
       header.backgroundConfiguration = .clear()
     }
-    activeDisplayedSectionHeader.insert(category)
-  }
-
-  func tableView(
-    _ tableView: UITableView,
-    didEndDisplayingHeaderView view: UIView,
-    forSection section: Int
-  ) {
-    guard let category = PlayerSectionCategory(rawValue: section) else { return }
-    activeDisplayedSectionHeader.remove(category)
   }
 
   func tableView(_ tableView: UITableView, viewForHeaderInSection section: Int) -> UIView? {
-    // A zero-height custom header can still draw its labels outside its bounds.
-    // Empty sections must not supply a header view.
-    let sectionCategors = PlayerSectionCategory(rawValue: section)
-    switch sectionCategors {
-    case .contextPrev:
-      return player.prevQueueCount > 0 ? contextPrevQueueSectionHeader : nil
-    case .currentlyPlaying:
-      return nil
-    case .userQueue:
-      guard player.userQueueCount > 0 else { return nil }
-      refreshUserQueueSectionHeader()
-      return userQueueSectionHeader
-    case .contextNext:
-      return contextNextQueueSectionHeader
-    case .none:
-      return nil
+    guard self.tableView(tableView, heightForHeaderInSection: section) > 0.5 else { return nil }
+    let spacer = UIView()
+    spacer.backgroundColor = .clear
+    spacer.isOpaque = false
+    spacer.isUserInteractionEnabled = false
+    return spacer
+  }
+
+  func layoutQueueSectionHeaders() {
+    guard let player, tableView.numberOfSections == PlayerSectionCategory.allCases.count else { return }
+    let headers: [(PlayerSectionCategory, UIView?, Bool)] = [
+      (.contextPrev, contextPrevQueueSectionHeader, player.prevQueueCount > 0),
+      (.userQueue, userQueueSectionHeader, player.userQueueCount > 0),
+      (.contextNext, contextNextQueueSectionHeader, true),
+    ]
+    for (section, header, present) in headers {
+      guard let header else { continue }
+      guard present else {
+        header.removeFromSuperview()
+        continue
+      }
+      if header.superview !== tableView { tableView.addSubview(header) }
+      header.frame = tableView.rectForHeader(inSection: section.rawValue)
+      header.clipsToBounds = true
+      header.setNeedsLayout()
+      header.layoutIfNeeded()
+      tableView.bringSubviewToFront(header)
     }
   }
 
