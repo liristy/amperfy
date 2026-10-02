@@ -83,6 +83,13 @@ struct RelativeVolumeDrag {
 
     override func layoutSubviews() {
       super.layoutSubviews()
+      if let slider = nativeSlider(in: self), let container = slider.superview {
+        // MPVolumeView can position its track off-center inside a custom-height
+        // view. Align the rendered track, not just the volume view's outer frame.
+        let track = slider.convert(slider.trackRect(forBounds: slider.bounds), to: container)
+        let target = convert(CGPoint(x: bounds.midX, y: bounds.midY), to: container)
+        slider.center.y += target.y - track.midY
+      }
       touchSurface.frame = bounds
       bringSubviewToFront(touchSurface)
     }
