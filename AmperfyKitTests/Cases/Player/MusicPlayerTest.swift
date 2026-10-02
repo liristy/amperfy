@@ -2425,12 +2425,14 @@ class MusicPlayerTest: XCTestCase {
 
   func testPendingAutoplayCoalescesNextAndCannotOverrideNewContext() async throws {
     try await startAutoplayFixture()
-    var reply: CheckedContinuation<[Song], Never>?
+    var reply: CheckedContinuation<Void, Never>?
+    let staleSong = songCached!
     var requests = 0
     let started = expectation(description: "request started")
     testMusicPlayer.autoplayCB = { _, _, _ in
       requests += 1
-      return await withCheckedContinuation { reply = $0; started.fulfill() }
+      await withCheckedContinuation { reply = $0; started.fulfill() }
+      return [staleSong]
     }
     testPlayer.setAutoplayEnabled(true)
     await fulfillment(of: [started], timeout: 2)
@@ -2440,7 +2442,7 @@ class MusicPlayerTest: XCTestCase {
     let other = playlistAllCached.playables.filterSongs().first { $0 != songCached }!
     testMusicPlayer.autoplayCB = nil
     testPlayer.play(context: PlayContext(name: "New selection", playables: [other]))
-    reply?.resume(returning: [songCached])
+    reply?.resume()
     try await Task.sleep(for: .milliseconds(50))
     XCTAssertEqual(testPlayer.currentlyPlaying, other)
     XCTAssertTrue(testPlayer.autoplayQueue.isEmpty)
@@ -2449,16 +2451,17 @@ class MusicPlayerTest: XCTestCase {
 
   func testPauseCancelsPendingAutoplayAdvance() async throws {
     try await startAutoplayFixture()
-    var reply: CheckedContinuation<[Song], Never>?
+    var reply: CheckedContinuation<Void, Never>?
     let started = expectation(description: "request started")
     testMusicPlayer.autoplayCB = { _, _, _ in
       await withCheckedContinuation { reply = $0; started.fulfill() }
+      return self.playlistAllCached.playables.filterSongs()
     }
     testPlayer.setAutoplayEnabled(true)
     await fulfillment(of: [started], timeout: 2)
     testPlayer.playNext()
     testPlayer.pause()
-    reply?.resume(returning: playlistAllCached.playables.filterSongs())
+    reply?.resume()
     try await Task.sleep(for: .milliseconds(50))
     XCTAssertFalse(testPlayer.isPlaying)
     XCTAssertEqual(testPlayer.currentlyPlaying, songCached)
