@@ -722,6 +722,39 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
                     }
                   }
                   smokeLog("Volume touch-down stayed unchanged; relative left/right drag, bounds and tap interception passed")
+                  // The simulator has no functional hardware-volume slider.
+                  // Model a native control that lays out again after activation,
+                  // without requesting another layout from the player wrapper.
+                  let layoutProbe = DragOnlySystemVolumeView(frame: CGRect(x: 0, y: 0, width: 320, height: 32))
+                  guard let nativeVolume = layoutProbe.subviews.compactMap({ $0 as? MPVolumeView }).first else {
+                    smokeLog("System volume is not owned by a separate native view"); return
+                  }
+                  let nativeSliderProbe = UISlider(frame: layoutProbe.bounds)
+                  nativeVolume.insertSubview(nativeSliderProbe, at: 0)
+                  layoutProbe.setNeedsLayout()
+                  layoutProbe.layoutIfNeeded()
+                  for nativeY in [CGFloat(-12), 6, 0, 18, -8] {
+                    try await Task.sleep(for: .milliseconds(50))
+                    nativeSliderProbe.frame.origin.y = nativeY
+                    let nativeFrame = nativeSliderProbe.frame
+                    nativeVolume.setNeedsLayout()
+                    nativeVolume.layoutIfNeeded()
+                    let track = nativeSliderProbe.convert(
+                      nativeSliderProbe.trackRect(forBounds: nativeSliderProbe.bounds), to: layoutProbe)
+                    guard abs(track.midY - layoutProbe.bounds.midY) < 0.5,
+                          nativeSliderProbe.frame == nativeFrame else {
+                      smokeLog("Delayed native volume layout moved the track or changed UIKit slider geometry: \(track), \(nativeSliderProbe.frame)")
+                      return
+                    }
+                    layoutProbe.setNeedsLayout()
+                    layoutProbe.layoutIfNeeded()
+                    let repeatedTrack = nativeSliderProbe.convert(
+                      nativeSliderProbe.trackRect(forBounds: nativeSliderProbe.bounds), to: layoutProbe)
+                    guard abs(repeatedTrack.midY - layoutProbe.bounds.midY) < 0.5 else {
+                      smokeLog("Repeated volume alignment accumulated a vertical offset"); return
+                    }
+                  }
+                  smokeLog("Cold-start and delayed native volume layouts kept the track centered without changing UIKit slider geometry or accumulating offsets")
                   let songBeforeVolume = self.appDelegate.player.currentlyPlaying
                   let gainBeforeVolume = self.appDelegate.player.volume
                   let modeBeforeVolume = self.appDelegate.player.playerMode

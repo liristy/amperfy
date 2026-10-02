@@ -326,6 +326,9 @@ class PopupPlayerVC: UIViewController, UIScrollViewDelegate, UIGestureRecognizer
     guard isDismissPan || areLyricsControlsHidden else { return false }
     var touchedView = touch.view
     while let current = touchedView {
+      #if !targetEnvironment(macCatalyst)
+        if isDismissPan, current is DragOnlySystemVolumeView { return false }
+      #endif
       if isDismissPan, current is MPVolumeView { return false }
       if isDismissPan ? (current is UISlider) : (current is UIControl) { return false }
       if !isDismissPan, current === largeCurrentlyPlayingView?.transitionArtwork { return false }

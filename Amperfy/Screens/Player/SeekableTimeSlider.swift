@@ -47,12 +47,44 @@ struct RelativeVolumeDrag {
 }
 
 #if !targetEnvironment(macCatalyst)
-  final class DragOnlySystemVolumeView: MPVolumeView, UIGestureRecognizerDelegate {
+  private final class LayoutReportingSystemVolumeView: MPVolumeView {
+    var didLayout: (() -> Void)?
+
+    override func layoutSubviews() {
+      super.layoutSubviews()
+      didLayout?()
+    }
+  }
+
+  final class DragOnlySystemVolumeView: UIView, UIGestureRecognizerDelegate {
+    private let systemVolume = LayoutReportingSystemVolumeView(frame: .zero)
     private let touchSurface = UIView()
     private weak var trackedSlider: UISlider?
     private var volumeDrag: RelativeVolumeDrag?
     private var routeObserver: AnyCancellable?
     private lazy var volumePan = UIPanGestureRecognizer(target: self, action: #selector(dragVolume(_:)))
+
+    var showsRouteButton: Bool {
+      get { systemVolume.showsRouteButton }
+      set { systemVolume.showsRouteButton = newValue }
+    }
+
+    var showsVolumeSlider: Bool {
+      get { systemVolume.showsVolumeSlider }
+      set { systemVolume.showsVolumeSlider = newValue }
+    }
+
+    func setMinimumVolumeSliderImage(_ image: UIImage?, for state: UIControl.State) {
+      systemVolume.setMinimumVolumeSliderImage(image, for: state)
+    }
+
+    func setMaximumVolumeSliderImage(_ image: UIImage?, for state: UIControl.State) {
+      systemVolume.setMaximumVolumeSliderImage(image, for: state)
+    }
+
+    func setVolumeThumbImage(_ image: UIImage?, for state: UIControl.State) {
+      systemVolume.setVolumeThumbImage(image, for: state)
+    }
 
     override init(frame: CGRect) {
       super.init(frame: frame)
@@ -66,6 +98,9 @@ struct RelativeVolumeDrag {
 
     private func configureDragging() {
       showsRouteButton = false
+      systemVolume.tintColor = tintColor
+      systemVolume.didLayout = { [weak self] in self?.alignNativeTrack() }
+      addSubview(systemVolume)
       touchSurface.backgroundColor = .clear
       touchSurface.isOpaque = false
       touchSurface.isAccessibilityElement = false
@@ -83,15 +118,30 @@ struct RelativeVolumeDrag {
 
     override func layoutSubviews() {
       super.layoutSubviews()
-      if let slider = nativeSlider(in: self), let container = slider.superview {
-        // MPVolumeView can position its track off-center inside a custom-height
-        // view. Align the rendered track, not just the volume view's outer frame.
-        let track = slider.convert(slider.trackRect(forBounds: slider.bounds), to: container)
-        let target = convert(CGPoint(x: bounds.midX, y: bounds.midY), to: container)
-        slider.center.y += target.y - track.midY
-      }
+      systemVolume.bounds = CGRect(origin: .zero, size: bounds.size)
+      systemVolume.center = CGPoint(x: bounds.midX, y: bounds.midY)
+      systemVolume.layoutIfNeeded()
+      alignNativeTrack()
       touchSurface.frame = bounds
       bringSubviewToFront(touchSurface)
+    }
+
+    private func alignNativeTrack() {
+      guard let slider = nativeSlider(in: systemVolume) else { return }
+      let track = slider.convert(slider.trackRect(forBounds: slider.bounds), to: systemVolume)
+      guard track.width > 0, track.height > 0, track.midY.isFinite else { return }
+      // Playback activation can lay out the native slider after our parent has
+      // finished. Move the entire system view after each native layout; leave
+      // UIKit's slider geometry untouched and calculate an absolute offset.
+      let offset = systemVolume.bounds.midY - track.midY
+      if abs(systemVolume.transform.ty - offset) > 0.25 {
+        systemVolume.transform = CGAffineTransform(translationX: 0, y: offset)
+      }
+    }
+
+    override func tintColorDidChange() {
+      super.tintColorDidChange()
+      systemVolume.tintColor = tintColor
     }
 
     override func hitTest(_ point: CGPoint, with event: UIEvent?) -> UIView? {
@@ -103,7 +153,12 @@ struct RelativeVolumeDrag {
 
     override func didMoveToWindow() {
       super.didMoveToWindow()
-      if window == nil { finishVolumeDrag(cancelled: true) }
+      if window == nil {
+        finishVolumeDrag(cancelled: true)
+      } else {
+        systemVolume.setNeedsLayout()
+        setNeedsLayout()
+      }
     }
 
     private func nativeSlider(in view: UIView) -> UISlider? {
@@ -115,7 +170,7 @@ struct RelativeVolumeDrag {
     }
 
     override func gestureRecognizerShouldBegin(_ gestureRecognizer: UIGestureRecognizer) -> Bool {
-      guard let slider = nativeSlider(in: self), slider.isEnabled, !slider.isHidden else { return false }
+      guard let slider = nativeSlider(in: systemVolume), slider.isEnabled, !slider.isHidden else { return false }
       let velocity = volumePan.velocity(in: self)
       return abs(velocity.x) > abs(velocity.y)
     }
@@ -123,7 +178,7 @@ struct RelativeVolumeDrag {
     @objc private func dragVolume(_ pan: UIPanGestureRecognizer) {
       switch pan.state {
       case .began:
-        guard let slider = nativeSlider(in: self), slider.isEnabled, !slider.isHidden,
+        guard let slider = nativeSlider(in: systemVolume), slider.isEnabled, !slider.isHidden,
               let drag = RelativeVolumeDrag(value: slider.value, minimum: slider.minimumValue,
                 maximum: slider.maximumValue, width: slider.trackRect(forBounds: slider.bounds).width) else { return }
         trackedSlider = slider
