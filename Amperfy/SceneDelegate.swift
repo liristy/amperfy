@@ -805,8 +805,15 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
                 return
               }
               try await compositorScreenshot("player-paused-artwork.png")
-              self.appDelegate.player.play()
-              try await Task.sleep(for: .milliseconds(800))
+              guard let controls = popup.controlView else { return }
+              controls.playButton.isHighlighted = true
+              try await Task.sleep(for: .milliseconds(80))
+              try await compositorScreenshot("player-transport-pressed.png")
+              controls.playButton.isHighlighted = false
+              controls.playButtonPushed(controls.playButton as Any)
+              try await Task.sleep(for: .milliseconds(70))
+              try await compositorScreenshot("player-transport-playing-transition.png")
+              try await Task.sleep(for: .milliseconds(730))
               guard fullPlayer.artworkImage.transform == .identity else {
                 smokeLog("Resuming did not restore artwork scale")
                 return
@@ -821,6 +828,56 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
               }
               smokeLog("Pause/resume artwork scale and single top options menu passed")
               guard self.appDelegate.player.elapsedTime >= 41 else { return }
+              // Exercise real transport actions and the server-empty local fallback.
+              controls.previousButtonPushed(controls.previousButton as Any)
+              try await Task.sleep(for: .milliseconds(70))
+              try await compositorScreenshot("player-transport-previous-transition.png")
+              self.appDelegate.player.setAutoplayEnabled(false)
+              self.appDelegate.player.setRepeatMode(.off)
+              self.appDelegate.player.play(context: PlayContext(name: "Single song", playables: [nextSong]))
+              try await Task.sleep(for: .milliseconds(700))
+              self.appDelegate.player.seek(toSecond: 42)
+              controls.nextButtonPushed(controls.nextButton as Any)
+              try await Task.sleep(for: .milliseconds(70))
+              try await compositorScreenshot("player-transport-next-transition.png")
+              try await Task.sleep(for: .milliseconds(500))
+              guard !self.appDelegate.player.isPlaying,
+                    self.appDelegate.player.currentlyPlaying == nextSong,
+                    self.appDelegate.player.prevQueueCount == 0 else {
+                smokeLog("Single-song Next reset the queue or did not pause")
+                return
+              }
+              self.appDelegate.player.setAutoplayEnabled(true)
+              for _ in 0..<60 {
+                if !self.appDelegate.player.autoplayQueue.isEmpty { break }
+                try await Task.sleep(for: .milliseconds(50))
+              }
+              guard let recommendation = self.appDelegate.player.autoplayQueue.first else {
+                smokeLog("Autoplay did not prepare a local fallback after empty server recommendations")
+                return
+              }
+              controls.displayPlaylistPressed()
+              try await Task.sleep(for: .milliseconds(400))
+              let autoplayPath = IndexPath(row: 0, section: PlayerSectionCategory.autoplay.rawValue)
+              guard popup.tableView.numberOfRows(inSection: autoplayPath.section) > 0 else { return }
+              popup.tableView.scrollToRow(at: autoplayPath, at: .middle, animated: false)
+              popup.view.layoutIfNeeded()
+              try await compositorScreenshot("player-autoplay-queue.png")
+              guard let recommendationCell = popup.tableView.cellForRow(at: autoplayPath) as? PlayableTableCell else { return }
+              recommendationCell.playThisSong()
+              try await Task.sleep(for: .milliseconds(800))
+              guard self.appDelegate.player.currentlyPlaying == recommendation,
+                    self.appDelegate.player.isPlaying else {
+                smokeLog("Choosing an Autoplay row did not start its recommendation")
+                return
+              }
+              self.appDelegate.player.setAutoplayEnabled(false)
+              guard self.appDelegate.player.autoplayQueue.isEmpty else { return }
+              controls.displayPlaylistPressed()
+              self.appDelegate.player.play(context: PlayContext(name: "Smoke", playables: [nextSong]))
+              try await Task.sleep(for: .milliseconds(700))
+              self.appDelegate.player.seek(toSecond: 42)
+              smokeLog("Transport actions, single-song end pause and separate Autoplay recommendations with local fallback passed")
               self.appDelegate.storage.settings.user.isPlayerLyricsDisplayed = true
               popup.largeCurrentlyPlayingView?.display(element: .lyrics)
               try await Task.sleep(for: .seconds(1))

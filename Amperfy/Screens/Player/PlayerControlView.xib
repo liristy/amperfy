@@ -67,7 +67,7 @@
                                 <action selector="skipBackwardButtonPushed:" destination="iN0-l3-epB" eventType="touchUpInside" id="GNs-ds-sdw"/>
                             </connections>
                         </button>
-                        <button opaque="NO" contentMode="scaleAspectFill" contentHorizontalAlignment="center" contentVerticalAlignment="center" buttonType="system" lineBreakMode="middleTruncation" preferredBehavioralStyle="pad" translatesAutoresizingMaskIntoConstraints="NO" id="Jhy-pc-jwZ" userLabel="Previous Button">
+                        <button opaque="NO" contentMode="scaleAspectFill" contentHorizontalAlignment="center" contentVerticalAlignment="center" buttonType="system" lineBreakMode="middleTruncation" preferredBehavioralStyle="pad" translatesAutoresizingMaskIntoConstraints="NO" id="Jhy-pc-jwZ" userLabel="Previous Button" customClass="PlayerTransportButton" customModule="Amperfy" customModuleProvider="target">
                             <rect key="frame" x="66" y="11.5" width="66" height="27.5"/>
                             <constraints>
                                 <constraint firstAttribute="height" constant="60" id="Jhy-pc-jwZ-touch"/>
@@ -81,7 +81,7 @@
                                 <action selector="previousButtonPushed:" destination="iN0-l3-epB" eventType="touchUpInside" id="UBQ-J2-BCO"/>
                             </connections>
                         </button>
-                        <button opaque="NO" contentMode="scaleToFill" contentHorizontalAlignment="center" contentVerticalAlignment="center" lineBreakMode="middleTruncation" preferredBehavioralStyle="pad" translatesAutoresizingMaskIntoConstraints="NO" id="Byk-rx-3Lv">
+                        <button opaque="NO" contentMode="scaleToFill" contentHorizontalAlignment="center" contentVerticalAlignment="center" lineBreakMode="middleTruncation" preferredBehavioralStyle="pad" translatesAutoresizingMaskIntoConstraints="NO" id="Byk-rx-3Lv" customClass="PlayerTransportButton" customModule="Amperfy" customModuleProvider="target">
                             <rect key="frame" x="132" y="3.5" width="66" height="43"/>
                             <constraints>
                                 <constraint firstAttribute="height" constant="60" id="Byk-rx-3Lv-touch"/>
@@ -96,7 +96,7 @@
                                 <action selector="playButtonPushed:" destination="iN0-l3-epB" eventType="touchUpInside" id="x3u-6i-ytK"/>
                             </connections>
                         </button>
-                        <button opaque="NO" contentMode="scaleAspectFit" contentHorizontalAlignment="center" contentVerticalAlignment="center" buttonType="system" lineBreakMode="middleTruncation" preferredBehavioralStyle="pad" translatesAutoresizingMaskIntoConstraints="NO" id="E3q-DK-jgm" userLabel="Next Button">
+                        <button opaque="NO" contentMode="scaleAspectFit" contentHorizontalAlignment="center" contentVerticalAlignment="center" buttonType="system" lineBreakMode="middleTruncation" preferredBehavioralStyle="pad" translatesAutoresizingMaskIntoConstraints="NO" id="E3q-DK-jgm" userLabel="Next Button" customClass="PlayerTransportButton" customModule="Amperfy" customModuleProvider="target">
                             <rect key="frame" x="198" y="11.5" width="66" height="27.5"/>
                             <constraints>
                                 <constraint firstAttribute="height" constant="60" id="E3q-DK-jgm-touch"/>

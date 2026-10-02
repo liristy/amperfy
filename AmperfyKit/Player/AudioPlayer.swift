@@ -20,6 +20,7 @@
 //
 
 import AVFoundation
+import CoreData
 import Foundation
 import MediaPlayer
 import os.log
@@ -54,7 +55,119 @@ public class AudioPlayer: NSObject, BackendAudioPlayerNotifiable {
   }
 
   var isShouldPauseAfterFinishedPlaying = false
-  var autoplayCB: (@MainActor (Song) async throws -> [Song])?
+  var autoplayCB: (@MainActor (Song, Set<NSManagedObjectID>, Set<NSManagedObjectID>) async throws -> [Song])?
+  private var autoplayTask: Task<Void, Never>?
+  private var autoplayRequestID: UUID?
+  private var awaitingAutoplayAdvance = false
+  private var preparedAutoplaySongs: [Song] = []
+  private var autoplayPreparedForSeed: NSManagedObjectID?
+  private var recentAutoplayItems: [NSManagedObjectID] = []
+
+  private var canAutoplay: Bool {
+    settings.user.isAutoplayEnabled && playerStatus.playerMode == .music &&
+      playerStatus.repeatMode == .off && currentlyPlaying?.asSong != nil
+  }
+
+  var autoplayQueue: [Song] { canAutoplay ? preparedAutoplaySongs : [] }
+
+  private var autoplayExcludedItems: Set<NSManagedObjectID> {
+    var items = queueHandler.getAllNextQueueItems() + queueHandler.getAllUserQueueItems()
+    if let currentlyPlaying { items.append(currentlyPlaying) }
+    return Set(items.compactMap { $0.asSong?.managedObject.objectID })
+  }
+
+  private func cancelAutoplayRequest(clearQueue: Bool = false) {
+    autoplayRequestID = nil
+    autoplayTask?.cancel()
+    autoplayTask = nil
+    awaitingAutoplayAdvance = false
+    if clearQueue {
+      preparedAutoplaySongs.removeAll()
+      autoplayPreparedForSeed = nil
+    }
+  }
+
+  func autoplaySettingDidChange() {
+    cancelAutoplayRequest(clearQueue: true)
+    prepareAutoplayIfNeeded()
+    notifyPlaylistUpdated()
+  }
+
+  func setAutoplayEnabled(_ enabled: Bool) {
+    settings.user.isAutoplayEnabled = enabled
+    autoplaySettingDidChange()
+  }
+
+  // Prepare recommendations before the explicit queue runs out. They stay separate
+  // from that queue so disabling Autoplay never removes a user's queued songs.
+  func prepareAutoplayIfNeeded() {
+    guard canAutoplay else {
+      cancelAutoplayRequest(clearQueue: true)
+      return
+    }
+    let explicitQueueCount = queueHandler.nextQueueCount + queueHandler.userQueueCount
+    if explicitQueueCount > 3, preparedAutoplaySongs.isEmpty { return }
+    let excluded = autoplayExcludedItems
+    preparedAutoplaySongs.removeAll {
+      excluded.contains($0.managedObject.objectID) || (backendAudioPlayer.isOfflineMode && !$0.isCached)
+    }
+    guard preparedAutoplaySongs.count < 5, autoplayTask == nil,
+          explicitQueueCount <= 3,
+          let currentSong = currentlyPlaying?.asSong, let cb = autoplayCB else { return }
+    let seed = queueHandler.getAllNextQueueItems().last?.asSong ??
+      queueHandler.getAllUserQueueItems().last?.asSong ?? currentSong
+    guard preparedAutoplaySongs.isEmpty || autoplayPreparedForSeed != seed.managedObject.objectID else { return }
+    let currentID = currentSong.managedObject.objectID
+    let requestID = UUID()
+    autoplayRequestID = requestID
+    let recent = Set(recentAutoplayItems.suffix(20))
+    let requestExcluded = excluded.union(preparedAutoplaySongs.map { $0.managedObject.objectID })
+    autoplayTask = Task { @MainActor [weak self] in
+      do {
+        guard !Task.isCancelled else { return }
+        let songs = try await cb(seed, requestExcluded, recent)
+        guard let self, !Task.isCancelled, autoplayRequestID == requestID else { return }
+        autoplayTask = nil
+        autoplayRequestID = nil
+        guard canAutoplay, currentlyPlaying?.asSong?.managedObject.objectID == currentID else {
+          awaitingAutoplayAdvance = false
+          return
+        }
+        var seen = autoplayExcludedItems.union(preparedAutoplaySongs.map { $0.managedObject.objectID })
+        let candidates = songs.filter {
+          $0.account == currentSong.account &&
+            (!backendAudioPlayer.isOfflineMode || $0.isCached) &&
+            seen.insert($0.managedObject.objectID).inserted
+        }
+        preparedAutoplaySongs.append(contentsOf: candidates.prefix(20))
+        autoplayPreparedForSeed = seed.managedObject.objectID
+        let shouldAdvance = awaitingAutoplayAdvance
+        awaitingAutoplayAdvance = false
+        notifyPlaylistUpdated()
+        if shouldAdvance {
+          if let nextPlayerIndex { play(playerIndex: nextPlayerIndex) }
+          else if preparedAutoplaySongs.isEmpty { pause() }
+          else { playAutoplay(at: 0) }
+        }
+      } catch {
+        guard let self, autoplayRequestID == requestID else { return }
+        autoplayTask = nil
+        autoplayRequestID = nil
+        let shouldPause = awaitingAutoplayAdvance
+        awaitingAutoplayAdvance = false
+        if shouldPause { pause() }
+      }
+    }
+  }
+
+  func playAutoplay(at index: Int) {
+    guard canAutoplay, preparedAutoplaySongs.indices.contains(index) else { return }
+    let song = preparedAutoplaySongs[index]
+    preparedAutoplaySongs.removeFirst(index + 1)
+    queueHandler.appendContextQueue(playables: [song])
+    play(playerIndex: PlayerIndex(queueType: .next, index: queueHandler.nextQueueCount - 1))
+    notifyPlaylistUpdated()
+  }
 
   private var playerStatus: PlayerStatusPersistent
   private var queueHandler: PlayQueueHandler
@@ -110,6 +223,11 @@ public class AudioPlayer: NSObject, BackendAudioPlayerNotifiable {
   }
 
   private func insertIntoPlayer(playable: AbstractPlayable, resumeTime: Double? = nil) {
+    cancelAutoplayRequest()
+    if let song = playable.asSong {
+      recentAutoplayItems.append(song.managedObject.objectID)
+      if recentAutoplayItems.count > 20 { recentAutoplayItems.removeFirst() }
+    }
     pendingResumeTime = resumeTime
     if resumeTime == nil {
       userStatistics.playedItem(
@@ -130,6 +248,7 @@ public class AudioPlayer: NSObject, BackendAudioPlayerNotifiable {
     handleRadioStartIfNeeded()
     notifyItemStartedPlayingFromBeginning()
     notifyItemStartedPlaying()
+    prepareAutoplayIfNeeded()
   }
 
   // BackendAudioPlayerNotifiable
@@ -162,10 +281,13 @@ public class AudioPlayer: NSObject, BackendAudioPlayerNotifiable {
       backendAudioPlayer.continuePlay()
       notifyItemStartedPlaying()
     }
+    prepareAutoplayIfNeeded()
   }
 
   public func play(context: PlayContext) {
     guard let activePlayable = context.getActivePlayable() else { return }
+    cancelAutoplayRequest(clearQueue: true)
+    recentAutoplayItems.removeAll()
     let topUserQueueItem = queueHandler.getUserQueueItem(at: 0)
     let wasUserQueuePlaying = queueHandler.isUserQueuePlaying
     queueHandler.clearActiveQueue()
@@ -217,23 +339,18 @@ public class AudioPlayer: NSObject, BackendAudioPlayerNotifiable {
   func playNext() {
     if let nextPlayerIndex = nextPlayerIndex {
       play(playerIndex: nextPlayerIndex)
-    } else if settings.user.isAutoplayEnabled,
-              let song = currentlyPlaying?.asSong,
-              let cb = autoplayCB,
-              !backendAudioPlayer.isOfflineMode {
-      Task { @MainActor [weak self] in
-        guard let self else { return }
-        do {
-          let similarSongs = try await cb(song)
-          guard !similarSongs.isEmpty else { stop(); return }
-          queueHandler.appendContextQueue(playables: similarSongs)
-          play(playerIndex: PlayerIndex(queueType: .next, index: 0))
-        } catch {
-          stop()
-        }
+    } else if canAutoplay {
+      if !preparedAutoplaySongs.isEmpty {
+        playAutoplay(at: 0)
+      } else {
+        awaitingAutoplayAdvance = true
+        prepareAutoplayIfNeeded()
+        if autoplayTask == nil { pause() }
       }
     } else {
-      stop()
+      // Reaching the end keeps the current song, cover and queue position.
+      // Explicit Stop/Clear still reset the player through stop().
+      pause()
     }
   }
 
@@ -250,6 +367,7 @@ public class AudioPlayer: NSObject, BackendAudioPlayerNotifiable {
   }
 
   func pause() {
+    cancelAutoplayRequest()
     if let currentlyPlaying = currentlyPlaying,
        currentlyPlaying.isRadio {
       stopButRemainIndex()
@@ -261,12 +379,14 @@ public class AudioPlayer: NSObject, BackendAudioPlayerNotifiable {
 
   // BackendAudioPlayerNotifiable
   func stop() {
+    cancelAutoplayRequest(clearQueue: true)
     backendAudioPlayer.stop()
     playerStatus.stop()
     notifyPlayerStopped()
   }
 
   func stopButRemainIndex() {
+    cancelAutoplayRequest(clearQueue: true)
     backendAudioPlayer.stop()
     notifyPlayerStopped()
   }
@@ -420,6 +540,7 @@ public class AudioPlayer: NSObject, BackendAudioPlayerNotifiable {
   }
 
   func notifyRepeatUpdated() {
+    autoplaySettingDidChange()
     notifierList = notifierList.filter { $0.value != nil }
     for notifier in notifierList {
       notifier.value?.didRepeatChange()

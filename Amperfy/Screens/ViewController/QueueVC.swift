@@ -194,6 +194,11 @@ extension QueueVC: UITableViewDelegate, UITableViewDataSource {
       return userQueueSectionHeader
     case .contextNext:
       return contextNextQueueSectionHeader
+    case .autoplay:
+      let header = UILabel()
+      header.text = "∞  " + "Autoplay".localized
+      header.font = .systemFont(ofSize: 20, weight: .semibold)
+      return player.autoplayQueue.isEmpty ? nil : header
     default:
       return nil
     }
@@ -211,6 +216,8 @@ extension QueueVC: UITableViewDelegate, UITableViewDataSource {
       }
     case .contextNext:
       return ContextQueueNextSectionHeader.frameHeight
+    case .autoplay:
+      return player.autoplayQueue.isEmpty ? 0 : 48
     default:
       return 0.0
     }
@@ -234,6 +241,7 @@ extension QueueVC: UITableViewDelegate, UITableViewDataSource {
     case .contextPrev: return player.prevQueueCount
     case .userQueue: return player.userQueueCount
     case .contextNext: return player.nextQueueCount
+    case .autoplay: return player.autoplayQueue.count
     default: return 0
     }
   }
@@ -241,7 +249,7 @@ extension QueueVC: UITableViewDelegate, UITableViewDataSource {
   func tableView(_ tableView: UITableView, heightForRowAt indexPath: IndexPath) -> CGFloat {
     let sectionCategors = PlayerSectionCategory(rawValue: indexPath.section)
     switch sectionCategors {
-    case .contextNext, .contextPrev, .none, .userQueue:
+    case .contextNext, .contextPrev, .none, .userQueue, .autoplay:
       return PlayableTableCell.rowHeight
     default:
       return 0
@@ -253,6 +261,17 @@ extension QueueVC: UITableViewDelegate, UITableViewDataSource {
       return UITableViewCell(frame: .zero)
     }
     switch PlayerSectionCategory(rawValue: indexPath.section) {
+    case .autoplay:
+      let cell: PlayableTableCell = tableView.dequeueCell(for: tableView, at: indexPath)
+      let songs = player.autoplayQueue
+      guard songs.indices.contains(indexPath.row) else { return cell }
+      cell.display(playable: songs[indexPath.row], playContextCb: nil, rootView: self,
+        playAction: { [weak self, weak cell] in
+          guard let self, let cell, let path = self.tableView?.indexPath(for: cell),
+                path.section == PlayerSectionCategory.autoplay.rawValue else { return }
+          player.playAutoplay(at: path.row)
+        })
+      return cell
     case .contextNext, .contextPrev, .userQueue:
       let cell: PlayableTableCell = tableView.dequeueCell(for: tableView, at: indexPath)
 
@@ -314,7 +333,7 @@ extension QueueVC: UITableViewDelegate, UITableViewDataSource {
     toProposedIndexPath targetIndexPath: IndexPath
   )
     -> IndexPath {
-    targetIndexPath
+    PlayerSectionCategory(rawValue: targetIndexPath.section) == .autoplay ? sourceIndexPath : targetIndexPath
   }
 
   // Override to support conditional rearranging of the table view.

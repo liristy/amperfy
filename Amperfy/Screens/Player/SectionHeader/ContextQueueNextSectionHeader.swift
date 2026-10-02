@@ -226,6 +226,7 @@ extension ContextQueueNextSectionHeader: MusicPlayable {
 
   func didRepeatChange() {
     playerHandler?.refreshRepeatButton(repeatButton: repeatButton)
+    playerHandler?.refreshAutoplayButton(autoplayButton: autoplayButton)
     styleModeButtons()
   }
 

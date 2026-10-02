@@ -76,6 +76,21 @@ class PopupPlayerVC: UIViewController, UIScrollViewDelegate, UIGestureRecognizer
   var contextPrevQueueSectionHeader: ContextQueuePrevSectionHeader?
   var userQueueSectionHeader: UserQueueSectionHeader?
   var contextNextQueueSectionHeader: ContextQueueNextSectionHeader?
+  let autoplayQueueSectionHeader: UIView = {
+    let header = UIView()
+    let title = UILabel()
+    title.text = "∞  " + "Autoplay".localized
+    title.textColor = .white
+    title.font = .systemFont(ofSize: 20, weight: .semibold)
+    title.translatesAutoresizingMaskIntoConstraints = false
+    header.addSubview(title)
+    NSLayoutConstraint.activate([
+      title.leadingAnchor.constraint(equalTo: header.leadingAnchor, constant: 8),
+      title.trailingAnchor.constraint(equalTo: header.trailingAnchor, constant: -8),
+      title.centerYAnchor.constraint(equalTo: header.centerYAnchor),
+    ])
+    return header
+  }()
   private(set) var queueModeBackgrounds: QueueModeGlassBackground?
   lazy var clearEmptySectionFooter = {
     let view = UIView()
@@ -492,10 +507,18 @@ class PopupPlayerVC: UIViewController, UIScrollViewDelegate, UIGestureRecognizer
     }}
   }
 
-  func reloadData() {
+  func reloadData(preservingScrollOffset: Bool = false) {
+    let previousOffset = tableView.contentOffset
     tableView.reloadData()
     tableView.layoutIfNeeded()
-    scrollToCurrentlyPlayingRow()
+    if preservingScrollOffset {
+      let minimumY = -tableView.adjustedContentInset.top
+      let maximumY = max(minimumY, tableView.contentSize.height - tableView.bounds.height + tableView.adjustedContentInset.bottom)
+      tableView.setContentOffset(CGPoint(x: previousOffset.x,
+        y: min(maximumY, max(minimumY, previousOffset.y))), animated: false)
+    } else {
+      scrollToCurrentlyPlayingRow()
+    }
     refreshCellMasks()
   }
 
@@ -669,7 +692,7 @@ extension PopupPlayerVC: MusicPlayable {
   }
 
   func didPlaylistChange() {
-    reloadData()
+    reloadData(preservingScrollOffset: true)
     refresh()
   }
 

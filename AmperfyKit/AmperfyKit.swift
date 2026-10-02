@@ -162,12 +162,27 @@ public class AmperKit {
     playerAudioSessionHandler!.eventLogger = eventLogger
     playerAudioSessionHandler!.configureObserverForAudioSessionInterruption()
     backendAudioPlayer.triggerReinsertPlayableCB = curPlayer.play
-    curPlayer.autoplayCB = { [weak self] song in
-      guard let self, let accountInfo = song.account?.info else { return [] }
-      return try await getMeta(accountInfo).librarySyncer.requestSimilarSongs(
-        song: song,
-        count: 99
-      )
+    curPlayer.autoplayCB = { [weak self] song, excluded, recent in
+      guard let self, let account = song.account else { return [] }
+      var recommended: [Song] = []
+      if !backendAudioPlayer.isOfflineMode {
+        recommended = (try? await getMeta(account.info).librarySyncer.requestSimilarSongs(
+          song: song, count: 20
+        )) ?? []
+      }
+      guard !Task.isCancelled else { return [] }
+      var seen = excluded.union([song.managedObject.objectID])
+      recommended = recommended.filter {
+        $0.account == account && seen.insert($0.managedObject.objectID).inserted
+      }
+      if recommended.count < 20 {
+        recommended.append(contentsOf: storage.main.library.getAutoplaySongs(
+          seed: song, excluding: seen, recent: recent, count: 20 - recommended.count,
+          onlyCached: backendAudioPlayer.isOfflineMode
+        ))
+      }
+      return recommended.filter { !recent.contains($0.managedObject.objectID) } +
+        recommended.filter { recent.contains($0.managedObject.objectID) }
     }
     backendAudioPlayer.updateEqualizerEnabled(isEnabled: storage.settings.user.isEqualizerEnabled)
     backendAudioPlayer

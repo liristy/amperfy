@@ -88,7 +88,7 @@ class PlayerUIHandler: NSObject {
   }
 
   func autoplayButtonPushed() {
-    appDelegate.storage.settings.user.isAutoplayEnabled.toggle()
+    player.setAutoplayEnabled(!appDelegate.storage.settings.user.isAutoplayEnabled)
   }
 
   func refreshPlayButton(_ button: UIButton) {
@@ -121,6 +121,8 @@ class PlayerUIHandler: NSObject {
 
     button.setImage(buttonImg, for: UIControl.State.normal)
     button.configuration?.image = buttonImg
+    (button as? PlayerTransportButton)?.renderSymbol(buttonImg,
+      identifier: player.isPlaying ? (player.isStopInsteadOfPause ? "stop" : "pause") : "play")
     button.accessibilityLabel = player.isPlaying ?
       (player.isStopInsteadOfPause ? "Stop".localized : "Pause".localized) : "Play".localized
   }
@@ -187,6 +189,10 @@ class PlayerUIHandler: NSObject {
     previousButton.configuration?.image = previouseImg
     nextButton.setImage(nextImg, for: UIControl.State.normal)
     nextButton.configuration?.image = nextImg
+    (previousButton as? PlayerTransportButton)?.renderSymbol(previouseImg,
+      identifier: player.playerMode == .music ? "backward" : "skipBackward")
+    (nextButton as? PlayerTransportButton)?.renderSymbol(nextImg,
+      identifier: player.playerMode == .music ? "forward" : "skipForward")
     previousButton.accessibilityLabel = player.playerMode == .podcast ?
       "Back 15 seconds".localized : "Previous track".localized
     nextButton.accessibilityLabel = player.playerMode == .podcast ? "Forward 30 seconds".localized : "Next track".localized
@@ -251,7 +257,8 @@ class PlayerUIHandler: NSObject {
   }
 
   func refreshAutoplayButton(autoplayButton: UIButton) {
-    let isActive = appDelegate.storage.settings.user.isAutoplayEnabled
+    let isAvailable = player.playerMode == .music && player.repeatMode == .off
+    let isActive = appDelegate.storage.settings.user.isAutoplayEnabled && isAvailable
 
     switch style {
     case .miniPlayeriOS, .miniPlayerMac:
@@ -265,7 +272,7 @@ class PlayerUIHandler: NSObject {
         .withConfiguration(UIImage.SymbolConfiguration(scale: .medium))
       autoplayButton.configuration = config
     }
-    autoplayButton.isEnabled = player.playerMode == .music
+    autoplayButton.isEnabled = isAvailable
     autoplayButton.isSelected = isActive
   }
 

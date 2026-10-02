@@ -29,6 +29,7 @@ enum PlayerSectionCategory: Int, CaseIterable {
   case currentlyPlaying
   case userQueue
   case contextNext
+  case autoplay
 }
 
 // MARK: - PopupPlayerVC + UITableViewDataSource, UITableViewDelegate
@@ -111,6 +112,7 @@ extension PopupPlayerVC: UITableViewDataSource, UITableViewDelegate {
       (.contextPrev, contextPrevQueueSectionHeader, player.prevQueueCount > 0),
       (.userQueue, userQueueSectionHeader, player.userQueueCount > 0),
       (.contextNext, contextNextQueueSectionHeader, true),
+      (.autoplay, autoplayQueueSectionHeader, !player.autoplayQueue.isEmpty),
     ]
     for (section, header, present) in headers {
       guard let header else { continue }
@@ -141,6 +143,8 @@ extension PopupPlayerVC: UITableViewDataSource, UITableViewDelegate {
       }
     case .contextNext:
       return ContextQueueNextSectionHeader.frameHeight
+    case .autoplay:
+      return player.autoplayQueue.isEmpty ? .leastNormalMagnitude : 48
     case .none:
       return .leastNormalMagnitude
     }
@@ -150,7 +154,7 @@ extension PopupPlayerVC: UITableViewDataSource, UITableViewDelegate {
     switch PlayerSectionCategory(rawValue: section) {
     case .contextNext, .contextPrev:
       return UIView()
-    case .currentlyPlaying, .none, .userQueue:
+    case .currentlyPlaying, .none, .userQueue, .autoplay:
       return nil
     }
   }
@@ -160,10 +164,13 @@ extension PopupPlayerVC: UITableViewDataSource, UITableViewDelegate {
     case .contextPrev: return player.prevQueueCount > 0 ? 16 : .leastNormalMagnitude
     case .currentlyPlaying, .none, .userQueue: return .leastNormalMagnitude
     case .contextNext: // calculate footer height to keep currently playing row on top of table view
+      guard player.autoplayQueue.isEmpty else { return .leastNormalMagnitude }
       let heightOfContextNextRows = tableView.frame.height - ContextQueueNextSectionHeader.frameHeight - CurrentlyPlayingTableCell.rowHeight - 8
       let contextNextRowOccupiedHeight = CGFloat(player.nextQueueCount) * tableView.rowHeight
       let offset = heightOfContextNextRows - contextNextRowOccupiedHeight
       return offset > 0.0 ? offset : .leastNormalMagnitude
+    case .autoplay:
+      return .leastNormalMagnitude
     }
   }
 
@@ -173,6 +180,7 @@ extension PopupPlayerVC: UITableViewDataSource, UITableViewDelegate {
     case .currentlyPlaying: return 1
     case .userQueue: return player.userQueueCount
     case .contextNext: return player.nextQueueCount
+    case .autoplay: return player.autoplayQueue.count
     case .none: return 0
     }
   }
@@ -180,7 +188,7 @@ extension PopupPlayerVC: UITableViewDataSource, UITableViewDelegate {
   func tableView(_ tableView: UITableView, heightForRowAt indexPath: IndexPath) -> CGFloat {
     let sectionCategors = PlayerSectionCategory(rawValue: indexPath.section)
     switch sectionCategors {
-    case .contextNext, .contextPrev, .none, .userQueue:
+    case .contextNext, .contextPrev, .none, .userQueue, .autoplay:
       return tableView.rowHeight
     case .currentlyPlaying:
       return CurrentlyPlayingTableCell.rowHeight + 8
@@ -189,6 +197,19 @@ extension PopupPlayerVC: UITableViewDataSource, UITableViewDelegate {
 
   func tableView(_ tableView: UITableView, cellForRowAt indexPath: IndexPath) -> UITableViewCell {
     switch PlayerSectionCategory(rawValue: indexPath.section) {
+    case .autoplay:
+      let cell: PlayableTableCell = self.tableView.dequeueCell(for: tableView, at: indexPath)
+      let songs = player.autoplayQueue
+      guard songs.indices.contains(indexPath.row) else { return cell }
+      cell.display(playable: songs[indexPath.row], playContextCb: nil, rootView: self,
+        playAction: { [weak self, weak cell] in
+          guard let self, let cell, let currentIndexPath = self.tableView.indexPath(for: cell),
+                currentIndexPath.section == PlayerSectionCategory.autoplay.rawValue else { return }
+          player.playAutoplay(at: currentIndexPath.row)
+        })
+      cell.backgroundColor = .clear
+      cell.maskCell(fromTop: 0)
+      return cell
     case .contextNext, .contextPrev, .userQueue:
       let cell: PlayableTableCell = self.tableView.dequeueCell(for: tableView, at: indexPath)
       guard let playerIndex = PlayerIndex.create(from: indexPath),
@@ -222,7 +243,7 @@ extension PopupPlayerVC: UITableViewDataSource, UITableViewDelegate {
   func tableView(_ tableView: UITableView, canEditRowAt indexPath: IndexPath) -> Bool {
     switch PlayerSectionCategory(rawValue: indexPath.section) {
     case .contextNext, .contextPrev, .userQueue: return true
-    case .currentlyPlaying, .none: return false
+    case .currentlyPlaying, .none, .autoplay: return false
     }
   }
 
@@ -265,7 +286,8 @@ extension PopupPlayerVC: UITableViewDataSource, UITableViewDelegate {
     -> IndexPath {
     refreshCellMasks()
     // deny moving rows to currently playing section
-    if PlayerSectionCategory(rawValue: targetIndexPath.section) == .currentlyPlaying {
+    if let targetSection = PlayerSectionCategory(rawValue: targetIndexPath.section),
+       [PlayerSectionCategory.currentlyPlaying, .autoplay].contains(targetSection) {
       return sourceIndexPath
     } else {
       return targetIndexPath
@@ -277,7 +299,7 @@ extension PopupPlayerVC: UITableViewDataSource, UITableViewDelegate {
     // Return false if you do not want the item to be re-orderable.
     switch PlayerSectionCategory(rawValue: indexPath.section) {
     case .contextNext, .contextPrev, .userQueue: return true
-    case .currentlyPlaying, .none: return false
+    case .currentlyPlaying, .none, .autoplay: return false
     }
   }
 

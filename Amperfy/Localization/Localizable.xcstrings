@@ -683,6 +683,12 @@
         }
       }
     },
+    "Autoplay": {
+      "localizations": {
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "自动续播" } },
+        "zh-Hant": { "stringUnit": { "state": "translated", "value": "自動續播" } }
+      }
+    },
     "Autoplay After End": {
       "extractionState": "manual",
       "localizations": {

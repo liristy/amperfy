@@ -1668,6 +1668,48 @@ public class LibraryStorage: PlayableFileCachable {
     return songs ?? [Song]()
   }
 
+  // A bounded local fallback for servers without a similar-song endpoint.
+  // Prefer genre/artist matches and avoid recently played songs when possible.
+  func getAutoplaySongs(
+    seed: Song,
+    excluding excluded: Set<NSManagedObjectID>,
+    recent: Set<NSManagedObjectID>,
+    count: Int,
+    onlyCached: Bool
+  ) -> [Song] {
+    guard let account = seed.account, count > 0 else { return [] }
+    let base = NSCompoundPredicate(andPredicateWithSubpredicates: [
+      getFetchPredicate(forAccount: account),
+      SongMO.excludeServerDeleteUncachedSongsFetchPredicate,
+      getFetchPredicate(onlyCachedSongs: onlyCached),
+      NSPredicate(format: "NOT (SELF IN %@)", Array(excluded.union([seed.managedObject.objectID]))),
+    ])
+    func fetch(_ extra: NSPredicate?) -> [Song] {
+      let request = SongMO.identifierSortedFetchRequest
+      request.predicate = extra.map {
+        NSCompoundPredicate(andPredicateWithSubpredicates: [base, $0])
+      } ?? base
+      request.fetchLimit = 200
+      return (try? context.fetch(request))?.map { Song(managedObject: $0) } ?? []
+    }
+    var matches: [NSPredicate] = []
+    if let artist = seed.artist { matches.append(getFetchPredicate(forArtist: artist)) }
+    if let genre = seed.genre { matches.append(getFetchPredicate(forGenre: genre)) }
+    var candidates = matches.isEmpty ? [] : fetch(NSCompoundPredicate(orPredicateWithSubpredicates: matches))
+    if candidates.filter({ !recent.contains($0.managedObject.objectID) }).count < count {
+      candidates.append(contentsOf: fetch(nil))
+    }
+    var seen = Set<NSManagedObjectID>()
+    candidates = candidates.shuffled().filter { seen.insert($0.managedObject.objectID).inserted }
+    func score(_ song: Song) -> Int {
+      var value = recent.contains(song.managedObject.objectID) ? -100 : 0
+      if let artist = seed.artist, song.artist == artist { value += 4 }
+      if let genre = seed.genre, song.genre == genre { value += 2 }
+      return value
+    }
+    return Array(candidates.sorted { score($0) > score($1) }.prefix(count))
+  }
+
   public func getSongsForCompleteLibraryDownload(for account: Account) -> [Song] {
     let fetchRequest = SongMO.identifierSortedFetchRequest
     fetchRequest.predicate = NSCompoundPredicate(andPredicateWithSubpredicates: [

@@ -87,6 +87,7 @@ class PlayableTableCell: BasicTableCell {
   private var style = PlayableTableCellStyle.none
   private var playerIndexCb: GetPlayerIndexFromTableCellCallback?
   private var playContextCb: GetPlayContextFromTableCellCallback?
+  private var playAction: (() -> Void)?
   private var playable: AbstractPlayable?
   private var download: Download?
   private var rootView: UIViewController?
@@ -192,7 +193,8 @@ class PlayableTableCell: BasicTableCell {
     playerIndexCb: GetPlayerIndexFromTableCellCallback? = nil,
     isDislayAlbumTrackNumberStyle: Bool = false,
     download: Download? = nil,
-    isMarked: Bool = false
+    isMarked: Bool = false,
+    playAction: (() -> Void)? = nil
   ) {
     if playIndicator?.rootViewTypeName != rootView.typeName {
       playIndicator = PlayIndicator(rootViewTypeName: rootView.typeName)
@@ -201,6 +203,7 @@ class PlayableTableCell: BasicTableCell {
     self.playable = playable
     self.displayMode = displayMode
     self.playContextCb = playContextCb
+    self.playAction = playAction
     self.playerIndexCb = playerIndexCb
     self.rootView = rootView
     self.isDislayAlbumTrackNumberStyle = isDislayAlbumTrackNumberStyle
@@ -468,6 +471,11 @@ class PlayableTableCell: BasicTableCell {
 
   func playThisSong() {
     guard let playable = playable else { return }
+    if let playAction {
+      guard playable.isCached || appDelegate.storage.settings.user.isOnlineMode else { return }
+      playAction()
+      return
+    }
     if let playerIndex = playerIndexCb?(self) {
       appDelegate.player.play(playerIndex: playerIndex)
     } else if let context = playContextCb?(self),

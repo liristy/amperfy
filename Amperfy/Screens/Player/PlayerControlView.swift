@@ -23,7 +23,110 @@ import AmperfyKit
 import AVFAudio
 import MarqueeLabel
 import MediaPlayer
+import Symbols
 import UIKit
+
+// MARK: - PlayerTransportButton
+
+final class PlayerTransportButton: UIButton {
+  private let pressDisc = UIView()
+  private let symbolView = UIImageView()
+  private var symbolIdentifier: String?
+  private var skipOverlay: UIView?
+  private var skipAnimationID = UUID()
+
+  override func awakeFromNib() {
+    super.awakeFromNib()
+    pressDisc.backgroundColor = .white.withAlphaComponent(0.12)
+    pressDisc.alpha = 0
+    for view in [pressDisc, symbolView] {
+      view.isUserInteractionEnabled = false
+      addSubview(view)
+    }
+    symbolView.contentMode = .center
+    symbolView.tintColor = .white
+  }
+
+  override func layoutSubviews() {
+    super.layoutSubviews()
+    imageView?.isHidden = true
+    let side = min(56, min(bounds.width, bounds.height))
+    pressDisc.bounds = CGRect(x: 0, y: 0, width: side, height: side)
+    pressDisc.center = CGPoint(x: bounds.midX, y: bounds.midY)
+    pressDisc.layer.cornerRadius = side / 2
+    symbolView.bounds = CGRect(origin: .zero, size: symbolView.image?.size ?? .zero)
+    symbolView.center = pressDisc.center
+    skipOverlay?.center = pressDisc.center
+  }
+
+  override var isHighlighted: Bool {
+    didSet {
+      guard oldValue != isHighlighted else { return }
+      let pressed = isHighlighted
+      UIView.animate(withDuration: pressed ? 0.1 : 0.32, delay: 0,
+        usingSpringWithDamping: pressed ? 1 : 0.6, initialSpringVelocity: 0,
+        options: [.beginFromCurrentState, .allowUserInteraction]) {
+        self.pressDisc.alpha = pressed ? 1 : 0
+        self.symbolView.transform = pressed && !UIAccessibility.isReduceMotionEnabled ?
+          CGAffineTransform(scaleX: 0.78, y: 0.78) : .identity
+      }
+    }
+  }
+
+  func renderSymbol(_ image: UIImage, identifier: String) {
+    guard symbolIdentifier != identifier else { return }
+    let animated = symbolIdentifier != nil && window != nil && !UIAccessibility.isReduceMotionEnabled
+    symbolIdentifier = identifier
+    if animated {
+      symbolView.setSymbolImage(image, contentTransition: .replace, options: .speed(1.2))
+    } else {
+      symbolView.image = image
+    }
+    setNeedsLayout()
+  }
+
+  func animateActivation(direction: CGFloat = 0) {
+    pressDisc.layer.removeAllAnimations()
+    pressDisc.alpha = 1
+    UIView.animate(withDuration: 0.3, delay: 0.05, options: [.allowUserInteraction, .beginFromCurrentState]) {
+      self.pressDisc.alpha = 0
+    }
+    guard direction != 0, !UIAccessibility.isReduceMotionEnabled,
+          let image = symbolView.image else { return }
+    skipOverlay?.removeFromSuperview()
+    let animationID = UUID()
+    skipAnimationID = animationID
+    let overlay = UIView(frame: CGRect(origin: .zero, size: image.size))
+    overlay.center = pressDisc.center
+    overlay.clipsToBounds = true
+    overlay.isUserInteractionEnabled = false
+    let slotWidth = image.size.width / 2
+    var triangles: [UIImageView] = []
+    for slot in -1...1 {
+      let triangle = UIImageView(image: UIImage(systemName: "play.fill"))
+      triangle.tintColor = .white
+      triangle.contentMode = .scaleAspectFit
+      triangle.frame = CGRect(x: CGFloat(slot) * slotWidth, y: 0, width: slotWidth, height: image.size.height)
+      if direction < 0 {
+        triangle.frame.origin.x = CGFloat(slot + 1) * slotWidth
+        triangle.transform = CGAffineTransform(rotationAngle: .pi)
+      }
+      overlay.addSubview(triangle)
+      triangles.append(triangle)
+    }
+    addSubview(overlay)
+    skipOverlay = overlay
+    symbolView.alpha = 0
+    UIView.animate(withDuration: 0.26, delay: 0, options: [.curveEaseOut, .allowUserInteraction]) {
+      for triangle in triangles { triangle.center.x += direction * slotWidth }
+    } completion: { [weak self, weak overlay] _ in
+      overlay?.removeFromSuperview()
+      guard let self, skipAnimationID == animationID else { return }
+      skipOverlay = nil
+      symbolView.alpha = 1
+    }
+  }
+}
 
 // MARK: - PlayerControlView
 
@@ -378,17 +481,20 @@ class PlayerControlView: UIView {
 
   @IBAction
   func playButtonPushed(_ sender: Any) {
+    (playButton as? PlayerTransportButton)?.animateActivation()
     playerHandler?.playButtonPushed()
     playerHandler?.refreshPlayButton(playButton)
   }
 
   @IBAction
   func previousButtonPushed(_ sender: Any) {
+    (previousButton as? PlayerTransportButton)?.animateActivation(direction: player.playerMode == .music ? -1 : 0)
     playerHandler?.previousButtonPushed()
   }
 
   @IBAction
   func nextButtonPushed(_ sender: Any) {
+    (nextButton as? PlayerTransportButton)?.animateActivation(direction: player.playerMode == .music ? 1 : 0)
     playerHandler?.nextButtonPushed()
   }
 

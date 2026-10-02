@@ -161,6 +161,9 @@ public protocol PlayerFacade {
   var nextQueueCount: Int { get }
   func getNextQueueItems(from: Int, to: Int?) -> [AbstractPlayable]
   func getAllNextQueueItems() -> [AbstractPlayable]
+  var autoplayQueue: [Song] { get }
+  func setAutoplayEnabled(_ enabled: Bool)
+  func playAutoplay(at index: Int)
 
   var totalPlayDuration: Int { get }
   var remainingPlayDuration: Int { get }
@@ -456,9 +459,20 @@ class PlayerFacadeImpl: PlayerFacade {
     musicPlayer.notifyRepeatUpdated()
   }
 
+  var autoplayQueue: [Song] { musicPlayer.autoplayQueue }
+
+  func setAutoplayEnabled(_ enabled: Bool) {
+    musicPlayer.setAutoplayEnabled(enabled)
+  }
+
+  func playAutoplay(at index: Int) { musicPlayer.playAutoplay(at: index) }
+
   var isOfflineMode: Bool {
     get { backendAudioPlayer.isOfflineMode }
-    set { backendAudioPlayer.isOfflineMode = newValue }
+    set {
+      backendAudioPlayer.isOfflineMode = newValue
+      musicPlayer.autoplaySettingDidChange()
+    }
   }
 
   var isShouldPauseAfterFinishedPlaying: Bool {
@@ -537,21 +551,25 @@ class PlayerFacadeImpl: PlayerFacade {
 
   func insertContextQueue(playables: [AbstractPlayable]) {
     queueHandler.insertContextQueue(playables: playables)
+    musicPlayer.prepareAutoplayIfNeeded()
     musicPlayer.notifyPlaylistUpdated()
   }
 
   func appendContextQueue(playables: [AbstractPlayable]) {
     queueHandler.appendContextQueue(playables: playables)
+    musicPlayer.prepareAutoplayIfNeeded()
     musicPlayer.notifyPlaylistUpdated()
   }
 
   func insertUserQueue(playables: [AbstractPlayable]) {
     queueHandler.insertUserQueue(playables: playables)
+    musicPlayer.prepareAutoplayIfNeeded()
     musicPlayer.notifyPlaylistUpdated()
   }
 
   func appendUserQueue(playables: [AbstractPlayable]) {
     queueHandler.appendUserQueue(playables: playables)
+    musicPlayer.prepareAutoplayIfNeeded()
     musicPlayer.notifyPlaylistUpdated()
   }
 
