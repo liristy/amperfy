@@ -110,6 +110,10 @@ public class AmperKit {
     createPlayer()
   }()
 
+  // The host app supplies its current UI state. Extensions default to no
+  // visual work without depending on UIApplication.shared.
+  public var playerVisualUpdatesEnabledAtCreation: @MainActor () -> Bool = { false }
+
   // internal player helper classes that interact only via player callbacks
   private var playerDownloadPreparationHandler: PlayerDownloadPreparationHandler?
   private var playerAudioSessionHandler: AudioSessionHandler?
@@ -132,7 +136,8 @@ public class AmperKit {
         self.getMeta(accountInfo).playableDownloadManager
       },
       cacheProxy: storage.main.library,
-      userStatistics: userStatistics
+      userStatistics: userStatistics,
+      visualUpdatesEnabled: playerVisualUpdatesEnabledAtCreation()
     )
 
     backendAudioPlayer.setStreamingMaxBitrates(to: StreamingMaxBitrates(

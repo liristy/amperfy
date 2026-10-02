@@ -256,6 +256,9 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
     didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?
   )
     -> Bool {
+    AmperKit.shared.playerVisualUpdatesEnabledAtCreation = {
+      UIApplication.shared.applicationState != .background
+    }
     if let options = launchOptions {
       os_log("application launch with options:", log: self.log, type: .info)
       options

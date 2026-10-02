@@ -210,7 +210,8 @@ class BackendAudioPlayer: NSObject {
     networkMonitor: NetworkMonitorFacade,
     getPlayableDownloaderCB: @escaping GetPlayableDownloadManagerCallback,
     cacheProxy: PlayableFileCachable,
-    userStatistics: UserStatistics
+    userStatistics: UserStatistics,
+    visualUpdatesEnabled: Bool = true
   ) {
     self.createAudioStreamingPlayerCB = createAudioStreamingPlayerCB
     self.audioSessionHandler = audioSessionHandler
@@ -224,7 +225,7 @@ class BackendAudioPlayer: NSObject {
 
     super.init()
 
-    isVisualUpdatesEnabled = UIApplication.shared.applicationState != .background
+    isVisualUpdatesEnabled = visualUpdatesEnabled
     audioAnalyzer.isInForeground = isVisualUpdatesEnabled
     NotificationCenter.default.addObserver(
       self, selector: #selector(applicationDidEnterBackground),
