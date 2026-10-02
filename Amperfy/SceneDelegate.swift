@@ -1694,7 +1694,9 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
               try await Task.sleep(for: .milliseconds(1500))
             }
           } else {
-            try await Task.sleep(for: .seconds(30))
+            // Leave room for Settings' first launch and the background callback
+            // before the external sampler's 20-second measurement window.
+            try await Task.sleep(for: .seconds(phase.contains("background") ? 60 : 30))
           }
           guard player.isPlaying == playing else { throw NSError(domain: "ResourceProfile", code: 4) }
         }
