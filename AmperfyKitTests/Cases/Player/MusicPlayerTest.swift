@@ -25,6 +25,7 @@ import AVFoundation
 import CoreData
 import MediaPlayer
 import XCTest
+import UIKit
 
 // MARK: - MOCK_AudioStreamingPlayer
 
@@ -277,6 +278,8 @@ final class MOCK_NetworkMonitor: NetworkMonitorFacade {
 
 class MOCK_MusicPlayable: MusicPlayable {
   var thrownError: Error?
+  var lyricsTimes: [CMTime] = []
+  var elapsedTimeChangeCount = 0
 
   var expectationDidStartPlaying: XCTestExpectation?
   var expectationErrorOccurred: XCTestExpectation?
@@ -288,7 +291,8 @@ class MOCK_MusicPlayable: MusicPlayable {
 
   func didPause() {}
   func didStopPlaying() {}
-  func didElapsedTimeChange() {}
+  func didElapsedTimeChange() { elapsedTimeChangeCount += 1 }
+  func didLyricsTimeChange(time: CMTime) { lyricsTimes.append(time) }
   func didPlaylistChange() {}
   func didArtworkChange() {}
   func didShuffleChange() {}
@@ -425,6 +429,79 @@ class MusicPlayerTest: XCTestCase {
     }
     XCTAssertEqual(testPlayer.playType, .stream)
     XCTAssertEqual(testPlayer.currentlyPlaying, songToDownload)
+  }
+
+  func testBackgroundStopsLyricsButKeepsPlaybackAndProgress() async throws {
+    NotificationCenter.default.post(name: UIApplication.didBecomeActiveNotification, object: nil)
+    try await startScrobbleStream()
+    for _ in 0..<100 {
+      if !mockMusicPlayable.lyricsTimes.isEmpty { break }
+      try await Task.sleep(for: .milliseconds(20))
+    }
+    XCTAssertFalse(mockMusicPlayable.lyricsTimes.isEmpty)
+
+    NotificationCenter.default.post(name: UIApplication.didEnterBackgroundNotification, object: nil)
+    let backgroundLyricsCount = mockMusicPlayable.lyricsTimes.count
+    let progressCount = mockMusicPlayable.elapsedTimeChangeCount
+    mockAudioStreamingPlayer.mockElapsedTime = 21
+    for _ in 0..<150 {
+      if mockMusicPlayable.elapsedTimeChangeCount > progressCount { break }
+      try await Task.sleep(for: .milliseconds(20))
+    }
+    XCTAssertEqual(mockMusicPlayable.lyricsTimes.count, backgroundLyricsCount)
+    XCTAssertGreaterThan(mockMusicPlayable.elapsedTimeChangeCount, progressCount)
+    XCTAssertTrue(testPlayer.isPlaying)
+    XCTAssertTrue(mockAudioStreamingPlayer.isPlaying)
+    XCTAssertFalse(backendPlayer.audioAnalyzer.isInForeground)
+
+    NotificationCenter.default.post(name: UIApplication.didBecomeActiveNotification, object: nil)
+    XCTAssertEqual(mockMusicPlayable.lyricsTimes.last?.seconds, 21)
+    let foregroundLyricsCount = mockMusicPlayable.lyricsTimes.count
+    for _ in 0..<100 {
+      if mockMusicPlayable.lyricsTimes.count > foregroundLyricsCount { break }
+      try await Task.sleep(for: .milliseconds(20))
+    }
+    XCTAssertGreaterThan(mockMusicPlayable.lyricsTimes.count, foregroundLyricsCount)
+    XCTAssertTrue(backendPlayer.audioAnalyzer.isInForeground)
+
+    testPlayer.pause()
+    NotificationCenter.default.post(name: UIApplication.didEnterBackgroundNotification, object: nil)
+    NotificationCenter.default.post(name: UIApplication.didBecomeActiveNotification, object: nil)
+    let pausedLyricsCount = mockMusicPlayable.lyricsTimes.count
+    try await Task.sleep(for: .milliseconds(250))
+    XCTAssertEqual(mockMusicPlayable.lyricsTimes.count, pausedLyricsCount)
+    XCTAssertFalse(testPlayer.isPlaying)
+  }
+
+  func testBackgroundDropsQueuedVisualizerUpdateAndForegroundResumes() async throws {
+    let analyzer = backendPlayer.audioAnalyzer
+    backendPlayer.setVisualUpdatesEnabled(true)
+    analyzer.isActive = true
+    analyzer.playing(sampleRate: 16_000)
+    analyzer.play()
+    let format = try XCTUnwrap(AVAudioFormat(standardFormatWithSampleRate: 16_000, channels: 1))
+    let buffer = try XCTUnwrap(AVAudioPCMBuffer(pcmFormat: format, frameCapacity: 256))
+    buffer.frameLength = 256
+    let data = try XCTUnwrap(buffer.floatChannelData).pointee
+    for index in 0..<256 { data[index] = 0.5 }
+    let time = AVAudioTime(sampleTime: 0, atRate: 16_000)
+
+    analyzer.calculate(buffer: buffer, audioTime: time)
+    backendPlayer.setVisualUpdatesEnabled(false)
+    await Task.yield()
+    XCTAssertEqual(analyzer.rms, 0, "A queued foreground result must not publish in the background")
+    analyzer.calculate(buffer: buffer, audioTime: time)
+    await Task.yield()
+    XCTAssertEqual(analyzer.rms, 0)
+    XCTAssertTrue(analyzer.isActive, "Backgrounding must preserve the selected visualizer")
+
+    backendPlayer.setVisualUpdatesEnabled(true)
+    analyzer.calculate(buffer: buffer, audioTime: time)
+    for _ in 0..<10 {
+      if analyzer.rms > 0 { break }
+      await Task.yield()
+    }
+    XCTAssertGreaterThan(analyzer.rms, 0)
   }
 
   func testStreamScrobbleSubmitsAtThresholdOnlyOnceAcrossPauseAndResume() async throws {

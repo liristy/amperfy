@@ -305,6 +305,7 @@ class LargeCurrentlyPlayingPlayerView: UIView {
   }
 
   func refreshLyricsTime(time: CMTime) {
+    guard isDisplayingLyrics else { return }
     lyricsView?.scroll(toTime: time)
   }
 

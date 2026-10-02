@@ -110,6 +110,7 @@ class BackendAudioPlayer: NSObject {
   }
   private var timerElapsedTimeInterval: Timer?
   private var timerLyricsTimeInterval: Timer?
+  private var isVisualUpdatesEnabled = true
   private var volumePlayer: Float = 1.0
 
   private var player: AudioStreamingPlayer?
@@ -223,7 +224,44 @@ class BackendAudioPlayer: NSObject {
 
     super.init()
 
+    isVisualUpdatesEnabled = UIApplication.shared.applicationState != .background
+    audioAnalyzer.isInForeground = isVisualUpdatesEnabled
+    NotificationCenter.default.addObserver(
+      self, selector: #selector(applicationDidEnterBackground),
+      name: UIApplication.didEnterBackgroundNotification, object: nil
+    )
+    NotificationCenter.default.addObserver(
+      self, selector: #selector(applicationDidBecomeActive),
+      name: UIApplication.didBecomeActiveNotification, object: nil
+    )
     initAudioStreamingPlayerAndNodes()
+  }
+
+  @objc private func applicationDidEnterBackground() {
+    setVisualUpdatesEnabled(false)
+  }
+
+  @objc private func applicationDidBecomeActive() {
+    setVisualUpdatesEnabled(true)
+  }
+
+  func setVisualUpdatesEnabled(_ enabled: Bool) {
+    guard isVisualUpdatesEnabled != enabled else { return }
+    isVisualUpdatesEnabled = enabled
+    audioAnalyzer.isInForeground = enabled
+    stopLyricsTimer()
+    if enabled {
+      // Refresh once even when paused: the playhead may have changed while
+      // the app was hidden. Only playing starts the high-frequency timer.
+      notifyLyricsTimeChanged()
+      startLyricsTimerIfNeeded()
+    }
+  }
+
+  private func notifyLyricsTimeChanged() {
+    let seconds = elapsedTime
+    guard seconds.isFinite, seconds >= 0 else { return }
+    responder?.didLyricsTimeChange(time: CMTime(seconds: seconds, preferredTimescale: 1_000))
   }
 
   private func startTimers() {
@@ -245,14 +283,21 @@ class BackendAudioPlayer: NSObject {
         self.responder?.didElapsedTimeChange()
       }
     }
+    // Keep playback bookkeeping, preload and lock-screen updates at 1 Hz.
+    timerElapsedTimeInterval?.tolerance = 0.1
+    startLyricsTimerIfNeeded()
+  }
+
+  private func startLyricsTimerIfNeeded() {
+    guard isPlaying, isVisualUpdatesEnabled, timerLyricsTimeInterval == nil else { return }
     timerLyricsTimeInterval = Timer(
       timeInterval: updateLyricsTimeInterval.seconds,
       repeats: true
     ) { [weak self] timer in
       Task { @MainActor in
-        guard let self = self else { return }
-        let cmTime = CMTime(value: Int64(self.elapsedTime * 1_000), timescale: 1_000)
-        self.responder?.didLyricsTimeChange(time: cmTime)
+        // A callback queued before backgrounding or pausing must not refresh UI.
+        guard let self, self.isPlaying, self.isVisualUpdatesEnabled else { return }
+        self.notifyLyricsTimeChanged()
       }
     }
     // Keep synchronized highlighting alive while a scroll view is tracking touches.
@@ -263,7 +308,13 @@ class BackendAudioPlayer: NSObject {
 
   private func stopTimers() {
     timerElapsedTimeInterval?.invalidate()
+    timerElapsedTimeInterval = nil
+    stopLyricsTimer()
+  }
+
+  private func stopLyricsTimer() {
     timerLyricsTimeInterval?.invalidate()
+    timerLyricsTimeInterval = nil
   }
 
   private func checkForPreloadNextPlayerItem() {
