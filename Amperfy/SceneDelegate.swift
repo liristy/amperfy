@@ -1620,8 +1620,8 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
         appDelegate.storage.settings.user.playerDisplayStyle = .large
         appDelegate.storage.settings.user.isPlayerLyricsDisplayed = false
         appDelegate.storage.settings.user.isPlayerVisualizerDisplayed = false
+        appDelegate.player.isAutoCachePlayedItems = false
         let player = appDelegate.player
-        player.isAutoCachePlayedItems = false
         player.setRepeatMode(.off)
         player.play(context: PlayContext(name: "Resource profile", playables: (0..<24).map { _ in song }))
         try await Task.sleep(for: .seconds(3))
