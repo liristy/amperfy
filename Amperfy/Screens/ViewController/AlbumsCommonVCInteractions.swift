@@ -56,7 +56,7 @@ class SliderMenuView: UIView {
   var stepValue: Float = 1.0
   var sliderValueChangedCB: VoidFunctionCallback?
   #if !targetEnvironment(macCatalyst)
-    private var systemVolume: MPVolumeView?
+    private var systemVolume: DragOnlySystemVolumeView?
 
     func useSystemVolume() {
       guard systemVolume == nil else { return }
