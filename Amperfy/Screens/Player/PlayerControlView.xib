@@ -231,24 +231,15 @@
                         <constraint firstAttribute="width" secondItem="1aU-Ga-twf" secondAttribute="height" multiplier="1:1" id="hRM-lb-6Ye"/>
                     </constraints>
                 </imageView>
-                <button opaque="NO" clipsSubviews="YES" contentMode="scaleAspectFit" contentHorizontalAlignment="center" contentVerticalAlignment="center" buttonType="system" adjustsImageSizeForAccessibilityContentSizeCategory="YES" lineBreakMode="middleTruncation" preferredBehavioralStyle="pad" translatesAutoresizingMaskIntoConstraints="NO" id="6Pl-OT-ev0" userLabel="Volume Button">
+                <imageView clipsSubviews="YES" userInteractionEnabled="NO" contentMode="center" image="speaker.wave.3.fill" catalog="system" translatesAutoresizingMaskIntoConstraints="NO" id="6Pl-OT-ev0" userLabel="Volume Speaker">
                     <rect key="frame" x="204" y="0.0" width="28" height="28"/>
                     <constraints>
                         <constraint firstAttribute="width" secondItem="6Pl-OT-ev0" secondAttribute="height" multiplier="1:1" id="17H-kZ-Fa5"/>
                         <constraint firstAttribute="width" constant="44" id="Pf6-ox-Kmc"/>
                         <constraint firstAttribute="width" secondItem="6Pl-OT-ev0" secondAttribute="height" multiplier="1:1" id="rZT-aA-wsC"/>
                     </constraints>
-                    <fontDescription key="fontDescription" type="system" pointSize="12"/>
-                    <color key="tintColor" systemColor="labelColor"/>
-                    <inset key="contentEdgeInsets" minX="2" minY="2" maxX="2" maxY="2"/>
-                    <state key="normal">
-                        <color key="titleColor" systemColor="labelColor"/>
-                        <imageReference key="image" image="speaker.wave.3.fill" catalog="system" symbolScale="medium"/>
-                    </state>
-                    <connections>
-                        <action selector="volumeButtonPressed:" destination="iN0-l3-epB" eventType="touchUpInside" id="hyp-0o-Z8e"/>
-                    </connections>
-                </button>
+                    <color key="tintColor" white="1" alpha="0.5" colorSpace="custom" customColorSpace="genericGamma22GrayColorSpace"/>
+                </imageView>
             </subviews>
             <viewLayoutGuide key="safeArea" id="vUN-kp-3ea"/>
             <gestureRecognizers/>
@@ -294,7 +285,7 @@
                 <outlet property="skipBackwardButton" destination="PZj-JS-NGq" id="q0L-Ve-YvK"/>
                 <outlet property="skipForwardButton" destination="QO0-Ep-X2s" id="idR-HQ-cSv"/>
                 <outlet property="timeSlider" destination="42q-l9-IXM" id="Uit-8D-ekQ"/>
-                <outlet property="volumeButton" destination="6Pl-OT-ev0" id="5TF-KD-MEC"/>
+                <outlet property="loudSpeaker" destination="6Pl-OT-ev0" id="5TF-KD-MEC"/>
             </connections>
             <point key="canvasLocation" x="138.40000000000001" y="99.400299850074973"/>
         </view>

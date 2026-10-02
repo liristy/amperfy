@@ -94,7 +94,7 @@ class PlayerControlView: UIView {
   @IBOutlet
   weak var displayPlaylistButton: UIButton!
   @IBOutlet
-  weak var volumeButton: UIButton!
+  weak var loudSpeaker: UIImageView!
   @IBOutlet
   weak var lyricsButton: UIButton!
 
@@ -134,7 +134,6 @@ class PlayerControlView: UIView {
     }
     airplayButton.accessibilityLabel = "AirPlay"
     displayPlaylistButton.accessibilityLabel = "Playing next".localized
-    volumeButton.accessibilityLabel = "Volume options".localized
     lyricsButton.addTarget(self, action: #selector(lyricsPressed), for: .touchUpInside)
 
     playButton.imageView?.tintColor = .label
@@ -144,7 +143,6 @@ class PlayerControlView: UIView {
     skipForwardButton.tintColor = .label
     airplayButton.tintColor = .label
     playerModeButton.tintColor = .label
-    volumeButton.tintColor = .label
     refreshPlayer()
 
     registerForTraitChanges(
@@ -163,6 +161,8 @@ class PlayerControlView: UIView {
   }
 
   private func configureVolumeSlider() {
+    loudSpeaker.tintColor = .white.withAlphaComponent(0.5)
+    loudSpeaker.isAccessibilityElement = false
     volumeSlider.translatesAutoresizingMaskIntoConstraints = false
     #if targetEnvironment(macCatalyst)
       volumeSlider.minimumValue = 0
@@ -195,12 +195,12 @@ class PlayerControlView: UIView {
     addSubview(quietSpeaker)
     NSLayoutConstraint.activate([
       quietSpeaker.leadingAnchor.constraint(equalTo: layoutMarginsGuide.leadingAnchor),
-      quietSpeaker.centerYAnchor.constraint(equalTo: volumeButton.centerYAnchor),
+      quietSpeaker.centerYAnchor.constraint(equalTo: loudSpeaker.centerYAnchor),
       quietSpeaker.widthAnchor.constraint(equalToConstant: 16),
       quietSpeaker.heightAnchor.constraint(equalToConstant: 16),
       volumeSlider.leadingAnchor.constraint(equalTo: quietSpeaker.trailingAnchor, constant: 12),
-      volumeSlider.trailingAnchor.constraint(equalTo: volumeButton.leadingAnchor, constant: -4),
-      volumeSlider.centerYAnchor.constraint(equalTo: volumeButton.centerYAnchor),
+      volumeSlider.trailingAnchor.constraint(equalTo: loudSpeaker.leadingAnchor, constant: -4),
+      volumeSlider.centerYAnchor.constraint(equalTo: loudSpeaker.centerYAnchor),
       volumeSlider.heightAnchor.constraint(equalToConstant: 32),
     ])
   }
@@ -218,7 +218,7 @@ class PlayerControlView: UIView {
   private func configureIconControls() {
     // Keep the player controls as bare icons with their existing touch targets.
     for button in [playButton, previousButton, nextButton, skipBackwardButton,
-                   skipForwardButton, airplayButton, playerModeButton, volumeButton] {
+                   skipForwardButton, airplayButton, playerModeButton] {
       guard let button else { continue }
       var configuration = UIButton.Configuration.player(isSelected: false)
       configuration.image = button.image(for: .normal)
@@ -427,43 +427,6 @@ class PlayerControlView: UIView {
     #else
       playerHandler?.airplayButtonPushed(rootView: self, airplayButton: airplayButton)
     #endif
-  }
-
-  @IBAction
-  func volumeButtonPressed(_ sender: Any) {
-    showVolumeSliderMenu()
-  }
-
-  func showVolumeSliderMenu() {
-    let popoverContentController = SliderMenuPopover()
-    let sliderMenuView = popoverContentController.sliderMenuView
-    sliderMenuView.frame = CGRect(x: 0, y: 0, width: 250, height: 50)
-
-    #if targetEnvironment(macCatalyst)
-      sliderMenuView.slider.minimumValue = 0
-      sliderMenuView.slider.maximumValue = 100
-      sliderMenuView.slider.value = appDelegate.player.volume * 100
-      sliderMenuView.sliderValueChangedCB = {
-        self.appDelegate.player.volume = Float(sliderMenuView.slider.value) / 100.0
-        self.volumeSlider.value = self.appDelegate.player.volume
-      }
-    #else
-      sliderMenuView.useSystemVolume()
-    #endif
-
-    popoverContentController.modalPresentationStyle = .popover
-    popoverContentController.preferredContentSize = sliderMenuView.frame.size
-
-    if let popoverPresentationController = popoverContentController.popoverPresentationController {
-      popoverPresentationController.permittedArrowDirections = .down
-      popoverPresentationController.delegate = popoverContentController
-      popoverPresentationController.sourceView = volumeButton
-      rootView?.present(
-        popoverContentController,
-        animated: true,
-        completion: nil
-      )
-    }
   }
 
   @IBAction

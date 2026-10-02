@@ -530,11 +530,6 @@ class LargeCurrentlyPlayingPlayerView: UIView {
     rootView?.playerHandler?.refreshArtwork(artworkImage: artworkImage)
   }
 
-  @IBAction
-  func artworkPressed(_ sender: Any) {
-    rootView?.controlView?.displayPlaylistPressed()
-  }
-
   @objc
   func lyricsArtworkPressed() {
     if appDelegate.storage.settings.user.playerDisplayStyle == .compact {
