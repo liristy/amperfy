@@ -1633,22 +1633,39 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
                       "playing_queue_scroll", "playing_lyrics", "paused_lyrics",
                       "playing_visualizer", "playing_transitions", "playing_background", "paused_background"]
         for (index, phase) in phases.enumerated() {
+          resourceProfilePhase = phase
           if let popup = host.presentedViewController as? PopupPlayerVC { popup.dismiss(animated: false) }
-          try await Task.sleep(for: .milliseconds(200))
+          for _ in 0..<100 {
+            if host.presentedViewController == nil { break }
+            try await Task.sleep(for: .milliseconds(100))
+          }
+          guard host.presentedViewController == nil else {
+            throw NSError(domain: "ResourceProfile", code: 6,
+                          userInfo: [NSLocalizedDescriptionKey: "Previous player did not dismiss before \(phase)"])
+          }
           let queue = phase.contains("queue")
           let lyrics = phase.contains("lyrics")
           let visualizer = phase.contains("visualizer")
           appDelegate.storage.settings.user.playerDisplayStyle = queue ? .compact : .large
           appDelegate.storage.settings.user.isPlayerLyricsDisplayed = lyrics
           appDelegate.storage.settings.user.isPlayerVisualizerDisplayed = visualizer
-          player.seek(toSecond: 10)
           let playing = !phase.hasPrefix("paused")
-          if playing { player.play() } else { player.pause() }
+          // A paused phase pauses the current item; do not also start an
+          // asynchronous streaming seek while establishing its paused state.
+          if playing { player.seek(toSecond: 10); player.play() } else { player.pause() }
           miniPlayer.openPlayerView()
+          for _ in 0..<100 {
+            if let popup = host.presentedViewController as? PopupPlayerVC,
+               !popup.isBeingPresented, !popup.isBeingDismissed, popup.view.mask == nil { break }
+            try await Task.sleep(for: .milliseconds(100))
+          }
           try await Task.sleep(for: .seconds(2))
           guard let popup = host.presentedViewController as? PopupPlayerVC,
                 !popup.isBeingPresented, player.isPlaying == playing else {
-            throw NSError(domain: "ResourceProfile", code: 3)
+            let presented = host.presentedViewController
+            throw NSError(domain: "ResourceProfile", code: 3,
+                          userInfo: [NSLocalizedDescriptionKey:
+                            "Could not stage \(phase): presented=\(String(describing: presented)), presenting=\(presented?.isBeingPresented ?? false), playing=\(player.isPlaying), expected=\(playing)"])
           }
           if visualizer { popup.largeCurrentlyPlayingView?.display(element: .visualizer, animated: false) }
           popup.view.layoutIfNeeded()
