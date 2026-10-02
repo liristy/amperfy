@@ -382,6 +382,7 @@ class BackendAudioPlayer: NSObject {
   }
 
   func continuePlay() {
+    shouldPlaybackStart = true
     isPlaying = true
     player?.resume()
     startTimers()
@@ -390,6 +391,9 @@ class BackendAudioPlayer: NSObject {
   }
 
   func pause() {
+    // A delayed engine-start callback must honor a pause requested while the
+    // cached file or stream is still being prepared.
+    shouldPlaybackStart = false
     lastKnownPlaybackTime = resumePlaybackTime
     isPlaying = false
     player?.pause()

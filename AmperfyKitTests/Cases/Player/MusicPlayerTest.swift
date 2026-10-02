@@ -2366,11 +2366,12 @@ class MusicPlayerTest: XCTestCase {
     savedAutoplayEnabled = storage.settings.user.isAutoplayEnabled
     testPlayer.setAutoplayEnabled(false)
     testPlayer.play(context: PlayContext(name: "Single song", playables: [songCached]))
-    for _ in 0..<100 {
-      if testPlayer.isPlaying { break }
+    for _ in 0..<200 {
+      if testPlayer.isPlaying, backendPlayer.canBeContinued { break }
       try await Task.sleep(for: .milliseconds(10))
     }
     XCTAssertTrue(testPlayer.isPlaying)
+    XCTAssertTrue(backendPlayer.canBeContinued)
   }
 
   func testNextAtQueueEndPausesAndKeepsSongPosition() async throws {
@@ -2385,6 +2386,18 @@ class MusicPlayerTest: XCTestCase {
     testPlayer.play()
     XCTAssertTrue(testPlayer.isPlaying)
     XCTAssertEqual(testPlayer.elapsedTime, 23)
+  }
+
+  func testNextDuringFirstPreparationStaysPausedAfterEngineStarts() async throws {
+    savedAutoplayEnabled = storage.settings.user.isAutoplayEnabled
+    testPlayer.setAutoplayEnabled(false)
+    testPlayer.play(context: PlayContext(name: "Cold-start single song", playables: [songCached]))
+    testPlayer.playNext()
+    try await Task.sleep(for: .milliseconds(50))
+    XCTAssertFalse(testPlayer.isPlaying)
+    XCTAssertFalse(mockAudioStreamingPlayer.isPlaying)
+    XCTAssertEqual(testPlayer.currentlyPlaying, songCached)
+    XCTAssertEqual(playerData.currentIndex, 0)
   }
 
   func testAutoplayPrefetchDeduplicatesAndKeepsExplicitQueueSeparate() async throws {
@@ -2953,10 +2966,10 @@ class MusicPlayerTest: XCTestCase {
     testPlayer.setRepeatMode(.single)
     testPlayer.playNext()
     XCTAssertFalse(testPlayer.isPlaying)
-    XCTAssertFalse(playerData.isUserQueuePlaying)
-    checkCurrentlyPlaying(idToBe: 0)
-    checkQueueItems(queue: testQueueHandler.getAllPrevQueueItems(), seedIds: [Int]())
-    checkQueueItems(queue: testQueueHandler.getAllNextQueueItems(), seedIds: [1, 2, 3, 4])
+    XCTAssertTrue(playerData.isUserQueuePlaying)
+    checkCurrentlyPlaying(idToBe: 8)
+    checkQueueItems(queue: testQueueHandler.getAllPrevQueueItems(), seedIds: [0, 1, 2, 3, 4])
+    checkQueueItems(queue: testQueueHandler.getAllNextQueueItems(), seedIds: [Int]())
     checkQueueItems(queue: testQueueHandler.getAllUserQueueItems(), seedIds: [Int]())
     checkQueueInfoConsistency()
   }
@@ -3477,7 +3490,7 @@ class MusicPlayerTest: XCTestCase {
 
     backendPlayer.responder?.didItemFinishedPlaying()
     XCTAssertFalse(testPlayer.isPlaying) // not playing
-    XCTAssertEqual(testPlayer.currentlyPlaying?.id, playlistAllCached.playables[0].id)
+    XCTAssertEqual(testPlayer.currentlyPlaying?.id, playlistAllCached.playables[3].id)
   }
 
   func testSongFinishedPlaying_RepeatSingleAllMix() {
