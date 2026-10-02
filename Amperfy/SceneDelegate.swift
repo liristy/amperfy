@@ -85,6 +85,9 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
   }()
 
   var window: UIWindow?
+  #if DEBUG && targetEnvironment(simulator)
+    private var resourceProfilePhase = ""
+  #endif
 
   func scene(
     _ scene: UIScene,
@@ -149,6 +152,11 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
   func replaceMainRootViewController(vc: UIViewController) {
     window?.rootViewController = vc
     #if DEBUG && targetEnvironment(simulator)
+      if ProcessInfo.processInfo.arguments.contains("--smoke-resource-profile"),
+         vc is MainSceneHostingViewController {
+        Task { @MainActor in await self.runPlayerResourceProfile(on: vc) }
+        return
+      }
       if ProcessInfo.processInfo.arguments.contains("--smoke-login"),
          vc is MainSceneHostingViewController {
         Task { @MainActor in
@@ -1509,6 +1517,15 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
 
     // Save changes in the application's managed object context when the application transitions to the background.
     os_log("sceneDidEnterBackground", log: self.log, type: .info)
+    #if DEBUG && targetEnvironment(simulator)
+      if !resourceProfilePhase.isEmpty {
+        let event: [String: Any] = ["phase": resourceProfilePhase,
+                                    "state": "background", "playing": appDelegate.player.isPlaying]
+        if let data = try? JSONSerialization.data(withJSONObject: event) {
+          try? data.write(to: URL.documentsDirectory.appendingPathComponent("player-resource-background.json"), options: .atomic)
+        }
+      }
+    #endif
     AmperKit.shared.threadPerformanceMonitor.isInForeground = false
     guard appDelegate.isNormalInteraction else {
       return
@@ -1577,3 +1594,99 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
     os_log("didUpdate userActivity: %s", log: self.log, type: .info, userActivity.activityType)
   }
 }
+
+#if DEBUG && targetEnvironment(simulator)
+  extension SceneDelegate {
+    // Test-only UI staging. Sampling runs outside the app so it does not add
+    // an in-app polling timer or prevent a paused app from being suspended.
+    @MainActor private func runPlayerResourceProfile(on host: UIViewController) async {
+      let directory = URL.documentsDirectory
+      func write(_ object: [String: Any], name: String) throws {
+        try JSONSerialization.data(withJSONObject: object, options: [.prettyPrinted, .sortedKeys])
+          .write(to: directory.appendingPathComponent(name), options: .atomic)
+      }
+      do {
+        try await Task.sleep(for: .seconds(10))
+        guard let accountInfo = appDelegate.storage.settings.accounts.active,
+              let miniPlayer = (host as? MainSceneHostingViewController)?.miniPlayer else {
+          throw NSError(domain: "ResourceProfile", code: 1)
+        }
+        let library = appDelegate.storage.main.library
+        let account = library.getAccount(info: accountInfo)
+        guard let song = library.getSong(for: account, id: "song-1") else {
+          throw NSError(domain: "ResourceProfile", code: 2)
+        }
+        try await appDelegate.getMeta(accountInfo).librarySyncer.sync(song: song)
+        appDelegate.storage.settings.user.playerDisplayStyle = .large
+        appDelegate.storage.settings.user.isPlayerLyricsDisplayed = false
+        appDelegate.storage.settings.user.isPlayerVisualizerDisplayed = false
+        let player = appDelegate.player
+        player.isAutoCachePlayedItems = false
+        player.setRepeatMode(.off)
+        player.play(context: PlayContext(name: "Resource profile", playables: (0..<24).map { _ in song }))
+        try await Task.sleep(for: .seconds(3))
+        player.play(playerIndex: PlayerIndex(queueType: .next, index: 12))
+        try await Task.sleep(for: .seconds(3))
+        host.dismiss(animated: false)
+
+        let phases = ["paused_cover", "playing_cover", "paused_queue", "playing_queue",
+                      "playing_queue_scroll", "playing_lyrics", "paused_lyrics",
+                      "playing_visualizer", "playing_transitions", "playing_background", "paused_background"]
+        for (index, phase) in phases.enumerated() {
+          if let popup = host.presentedViewController as? PopupPlayerVC { popup.dismiss(animated: false) }
+          try await Task.sleep(for: .milliseconds(200))
+          let queue = phase.contains("queue")
+          let lyrics = phase.contains("lyrics")
+          let visualizer = phase.contains("visualizer")
+          appDelegate.storage.settings.user.playerDisplayStyle = queue ? .compact : .large
+          appDelegate.storage.settings.user.isPlayerLyricsDisplayed = lyrics
+          appDelegate.storage.settings.user.isPlayerVisualizerDisplayed = visualizer
+          player.seek(toSecond: 10)
+          let playing = !phase.hasPrefix("paused")
+          if playing { player.play() } else { player.pause() }
+          miniPlayer.openPlayerView()
+          try await Task.sleep(for: .seconds(2))
+          guard let popup = host.presentedViewController as? PopupPlayerVC,
+                !popup.isBeingPresented, player.isPlaying == playing else {
+            throw NSError(domain: "ResourceProfile", code: 3)
+          }
+          if visualizer { popup.largeCurrentlyPlayingView?.display(element: .visualizer, animated: false) }
+          popup.view.layoutIfNeeded()
+          guard popup.largeCurrentlyPlayingView?.isDisplayingLyrics == lyrics,
+                !queue || (!popup.tableView.isHidden && popup.tableView.alpha > 0.99),
+                player.audioAnalyzer.isActive == visualizer else {
+            throw NSError(domain: "ResourceProfile", code: 5)
+          }
+          resourceProfilePhase = phase
+          try write(["index": index, "phase": phase, "playing": player.isPlaying,
+                     "background": phase.contains("background"), "pid": ProcessInfo.processInfo.processIdentifier,
+                     "state": UIApplication.shared.applicationState.rawValue,
+                     "queue": queue, "lyrics": lyrics, "visualizer": visualizer,
+                     "audio_analyzer_active": player.audioAnalyzer.isActive], name: "player-resource-phase.json")
+          if phase == "playing_queue_scroll" {
+            let maximum = max(0, popup.tableView.contentSize.height - popup.tableView.bounds.height)
+            for step in 0..<30 {
+              popup.tableView.setContentOffset(CGPoint(x: 0, y: step.isMultiple(of: 2) ? 0 : maximum), animated: true)
+              try await Task.sleep(for: .seconds(1))
+            }
+          } else if phase == "playing_transitions" {
+            for _ in 0..<10 {
+              (host.presentedViewController as? PopupPlayerVC)?.dismiss(animated: true)
+              try await Task.sleep(for: .milliseconds(1500))
+              miniPlayer.openPlayerView()
+              try await Task.sleep(for: .milliseconds(1500))
+            }
+          } else {
+            try await Task.sleep(for: .seconds(30))
+          }
+          guard player.isPlaying == playing else { throw NSError(domain: "ResourceProfile", code: 4) }
+        }
+        player.pause()
+        resourceProfilePhase = ""
+        try write(["completed": true, "phases": phases.count], name: "player-resource-ready.json")
+      } catch {
+        try? write(["error": String(describing: error), "phase": resourceProfilePhase], name: "player-resource-failed.json")
+      }
+    }
+  }
+#endif

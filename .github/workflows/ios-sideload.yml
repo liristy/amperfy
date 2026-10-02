@@ -2,6 +2,11 @@ name: qMusic Build & Release
 
 on:
   workflow_dispatch:
+    inputs:
+      profile_player_resources:
+        description: 'Measure simulator process CPU/RSS (not battery power)'
+        type: boolean
+        default: false
   push:
     tags:
       - 'v*'
@@ -48,6 +53,16 @@ jobs:
       - name: Record source timestamps
         if: always()
         run: python3 BuildTools/build-cache-mtimes.py save build/validation/DerivedData/source-mtimes.json
+      - name: Profile player resources on simulator (not battery power)
+        if: inputs.profile_player_resources || contains(github.event.pull_request.body, '<!-- profile-player-resources -->')
+        run: python3 BuildTools/profile-player-resources.py
+      - name: Upload simulator resource measurements
+        if: always() && (inputs.profile_player_resources || contains(github.event.pull_request.body, '<!-- profile-player-resources -->'))
+        uses: actions/upload-artifact@v4
+        with:
+          name: Amperfy-resource-profile-${{ github.run_number }}
+          path: build/resource-profile/
+          retention-days: 7
       - name: Upload compact player review artifacts
         if: always()
         uses: actions/upload-artifact@v4
