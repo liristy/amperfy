@@ -86,6 +86,10 @@ struct RelativeVolumeDrag {
     private var routeObserver: AnyCancellable?
     private lazy var volumePan = UIPanGestureRecognizer(target: self, action: #selector(dragVolume(_:)))
 
+    var isTrackExpansionEnabled = false {
+      didSet { updateTrackInteraction() }
+    }
+
     var showsRouteButton: Bool {
       get { systemVolume.showsRouteButton }
       set { systemVolume.showsRouteButton = newValue }
@@ -252,7 +256,7 @@ struct RelativeVolumeDrag {
     private func updateTrackInteraction() {
       // A pan cancels the touch-surface events when it takes over; keep the
       // track expanded until that drag ends, rather than shrinking mid-drag.
-      let expanded = isTouchPressed || volumeDrag != nil
+      let expanded = isTrackExpansionEnabled && (isTouchPressed || volumeDrag != nil)
       guard expanded != isTrackExpanded else { return }
       isTrackExpanded = expanded
       let scale = expanded ? PlayerTrackSlider.standardActiveTrackHeight /

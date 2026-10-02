@@ -726,6 +726,7 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
                   // Model a native control that lays out again after activation,
                   // without requesting another layout from the player wrapper.
                   let layoutProbe = DragOnlySystemVolumeView(frame: CGRect(x: 0, y: 0, width: 320, height: 32))
+                  layoutProbe.isTrackExpansionEnabled = true
                   guard let nativeVolume = descendants(of: layoutProbe).compactMap({ $0 as? MPVolumeView }).first else {
                     smokeLog("System volume is not owned by a separate native view"); return
                   }

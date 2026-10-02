@@ -341,6 +341,7 @@ class PlayerControlView: UIView {
       // is read-only; the player's separate gain must not drive this slider.
       volumeSlider.showsRouteButton = false
       volumeSlider.showsVolumeSlider = true
+      volumeSlider.isTrackExpansionEnabled = true
       volumeSlider.tintColor = .white.withAlphaComponent(0.7)
       volumeSlider.setMinimumVolumeSliderImage(volumeTrackImage(alpha: 0.7), for: .normal)
       volumeSlider.setMaximumVolumeSliderImage(volumeTrackImage(alpha: 0.18), for: .normal)
