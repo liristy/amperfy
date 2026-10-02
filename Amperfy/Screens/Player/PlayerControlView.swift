@@ -23,15 +23,17 @@ import AmperfyKit
 import AVFAudio
 import MarqueeLabel
 import MediaPlayer
-import Symbols
 import UIKit
 
 // MARK: - PlayerTransportButton
 
 final class PlayerTransportButton: UIButton {
   private let pressDisc = UIView()
+  private let symbolContainer = UIView()
   private let symbolView = UIImageView()
   private var symbolIdentifier: String?
+  private var symbolAnimator: UIViewPropertyAnimator?
+  private var symbolTransitionID = UUID()
   private var skipOverlay: UIView?
   private var skipAnimationID = UUID()
 
@@ -39,10 +41,11 @@ final class PlayerTransportButton: UIButton {
     super.awakeFromNib()
     pressDisc.backgroundColor = .white.withAlphaComponent(0.12)
     pressDisc.alpha = 0
-    for view in [pressDisc, symbolView] {
+    for view in [pressDisc, symbolContainer] {
       view.isUserInteractionEnabled = false
       addSubview(view)
     }
+    symbolContainer.addSubview(symbolView)
     symbolView.contentMode = .center
     symbolView.tintColor = .white
   }
@@ -54,8 +57,12 @@ final class PlayerTransportButton: UIButton {
     pressDisc.bounds = CGRect(x: 0, y: 0, width: side, height: side)
     pressDisc.center = CGPoint(x: bounds.midX, y: bounds.midY)
     pressDisc.layer.cornerRadius = side / 2
-    symbolView.bounds = CGRect(origin: .zero, size: symbolView.image?.size ?? .zero)
-    symbolView.center = pressDisc.center
+    // Keep the center and drawing canvas fixed while the glyph changes size.
+    // Touch feedback belongs to the parent, independently of symbol replacement.
+    symbolContainer.bounds = bounds
+    symbolContainer.center = pressDisc.center
+    symbolView.bounds = symbolContainer.bounds
+    symbolView.center = CGPoint(x: symbolContainer.bounds.midX, y: symbolContainer.bounds.midY)
     skipOverlay?.center = pressDisc.center
   }
 
@@ -63,12 +70,12 @@ final class PlayerTransportButton: UIButton {
     didSet {
       guard oldValue != isHighlighted else { return }
       let pressed = isHighlighted
-      UIView.animate(withDuration: pressed ? 0.1 : 0.32, delay: 0,
-        usingSpringWithDamping: pressed ? 1 : 0.6, initialSpringVelocity: 0,
+      UIView.animate(withDuration: pressed ? 0.09 : 0.18, delay: 0,
+        usingSpringWithDamping: pressed ? 1 : 0.9, initialSpringVelocity: 0,
         options: [.beginFromCurrentState, .allowUserInteraction]) {
         self.pressDisc.alpha = pressed ? 1 : 0
-        self.symbolView.transform = pressed && !UIAccessibility.isReduceMotionEnabled ?
-          CGAffineTransform(scaleX: 0.78, y: 0.78) : .identity
+        self.symbolContainer.transform = pressed && !UIAccessibility.isReduceMotionEnabled ?
+          CGAffineTransform(scaleX: 0.94, y: 0.94) : .identity
       }
     }
   }
@@ -77,15 +84,48 @@ final class PlayerTransportButton: UIButton {
     guard symbolIdentifier != identifier else { return }
     let animated = symbolIdentifier != nil && window != nil && !UIAccessibility.isReduceMotionEnabled
     symbolIdentifier = identifier
-    if animated {
-      symbolView.setSymbolImage(image, contentTransition: .replace, options: .speed(1.2))
-    } else {
-      symbolView.image = image
+    let transitionID = UUID()
+    symbolTransitionID = transitionID
+    // Finish at the rendered position so rapid taps don't restart from full size
+    // or allow an older completion to install an outdated play/pause symbol.
+    if let animator = symbolAnimator {
+      animator.stopAnimation(false)
+      animator.finishAnimation(at: .current)
+      symbolAnimator = nil
     }
-    setNeedsLayout()
+    guard animated else {
+      symbolView.image = image
+      symbolView.transform = .identity
+      symbolView.alpha = 1
+      setNeedsLayout()
+      return
+    }
+    let shrink = UIViewPropertyAnimator(duration: 0.07, curve: .easeIn) {
+      self.symbolView.transform = CGAffineTransform(scaleX: 0.15, y: 0.15)
+      self.symbolView.alpha = 0
+    }
+    shrink.addCompletion { [weak self] _ in
+      guard let self, symbolTransitionID == transitionID else { return }
+      symbolView.image = image
+      let expand = UIViewPropertyAnimator(duration: 0.2, dampingRatio: 0.9) {
+        self.symbolView.transform = .identity
+        self.symbolView.alpha = 1
+      }
+      expand.addCompletion { [weak self] _ in
+        guard let self, symbolTransitionID == transitionID else { return }
+        symbolAnimator = nil
+      }
+      symbolAnimator = expand
+      expand.startAnimation()
+    }
+    symbolAnimator = shrink
+    shrink.startAnimation()
   }
 
   func animateActivation(direction: CGFloat = 0) {
+    // Play/pause touch highlighting already fades on release. Re-triggering it
+    // here would flash the circle a second time after every successful tap.
+    guard direction != 0 else { return }
     pressDisc.layer.removeAllAnimations()
     pressDisc.alpha = 1
     UIView.animate(withDuration: 0.3, delay: 0.05, options: [.allowUserInteraction, .beginFromCurrentState]) {
@@ -126,6 +166,24 @@ final class PlayerTransportButton: UIButton {
       symbolView.alpha = 1
     }
   }
+
+  #if DEBUG && targetEnvironment(simulator)
+    var isRenderedSymbolSettled: Bool {
+      func pixels(_ image: UIImage?) -> Data? {
+        guard let image else { return nil }
+        return UIGraphicsImageRenderer(size: bounds.size).image { _ in
+          image.draw(at: CGPoint(x: (bounds.width - image.size.width) / 2,
+            y: (bounds.height - image.size.height) / 2))
+        }.pngData()
+      }
+      guard let rendered = pixels(symbolView.image), let expected = pixels(image(for: .normal)) else { return false }
+      return rendered == expected && symbolAnimator == nil &&
+        symbolView.alpha == 1 && symbolView.transform == .identity &&
+        symbolContainer.transform == .identity &&
+        abs(symbolView.center.x - symbolContainer.bounds.midX) < 0.5 &&
+        abs(symbolView.center.y - symbolContainer.bounds.midY) < 0.5
+    }
+  #endif
 }
 
 // MARK: - PlayerControlView

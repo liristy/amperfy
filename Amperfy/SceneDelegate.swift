@@ -811,13 +811,47 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
               try await compositorScreenshot("player-transport-pressed.png")
               controls.playButton.isHighlighted = false
               controls.playButtonPushed(controls.playButton as Any)
-              try await Task.sleep(for: .milliseconds(70))
+              // Capture the short centered symbol exchange inside the app; the
+              // external compositor handshake can arrive after it has finished.
+              var symbolFrames: [UIImage] = []
+              let symbolFrameSize = controls.playButton.bounds.size
+              for _ in 0..<12 {
+                try await Task.sleep(for: .milliseconds(25))
+                symbolFrames.append(UIGraphicsImageRenderer(size: symbolFrameSize).image { _ in
+                  controls.playButton.drawHierarchy(in: controls.playButton.bounds, afterScreenUpdates: false)
+                })
+              }
+              let symbolGridSize = CGSize(width: symbolFrameSize.width * 6, height: symbolFrameSize.height * 2)
+              let symbolGrid = UIGraphicsImageRenderer(size: symbolGridSize).image { context in
+                UIColor.darkGray.setFill()
+                context.fill(CGRect(origin: .zero, size: symbolGridSize))
+                for (index, frame) in symbolFrames.enumerated() {
+                  frame.draw(at: CGPoint(x: CGFloat(index % 6) * symbolFrameSize.width,
+                    y: CGFloat(index / 6) * symbolFrameSize.height))
+                }
+              }
+              try symbolGrid.pngData()?.write(to: URL.documentsDirectory
+                .appendingPathComponent("player-transport-play-pause-frames.png"))
               try await compositorScreenshot("player-transport-playing-transition.png")
               try await Task.sleep(for: .milliseconds(730))
               guard fullPlayer.artworkImage.transform == .identity else {
                 smokeLog("Resuming did not restore artwork scale")
                 return
               }
+              for _ in 0..<6 {
+                controls.playButton.isHighlighted = true
+                try await Task.sleep(for: .milliseconds(40))
+                controls.playButton.isHighlighted = false
+                controls.playButtonPushed(controls.playButton as Any)
+                try await Task.sleep(for: .milliseconds(35))
+              }
+              try await Task.sleep(for: .milliseconds(400))
+              guard self.appDelegate.player.isPlaying,
+                    (controls.playButton as? PlayerTransportButton)?.isRenderedSymbolSettled == true else {
+                smokeLog("Rapid play/pause taps left the visible symbol stale, off-center or unfinished")
+                return
+              }
+              smokeLog("Rapid play/pause taps settled on the current visible symbol without a scale or center offset")
               self.appDelegate.player.pause()
               self.appDelegate.player.seek(toSecond: 42)
               guard popup.controlView?.optionsStackView.arrangedSubviews.compactMap({ $0 as? UIButton })
