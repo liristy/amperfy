@@ -350,6 +350,7 @@ class MusicPlayerTest: XCTestCase {
   var playlistThreeCached: Playlist!
   var playlistAllCached: Playlist!
   let fillCount = 5
+  private var savedAutoplayEnabled: Bool?
 
   override func setUp() async throws {
     cdHelper = CoreDataHelper()
@@ -414,6 +415,10 @@ class MusicPlayerTest: XCTestCase {
   }
 
   override func tearDown() async throws {
+    if let savedAutoplayEnabled {
+      testPlayer.setAutoplayEnabled(false)
+      storage.settings.user.isAutoplayEnabled = savedAutoplayEnabled
+    }
     backendPlayer.stop()
     mockAudioStreamingPlayer.delegate = nil
   }
@@ -2358,6 +2363,8 @@ class MusicPlayerTest: XCTestCase {
   }
 
   private func startAutoplayFixture() async throws {
+    savedAutoplayEnabled = storage.settings.user.isAutoplayEnabled
+    testPlayer.setAutoplayEnabled(false)
     testPlayer.play(context: PlayContext(name: "Single song", playables: [songCached]))
     for _ in 0..<100 {
       if testPlayer.isPlaying { break }
@@ -2407,8 +2414,8 @@ class MusicPlayerTest: XCTestCase {
     testMusicPlayer.autoplayCB = { _, _, _ in ready.fulfill(); return [recommended] }
     testPlayer.setAutoplayEnabled(true)
     await fulfillment(of: [ready], timeout: 2)
-    testPlayer.insertUserQueue(playables: [songs[1]])
     testMusicPlayer.autoplayCB = nil
+    testPlayer.insertUserQueue(playables: [songs[1]])
     testPlayer.playNext()
     XCTAssertEqual(testPlayer.currentlyPlaying, songs[1])
     testPlayer.playNext()

@@ -89,7 +89,7 @@ public class AudioPlayer: NSObject, BackendAudioPlayerNotifiable {
 
   func autoplaySettingDidChange() {
     cancelAutoplayRequest(clearQueue: true)
-    prepareAutoplayIfNeeded()
+    prepareAutoplayIfNeeded(force: true)
     notifyPlaylistUpdated()
   }
 
@@ -100,19 +100,19 @@ public class AudioPlayer: NSObject, BackendAudioPlayerNotifiable {
 
   // Prepare recommendations before the explicit queue runs out. They stay separate
   // from that queue so disabling Autoplay never removes a user's queued songs.
-  func prepareAutoplayIfNeeded() {
+  func prepareAutoplayIfNeeded(force: Bool = false) {
     guard canAutoplay else {
       cancelAutoplayRequest(clearQueue: true)
       return
     }
     let explicitQueueCount = queueHandler.nextQueueCount + queueHandler.userQueueCount
-    if explicitQueueCount > 3, preparedAutoplaySongs.isEmpty { return }
+    if explicitQueueCount > 3, preparedAutoplaySongs.isEmpty, !force { return }
     let excluded = autoplayExcludedItems
     preparedAutoplaySongs.removeAll {
       excluded.contains($0.managedObject.objectID) || (backendAudioPlayer.isOfflineMode && !$0.isCached)
     }
     guard preparedAutoplaySongs.count < 5, autoplayTask == nil,
-          explicitQueueCount <= 3,
+          (explicitQueueCount <= 3 || force),
           let currentSong = currentlyPlaying?.asSong, let cb = autoplayCB else { return }
     let seed = queueHandler.getAllNextQueueItems().last?.asSong ??
       queueHandler.getAllUserQueueItems().last?.asSong ?? currentSong
@@ -172,7 +172,7 @@ public class AudioPlayer: NSObject, BackendAudioPlayerNotifiable {
   private var playerStatus: PlayerStatusPersistent
   private var queueHandler: PlayQueueHandler
   private let backendAudioPlayer: BackendAudioPlayer
-  private let settings: AmperfySettings
+  private var settings: AmperfySettings
   private let userStatistics: UserStatistics
   private var notifierList: [WeakMusicPlayable] = []
   public private(set) var currentRadioNowPlaying: RadioNowPlayingInfo?
