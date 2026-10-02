@@ -47,6 +47,25 @@ struct RelativeVolumeDrag {
 }
 
 #if !targetEnvironment(macCatalyst)
+  private final class VolumeTouchSurface: UIView {
+    var touchChanged: ((Bool) -> Void)?
+
+    override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent?) {
+      super.touchesBegan(touches, with: event)
+      touchChanged?(true)
+    }
+
+    override func touchesEnded(_ touches: Set<UITouch>, with event: UIEvent?) {
+      super.touchesEnded(touches, with: event)
+      touchChanged?(false)
+    }
+
+    override func touchesCancelled(_ touches: Set<UITouch>, with event: UIEvent?) {
+      super.touchesCancelled(touches, with: event)
+      touchChanged?(false)
+    }
+  }
+
   private final class LayoutReportingSystemVolumeView: MPVolumeView {
     var didLayout: (() -> Void)?
 
@@ -58,7 +77,10 @@ struct RelativeVolumeDrag {
 
   final class DragOnlySystemVolumeView: UIView, UIGestureRecognizerDelegate {
     private let systemVolume = LayoutReportingSystemVolumeView(frame: .zero)
-    private let touchSurface = UIView()
+    private let trackPresentation = UIView()
+    private let touchSurface = VolumeTouchSurface()
+    private var isTouchPressed = false
+    private var isTrackExpanded = false
     private weak var trackedSlider: UISlider?
     private var volumeDrag: RelativeVolumeDrag?
     private var routeObserver: AnyCancellable?
@@ -100,10 +122,12 @@ struct RelativeVolumeDrag {
       showsRouteButton = false
       systemVolume.tintColor = tintColor
       systemVolume.didLayout = { [weak self] in self?.alignNativeTrack() }
-      addSubview(systemVolume)
+      trackPresentation.addSubview(systemVolume)
+      addSubview(trackPresentation)
       touchSurface.backgroundColor = .clear
       touchSurface.isOpaque = false
       touchSurface.isAccessibilityElement = false
+      touchSurface.touchChanged = { [weak self] pressed in self?.setTouchPressed(pressed) }
       volumePan.maximumNumberOfTouches = 1
       volumePan.delegate = self
       touchSurface.addGestureRecognizer(volumePan)
@@ -118,8 +142,12 @@ struct RelativeVolumeDrag {
 
     override func layoutSubviews() {
       super.layoutSubviews()
+      // Animate a separate display layer around the aligned native track. Its
+      // center and horizontal size stay fixed, as do the touch/drag coordinates.
+      trackPresentation.bounds = bounds
+      trackPresentation.center = CGPoint(x: bounds.midX, y: bounds.midY)
       systemVolume.bounds = CGRect(origin: .zero, size: bounds.size)
-      systemVolume.center = CGPoint(x: bounds.midX, y: bounds.midY)
+      systemVolume.center = CGPoint(x: trackPresentation.bounds.midX, y: trackPresentation.bounds.midY)
       systemVolume.layoutIfNeeded()
       alignNativeTrack()
       touchSurface.frame = bounds
@@ -183,6 +211,7 @@ struct RelativeVolumeDrag {
                 maximum: slider.maximumValue, width: slider.trackRect(forBounds: slider.bounds).width) else { return }
         trackedSlider = slider
         volumeDrag = drag
+        updateTrackInteraction()
         slider.sendActions(for: .touchDown)
         applyVolumeDrag(translation: pan.translation(in: self).x)
       case .changed:
@@ -208,6 +237,36 @@ struct RelativeVolumeDrag {
       trackedSlider?.sendActions(for: cancelled ? .touchCancel : .touchUpInside)
       trackedSlider = nil
       volumeDrag = nil
+      isTouchPressed = false
+      updateTrackInteraction()
+    }
+
+    private func setTouchPressed(_ pressed: Bool) {
+      if pressed {
+        guard let slider = nativeSlider(in: systemVolume), slider.isEnabled, !slider.isHidden else { return }
+      }
+      isTouchPressed = pressed
+      updateTrackInteraction()
+    }
+
+    private func updateTrackInteraction() {
+      // A pan cancels the touch-surface events when it takes over; keep the
+      // track expanded until that drag ends, rather than shrinking mid-drag.
+      let expanded = isTouchPressed || volumeDrag != nil
+      guard expanded != isTrackExpanded else { return }
+      isTrackExpanded = expanded
+      let scale = expanded ? PlayerTrackSlider.standardActiveTrackHeight /
+        PlayerTrackSlider.standardRestingTrackHeight : 1
+      let transform = CGAffineTransform(scaleX: 1, y: scale)
+      guard window != nil, !UIAccessibility.isReduceMotionEnabled else {
+        trackPresentation.layer.removeAllAnimations()
+        trackPresentation.transform = transform
+        return
+      }
+      UIView.animate(withDuration: expanded ? 0.16 : 0.2, delay: 0,
+        options: [.beginFromCurrentState, .allowUserInteraction, .curveEaseInOut]) {
+        self.trackPresentation.transform = transform
+      }
     }
 
     private func cancelVolumeDragForRouteChange() {
@@ -215,12 +274,19 @@ struct RelativeVolumeDrag {
       volumePan.isEnabled = false
       volumePan.isEnabled = true
     }
+
+    #if DEBUG && targetEnvironment(simulator)
+      func setTouchPressedForSmoke(_ pressed: Bool) { setTouchPressed(pressed) }
+      func cancelTouchForSmoke() { cancelVolumeDragForRouteChange() }
+    #endif
   }
 #endif
 
 class PlayerTrackSlider: UISlider {
-  var restingTrackHeight: CGFloat = 7
-  var activeTrackHeight: CGFloat = 11
+  static let standardRestingTrackHeight: CGFloat = 7
+  static let standardActiveTrackHeight: CGFloat = 11
+  var restingTrackHeight: CGFloat = PlayerTrackSlider.standardRestingTrackHeight
+  var activeTrackHeight: CGFloat = PlayerTrackSlider.standardActiveTrackHeight
 
   override func trackRect(forBounds bounds: CGRect) -> CGRect {
     let track = super.trackRect(forBounds: bounds)

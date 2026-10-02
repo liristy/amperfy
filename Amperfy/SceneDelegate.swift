@@ -726,7 +726,7 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
                   // Model a native control that lays out again after activation,
                   // without requesting another layout from the player wrapper.
                   let layoutProbe = DragOnlySystemVolumeView(frame: CGRect(x: 0, y: 0, width: 320, height: 32))
-                  guard let nativeVolume = layoutProbe.subviews.compactMap({ $0 as? MPVolumeView }).first else {
+                  guard let nativeVolume = descendants(of: layoutProbe).compactMap({ $0 as? MPVolumeView }).first else {
                     smokeLog("System volume is not owned by a separate native view"); return
                   }
                   let nativeSliderProbe = UISlider(frame: layoutProbe.bounds)
@@ -755,6 +755,46 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
                     }
                   }
                   smokeLog("Cold-start and delayed native volume layouts kept the track centered without changing UIKit slider geometry or accumulating offsets")
+                  nativeSliderProbe.value = 0.4
+                  let restingVolumeTrack = nativeSliderProbe.convert(
+                    nativeSliderProbe.trackRect(forBounds: nativeSliderProbe.bounds), to: layoutProbe)
+                  let volumeFrameBeforePress = nativeSliderProbe.frame
+                  layoutProbe.setTouchPressedForSmoke(true)
+                  let activeVolumeTrack = nativeSliderProbe.convert(
+                    nativeSliderProbe.trackRect(forBounds: nativeSliderProbe.bounds), to: layoutProbe)
+                  let volumeTrackRatio = PlayerTrackSlider.standardActiveTrackHeight /
+                    PlayerTrackSlider.standardRestingTrackHeight
+                  guard abs(activeVolumeTrack.height - restingVolumeTrack.height * volumeTrackRatio) < 0.5,
+                        abs(activeVolumeTrack.midY - layoutProbe.bounds.midY) < 0.5,
+                        abs(activeVolumeTrack.width - restingVolumeTrack.width) < 0.5,
+                        nativeSliderProbe.frame == volumeFrameBeforePress,
+                        abs(nativeSliderProbe.value - 0.4) < 0.001 else {
+                    smokeLog("Volume press moved the track, changed volume or failed to expand like the seek bar"); return
+                  }
+                  nativeSliderProbe.frame.origin.y += 6
+                  nativeVolume.setNeedsLayout()
+                  nativeVolume.layoutIfNeeded()
+                  let relaidActiveTrack = nativeSliderProbe.convert(
+                    nativeSliderProbe.trackRect(forBounds: nativeSliderProbe.bounds), to: layoutProbe)
+                  guard abs(relaidActiveTrack.midY - layoutProbe.bounds.midY) < 0.5 else {
+                    smokeLog("Active volume track lost its center after a native layout"); return
+                  }
+                  layoutProbe.setTouchPressedForSmoke(false)
+                  let releasedVolumeTrack = nativeSliderProbe.convert(
+                    nativeSliderProbe.trackRect(forBounds: nativeSliderProbe.bounds), to: layoutProbe)
+                  guard abs(releasedVolumeTrack.height - restingVolumeTrack.height) < 0.5,
+                        abs(releasedVolumeTrack.midY - layoutProbe.bounds.midY) < 0.5 else {
+                    smokeLog("Volume release did not restore the resting track"); return
+                  }
+                  layoutProbe.setTouchPressedForSmoke(true)
+                  layoutProbe.cancelTouchForSmoke()
+                  let cancelledVolumeTrack = nativeSliderProbe.convert(
+                    nativeSliderProbe.trackRect(forBounds: nativeSliderProbe.bounds), to: layoutProbe)
+                  guard abs(cancelledVolumeTrack.height - restingVolumeTrack.height) < 0.5,
+                        abs(nativeSliderProbe.value - 0.4) < 0.001 else {
+                    smokeLog("Volume cancellation left the track expanded or changed its value"); return
+                  }
+                  smokeLog("Volume touch expansion matched the seek-bar ratio; release and cancellation restored size; native re-layout kept the center and touch coordinates")
                   let songBeforeVolume = self.appDelegate.player.currentlyPlaying
                   let gainBeforeVolume = self.appDelegate.player.volume
                   let modeBeforeVolume = self.appDelegate.player.playerMode
