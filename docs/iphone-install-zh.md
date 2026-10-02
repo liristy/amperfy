@@ -16,18 +16,18 @@
 
 ## 获取测试包
 
-推荐从 [qMusic Releases](https://github.com/liristy/amperfy/releases) 下载对应版本的 IPA。3.0 Beta 1 的文件名为 `qMusic-3.0.0-beta.1.ipa`，App 内显示 3.0.0（1）。同页提供 `SHA256SUMS` 和 `build-info.txt`，用于核对文件完整性与源码版本。
+推荐从 [qMusic Releases](https://github.com/liristy/amperfy/releases) 下载对应版本的 IPA。3.0 Beta 2 的文件名为 `qMusic-3.0.0-beta.2.ipa`，App 内显示 3.0.0（2）。同页提供 `SHA256SUMS` 和 `build-info.txt`，用于核对文件完整性与源码版本。
 
 也可在 **Actions → qMusic Build & Release → Run workflow** 手动打包。等待测试与构建成功后，下载 **Amperfy-iPhone-unsigned-数字** artifact 并解压，找到 `Amperfy-unsigned.ipa`；不要把外层 ZIP 当作 IPA。
 
-`v*` 标签会触发构建、测试和 Release 发布。工作流仅在公开仓库使用标准托管 runner，私有仓库会跳过。临时 artifacts 保留 7 天，Release 附件可从对应发布页下载。
+`v*` 标签或 `.github/release-version` 的主线变更会触发构建、测试和 Release 发布。工作流仅在公开仓库使用标准托管 runner，私有仓库会跳过。临时 artifacts 保留 7 天，Release 附件可从对应发布页下载。
 
 ## 爱思助手免费签名安装
 
 1. 从 [爱思助手官网](https://www.i4.cn/) 安装或更新 Windows 客户端。
 2. 用数据线连接 iPhone，解锁手机，按提示选择“信任此电脑”。
 3. 进入爱思助手的 **工具箱 → IPA 签名**（具体名称可能随版本变化）。
-4. 添加下载的 `qMusic-3.0.0-beta.1.ipa`（或手动构建的 `Amperfy-unsigned.ipa`），选择 **使用 Apple ID 签名**，选择连接的设备。
+4. 添加下载的 `qMusic-3.0.0-beta.2.ipa`（或手动构建的 `Amperfy-unsigned.ipa`），选择 **使用 Apple ID 签名**，选择连接的设备。
 5. 在你本机填写 Apple ID 并完成验证，等待签名成功。
 6. 打开签名文件保存目录，将**签名后的 IPA**安装到 iPhone。
 7. 按系统提示在“设置 → 通用 → VPN 与设备管理”中信任开发者。
