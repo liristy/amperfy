@@ -364,7 +364,7 @@ class BackendAudioPlayer: NSObject {
   private func handleError(error: Error) {
     isErrorOccurred = true
     wasPlayingBeforeErrorOccurred = isPlaying
-    pause()
+    pause(preservingRecoveryPlayback: true)
     nextPreloadedPlayable = nil
     nextPreloadedUrl = ""
     isPreviousPlaylableFinshed = true
@@ -382,7 +382,7 @@ class BackendAudioPlayer: NSObject {
   }
 
   func continuePlay() {
-    shouldPlaybackStart = true
+    isAutoStartPlayback = true
     isPlaying = true
     player?.resume()
     startTimers()
@@ -390,10 +390,11 @@ class BackendAudioPlayer: NSObject {
     audioAnalyzer.play()
   }
 
-  func pause() {
+  func pause(preservingRecoveryPlayback: Bool = false) {
     // A delayed engine-start callback must honor a pause requested while the
     // cached file or stream is still being prepared.
-    shouldPlaybackStart = false
+    isAutoStartPlayback = false
+    if !preservingRecoveryPlayback { wasPlayingBeforeErrorOccurred = false }
     lastKnownPlaybackTime = resumePlaybackTime
     isPlaying = false
     player?.pause()
