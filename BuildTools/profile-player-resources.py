@@ -8,6 +8,7 @@ from pathlib import Path
 import platform
 import subprocess
 import time
+import urllib.request
 
 
 PHASES = [
@@ -44,6 +45,26 @@ def read_json(path):
         return json.loads(path.read_text())
     except (FileNotFoundError, json.JSONDecodeError):
         return None
+
+
+def wait_for_server(server, timeout=45):
+    # A live process is not evidence that it has started accepting requests.
+    # Bypass host HTTP proxies for this loopback-only fixture.
+    opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        if server.poll() is not None:
+            raise RuntimeError("Mock server exited before becoming ready; see server.log")
+        try:
+            with opener.open("http://127.0.0.1:8765/rest/ping.view", timeout=1) as response:
+                body = response.read()
+                if response.status == 200 and b'subsonic-response' in body and b'status="ok"' in body:
+                    print("Loopback fixture responded successfully before app launch", flush=True)
+                    return
+        except OSError:
+            pass
+        time.sleep(0.5)
+    raise RuntimeError("Mock server readiness timed out; see server.log")
 
 
 def wait_for(path, predicate, documents, timeout=75):
@@ -103,9 +124,7 @@ def main():
         "phases": rows,
     }
     try:
-        time.sleep(1)
-        if server.poll() is not None:
-            raise RuntimeError("Mock server did not start")
+        wait_for_server(server)
         launch = command("xcrun", "simctl", "launch", "--terminate-running-process",
                          "--stdout=" + str(output / "app.stdout.log"), "--stderr=" + str(output / "app.stderr.log"),
                          device_id, bundle_id, "-AppleLanguages", "(zh-Hans)", "--smoke-resource-profile")
@@ -165,6 +184,13 @@ def main():
             "记录开始/结束时间、电量、发热和后台播放情况；掉电百分比点/小时 = (开始电量-结束电量)/时长(小时)。与同条件基线比较。\n"
             "系统电池页面里的应用占比是总消耗中的份额，不等于手机总电量下降。精确功率需真实设备支持的 Instruments Power Profiler。\n",
             encoding="utf-8")
+    except Exception:
+        # Preserve app staging diagnostics even when no measurement window ran.
+        for name in ("phase", "background", "ready", "failed"):
+            value = read_json(documents / f"player-resource-{name}.json")
+            if value is not None:
+                (output / f"player-resource-{name}.json").write_text(json.dumps(value, indent=2, ensure_ascii=False) + "\n")
+        raise
     finally:
         server.terminate()
         server.wait(timeout=10)
