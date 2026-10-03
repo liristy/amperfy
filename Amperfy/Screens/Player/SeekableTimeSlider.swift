@@ -328,6 +328,11 @@ class PlayerTrackSlider: UIControl {
     sendActions(for: .valueChanged)
   }
 
+  override func traitCollectionDidChange(_ previousTraitCollection: UITraitCollection?) {
+    super.traitCollectionDidChange(previousTraitCollection)
+    setNeedsLayout()
+  }
+
   override func layoutSubviews() {
     super.layoutSubviews()
     // Draw only these two layers. Native UISlider visuals can enlarge separately
@@ -609,17 +614,49 @@ class SeekableTimeSlider: PlayerTrackSlider {
 }
 
 #if DEBUG && targetEnvironment(simulator)
+  private func renderedPlayerTrackHeight(_ image: UIImage) throws -> CGFloat {
+    guard let cgImage = image.cgImage else {
+      throw NSError(domain: "PlayerTouchSmoke", code: 4)
+    }
+    let width = cgImage.width
+    let height = cgImage.height
+    var pixels = [UInt8](repeating: 0, count: width * height * 4)
+    let rows = pixels.withUnsafeMutableBytes { bytes -> Int in
+      guard let context = CGContext(data: bytes.baseAddress, width: width, height: height,
+        bitsPerComponent: 8, bytesPerRow: width * 4, space: CGColorSpaceCreateDeviceRGB(),
+        bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue | CGBitmapInfo.byteOrder32Big.rawValue)
+      else { return height }
+      context.draw(cgImage, in: CGRect(x: 0, y: 0, width: width, height: height))
+      var visibleRows = 0
+      for y in 0..<height {
+        if (0..<width).contains(where: { bytes[y * width * 4 + $0 * 4 + 3] > 26 }) {
+          visibleRows += 1
+        }
+      }
+      return visibleRows
+    }
+    return CGFloat(rows) / image.scale
+  }
+
   @MainActor
   func verifyPlayerTouchDragging(_ slider: SeekableTimeSlider) async throws {
     let directory = URL.documentsDirectory
     var complete = false
+    let originalValue = slider.value
     let finish = UIButton(type: .system)
     finish.setTitle("Finish touch test", for: .normal)
     finish.accessibilityIdentifier = "player.finishTouchTest"
     finish.frame = CGRect(x: 12, y: 52, width: 160, height: 36)
     finish.addAction(UIAction { _ in complete = true }, for: .touchUpInside)
     slider.superview?.addSubview(finish)
-    defer { finish.removeFromSuperview() }
+    defer {
+      finish.removeFromSuperview()
+      slider.cancelTracking(with: nil)
+      // Real drags seek the fixture; later streaming/lyrics tests start from the
+      // same playhead they had before the touch test, rather than end-of-track.
+      slider.value = originalValue
+      slider.sendActions(for: .valueChanged)
+    }
     let begins = slider.touchBeginsForSmoke
     let ends = slider.touchEndsForSmoke
     let changes = slider.touchChangesForSmoke
@@ -633,13 +670,18 @@ class SeekableTimeSlider: PlayerTrackSlider {
       // DEBUG helper toggles its appearance with native tracking idle.
       if slider.touchBeginsForSmoke > begins {
         let track = slider.trackRect(forBounds: slider.bounds)
+        let frame = UIGraphicsImageRenderer(bounds: slider.bounds).image { _ in
+          slider.drawHierarchy(in: slider.bounds, afterScreenUpdates: false)
+        }
+        let renderedHeight = try renderedPlayerTrackHeight(frame)
         records.append(["time": CACurrentMediaTime() - started, "height": track.height,
-          "center": track.midY, "tracking": slider.isTracking, "value": slider.value,
+          "renderedHeight": renderedHeight, "center": track.midY,
+          "tracking": slider.isTracking, "value": slider.value,
           "begins": slider.touchBeginsForSmoke - begins, "ends": slider.touchEndsForSmoke - ends])
-        if frames.count < 600 {
-          frames.append(UIGraphicsImageRenderer(bounds: slider.bounds).image { _ in
-            slider.drawHierarchy(in: slider.bounds, afterScreenUpdates: false)
-          })
+        if frames.count < 600 { frames.append(frame) }
+        guard renderedHeight <= slider.activeTrackHeight + 1 else {
+          throw NSError(domain: "PlayerTouchSmoke", code: 3, userInfo: [NSLocalizedDescriptionKey:
+            "Rendered touch track exceeds its intended height: \(renderedHeight) pt"])
         }
         guard slider.frame == originalFrame else {
           throw NSError(domain: "PlayerTouchSmoke", code: 2,
