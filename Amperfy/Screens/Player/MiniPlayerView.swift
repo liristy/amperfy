@@ -124,7 +124,6 @@ class MiniPlayerView: UIView, UIGestureRecognizerDelegate {
 
   fileprivate lazy var timeSlider: SeekableTimeSlider = {
     let slider = SeekableTimeSlider(frame: .zero)
-    slider.preferredBehavioralStyle = .pad
     return slider
   }()
 
@@ -152,7 +151,7 @@ class MiniPlayerView: UIView, UIGestureRecognizerDelegate {
   }
 
   @objc
-  func timeSliderChanged(_ slider: UISlider) {
+  func timeSliderChanged(_ slider: PlayerTrackSlider) {
     playerHandler?.timeSliderChanged(timeSlider: timeSlider)
   }
 
@@ -675,7 +674,6 @@ class MiniPlayerView: UIView, UIGestureRecognizerDelegate {
     artworkImage.clipsToBounds = true
     timeSlider.minimumTrackTintColor = .secondaryLabel
     timeSlider.maximumTrackTintColor = .clear
-    timeSlider.sliderStyle = .thumbless
     timeSlider.restingTrackHeight = 2
     timeSlider.activeTrackHeight = 2
     timeSlider.isUserInteractionEnabled = false

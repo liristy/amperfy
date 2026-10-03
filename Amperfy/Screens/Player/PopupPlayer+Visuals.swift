@@ -134,7 +134,7 @@ extension PopupPlayerVC {
     backgroundArtworkTask = Task { @MainActor [weak self] in
       guard let image = await LibraryEntityImage.loadPreparedImage(at: path), !Task.isCancelled else { return }
       let colors = await Task.detached(priority: .userInitiated) {
-        (try? image.dominantColors(max: 2)) ?? []
+        (try? image.dominantColors(max: 3)) ?? []
       }.value
       guard !Task.isCancelled, let self, self.backgroundArtworkKey == key else { return }
       if !colors.isEmpty {
@@ -166,12 +166,17 @@ extension PopupPlayerVC {
         alpha: 1
       ).cgColor
     }
-    let previousColors = artworkGradientLayer.presentation()?.colors ?? artworkGradientLayer.colors
+    let layers = [artworkGradientLayer] + artworkColorLayers
+    let previousColors = layers.map { $0.presentation()?.colors ?? $0.colors }
     let first = artworkGradientColors.first ?? .darkGray
     let last = artworkGradientColors.last ?? first
+    let accent = artworkGradientColors.count > 1 ? artworkGradientColors[1] : first
+    let geometryChanged = artworkMotionSize != backgroundImage.bounds.size
+    if geometryChanged { stopAmbientAnimation() }
     CATransaction.begin()
     CATransaction.setDisableActions(true)
     artworkGradientLayer.frame = backgroundImage.bounds
+    artworkAmbientLayer.frame = backgroundImage.bounds
     artworkGradientLayer.colors = [
       shaded(first, brightness: 0.55),
       shaded(last, brightness: 0.45),
@@ -180,14 +185,87 @@ extension PopupPlayerVC {
     artworkGradientLayer.locations = [0, 0.55, 1]
     artworkGradientLayer.startPoint = CGPoint(x: 0, y: 0)
     artworkGradientLayer.endPoint = CGPoint(x: 1, y: 1)
-    CATransaction.commit()
-    if animated, let previousColors, view.window != nil, !UIAccessibility.isReduceMotionEnabled {
-      let fade = CABasicAnimation(keyPath: "colors")
-      fade.fromValue = previousColors
-      fade.toValue = artworkGradientLayer.colors
-      fade.duration = 0.3
-      artworkGradientLayer.add(fade, forKey: "artwork-palette")
+    // Broad radial fields blend into the base palette without sharp diagonals,
+    // blur filters or a frame-by-frame bitmap render.
+    let diameter = max(backgroundImage.bounds.width, backgroundImage.bounds.height) * 1.15
+    for (index, layer) in artworkColorLayers.enumerated() {
+      layer.bounds = CGRect(x: 0, y: 0, width: diameter, height: diameter)
+      layer.position = CGPoint(x: backgroundImage.bounds.width * (index == 0 ? 0.12 : 0.88),
+                               y: backgroundImage.bounds.height * (index == 0 ? 0.18 : 0.78))
+      let color = UIColor(cgColor: shaded(index == 0 ? first : accent, brightness: 0.65))
+      layer.colors = [color.withAlphaComponent(0.65).cgColor,
+                      color.withAlphaComponent(0.3).cgColor,
+                      color.withAlphaComponent(0).cgColor]
     }
+    artworkMotionSize = backgroundImage.bounds.size
+    CATransaction.commit()
+    if animated, view.window != nil, !UIAccessibility.isReduceMotionEnabled {
+      for (index, layer) in layers.enumerated() {
+        guard let previous = previousColors[index] else { continue }
+        let fade = CABasicAnimation(keyPath: "colors")
+        fade.fromValue = previous
+        fade.toValue = layer.colors
+        fade.duration = 0.9
+        fade.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+        layer.add(fade, forKey: "artwork-palette")
+      }
+    }
+    updateAmbientAnimation()
+  }
+
+  internal var isAmbientMotionRunning: Bool {
+    artworkColorLayers.contains { $0.animation(forKey: "ambient-x") != nil }
+  }
+
+  internal func setPlayerPresentationVisible(_ visible: Bool) {
+    isPlayerPresentationVisible = visible
+    controlView?.setPlaybackPresentationActive(visible && !areLyricsControlsHidden)
+    updateAmbientAnimation()
+  }
+
+  @objc internal func ambientEnvironmentChanged(_ notification: Notification) {
+    if notification.name == UIApplication.didBecomeActiveNotification { isAmbientApplicationActive = true }
+    if notification.name == UIApplication.willResignActiveNotification ||
+      notification.name == UIApplication.didEnterBackgroundNotification { isAmbientApplicationActive = false }
+    updateAmbientAnimation()
+  }
+
+  internal func updateAmbientAnimation() {
+    guard isPlayerPresentationVisible, isAmbientApplicationActive, viewIfLoaded?.window != nil,
+          player?.isPlaying == true, artworkMotionSize.width > 0,
+          !UIAccessibility.isReduceMotionEnabled, !ProcessInfo.processInfo.isLowPowerModeEnabled else {
+      stopAmbientAnimation()
+      return
+    }
+    for (index, layer) in artworkColorLayers.enumerated() {
+      guard layer.animation(forKey: "ambient-x") == nil else { continue }
+      let direction: CGFloat = index == 0 ? 1 : -1
+      for (key, current, limit, duration) in [
+        ("x", layer.transform.m41, artworkMotionSize.width * 0.08 * direction, 18.0 + Double(index) * 5),
+        ("y", layer.transform.m42, artworkMotionSize.height * -0.06 * direction, 24.0 + Double(index) * 5),
+      ] {
+        let drift = CABasicAnimation(keyPath: "transform.translation.\(key)")
+        drift.fromValue = current
+        drift.toValue = abs(current - limit) < abs(limit) * 0.2 ? -limit : limit
+        drift.duration = duration
+        drift.autoreverses = true
+        drift.repeatCount = .infinity
+        drift.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+        layer.add(drift, forKey: "ambient-\(key)")
+      }
+    }
+  }
+
+  private func stopAmbientAnimation() {
+    CATransaction.begin()
+    CATransaction.setDisableActions(true)
+    for layer in artworkColorLayers where layer.animation(forKey: "ambient-x") != nil {
+      // Freeze at the visible position so pause/background/resume never snaps.
+      if let transform = layer.presentation()?.transform { layer.transform = transform }
+      layer.removeAnimation(forKey: "ambient-x")
+      layer.removeAnimation(forKey: "ambient-y")
+    }
+    CATransaction.commit()
   }
 
   @objc

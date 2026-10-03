@@ -734,7 +734,8 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
                   nativeVolume.insertSubview(nativeSliderProbe, at: 0)
                   layoutProbe.setNeedsLayout()
                   layoutProbe.layoutIfNeeded()
-                  for nativeY in [CGFloat(-12), 6, 0, 18, -8] {
+                  let nativeOffsets: [CGFloat] = [-12, 6, 0, 18, -8]
+                  for nativeY in nativeOffsets {
                     try await Task.sleep(for: .milliseconds(50))
                     nativeSliderProbe.frame.origin.y = nativeY
                     let nativeFrame = nativeSliderProbe.frame
@@ -902,6 +903,53 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
                 return
               }
               smokeLog("Pause/resume artwork scale and single top options menu passed")
+              guard let progressSlider = controls.timeSlider as? SeekableTimeSlider else { return }
+              try await verifyPlayerTrackRestoration(progressSlider) {
+                controls.didElapsedTimeChange()
+                controls.refreshPlayer()
+              }
+              smokeLog("Track restoration rendered intermediate thicknesses without snapping; duplicate releases, quick reversal and detached-clock cleanup passed")
+              try await verifyPlayerTouchDragging(progressSlider)
+              smokeLog("Actual touchscreen dragging, held progress, release outside and native rendered thickness passed")
+              guard !controls.isSmoothProgressRunning, !popup.isAmbientMotionRunning else {
+                smokeLog("Progress cancellation or paused animation cleanup failed"); return
+              }
+              self.appDelegate.player.play()
+              try await Task.sleep(for: .milliseconds(500))
+              guard controls.isSmoothProgressRunning else {
+                smokeLog("Visible playback did not start the smooth progress clock"); return
+              }
+              var progressValues = [Float]()
+              for _ in 0..<10 {
+                try await Task.sleep(for: .milliseconds(50))
+                progressValues.append(progressSlider.value)
+              }
+              guard Set(progressValues).count > 3,
+                    progressValues.last! > progressValues.first!,
+                    abs(Double(progressSlider.value) - self.appDelegate.player.elapsedTime) < 0.25 else {
+                smokeLog("Progress still advanced once per second or drifted from the audio engine: \(progressValues)"); return
+              }
+              let shouldAnimateAmbient = !UIAccessibility.isReduceMotionEnabled &&
+                !ProcessInfo.processInfo.isLowPowerModeEnabled
+              guard popup.isAmbientMotionRunning == shouldAnimateAmbient else {
+                smokeLog("Ambient motion did not follow visible playback/accessibility state"); return
+              }
+              popup.setPlayerPresentationVisible(false)
+              guard !controls.isSmoothProgressRunning, !popup.isAmbientMotionRunning else {
+                smokeLog("Hidden player kept its progress clock or background motion running"); return
+              }
+              popup.setPlayerPresentationVisible(true)
+              self.appDelegate.player.pause()
+              guard !controls.isSmoothProgressRunning, !popup.isAmbientMotionRunning else {
+                smokeLog("Paused player kept smooth progress or background motion running"); return
+              }
+              try await Task.sleep(for: .milliseconds(100))
+              let pausedProgressValue = progressSlider.value
+              try await Task.sleep(for: .milliseconds(150))
+              guard abs(progressSlider.value - pausedProgressValue) < 0.02 else {
+                smokeLog("Progress continued advancing while paused"); return
+              }
+              smokeLog("Progress restored its thin track after all release/cancel paths; sub-second engine samples, pause and hidden-player animation cleanup passed")
               guard self.appDelegate.player.elapsedTime >= 41 else { return }
               // Exercise real transport actions and the server-empty local fallback.
               controls.previousButtonPushed(controls.previousButton as Any)
@@ -1754,6 +1802,105 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
     os_log("didUpdate userActivity: %s", log: self.log, type: .info, userActivity.activityType)
   }
 }
+
+#if DEBUG && targetEnvironment(simulator)
+  @MainActor
+  private func verifyPlayerTrackRestoration(_ slider: SeekableTimeSlider, refresh: () -> Void) async throws {
+    func check(_ passed: Bool, _ message: String) throws {
+      guard passed else {
+        throw NSError(domain: "PlayerTrackSmoke", code: 1,
+          userInfo: [NSLocalizedDescriptionKey: message])
+      }
+    }
+    let resting = slider.trackRect(forBounds: slider.bounds)
+    let originalFrame = slider.frame
+    let animated = !UIAccessibility.isReduceMotionEnabled
+    var frames = [UIImage]()
+    var frameTimes = [CFTimeInterval]()
+    let events: [UIControl.Event] = [.touchUpInside, .touchUpOutside, .touchCancel]
+    for (index, event) in events.enumerated() {
+      slider.setTrackExpandedForSmoke(true)
+      refresh()
+      try await Task.sleep(for: .milliseconds(240))
+      try check(abs(slider.trackRect(forBounds: slider.bounds).height - slider.activeTrackHeight) < 0.1,
+        "Progress did not finish expanding or a playback refresh reset its gesture")
+      slider.sendActions(for: event)
+      let started = CACurrentMediaTime()
+      var heights = [CGFloat]()
+      for _ in 0..<8 {
+        let track = slider.trackRect(forBounds: slider.bounds)
+        heights.append(track.height)
+        try check(abs(track.midY - resting.midY) < 0.1 && slider.frame == originalFrame,
+          "Restoring track thickness changed its center or touch coordinates")
+        if index == 0 {
+          frameTimes.append(CACurrentMediaTime() - started)
+          frames.append(UIGraphicsImageRenderer(bounds: slider.bounds).image { _ in
+            slider.drawHierarchy(in: slider.bounds, afterScreenUpdates: false)
+          })
+        }
+        try await Task.sleep(for: .milliseconds(50))
+      }
+      if animated {
+        try check(abs(heights[0] - slider.activeTrackHeight) < 0.1,
+          "Release instantly snapped the expanded track back to its resting size")
+        try check(heights.contains { $0 > resting.height + 0.1 && $0 < slider.activeTrackHeight - 0.1 },
+          "Release had no rendered intermediate track thickness")
+        for (previous, current) in zip(heights, heights.dropFirst()) {
+          try check(current <= previous + 0.01, "Restoring track thickness bounced or restarted")
+        }
+      }
+      try check(abs(slider.trackRect(forBounds: slider.bounds).height - resting.height) < 0.1 &&
+        !slider.isTrackHeightAnimatingForSmoke, "Restoring the thin track left its animation clock running")
+    }
+    let valueBeforeReversal = slider.value
+    slider.setTrackExpandedForSmoke(true)
+    try await Task.sleep(for: .milliseconds(80))
+    let beforeRelease = slider.trackRect(forBounds: slider.bounds).height
+    slider.sendActions(for: .touchUpInside)
+    slider.sendActions(for: .touchCancel)
+    if animated {
+      try check(abs(slider.trackRect(forBounds: slider.bounds).height - beforeRelease) < 0.01,
+        "Duplicate release events snapped or restarted the visible track")
+    }
+    try await Task.sleep(for: .milliseconds(60))
+    let beforeReverse = slider.trackRect(forBounds: slider.bounds).height
+    slider.setTrackExpandedForSmoke(true)
+    if animated {
+      try check(abs(slider.trackRect(forBounds: slider.bounds).height - beforeReverse) < 0.01,
+        "Repressing during restoration jumped to an endpoint")
+    }
+    try await Task.sleep(for: .milliseconds(240))
+    slider.cancelTracking(with: nil)
+    try await Task.sleep(for: .milliseconds(360))
+    try check(abs(slider.trackRect(forBounds: slider.bounds).height - resting.height) < 0.1 &&
+      !slider.isTrackHeightAnimatingForSmoke && abs(slider.value - valueBeforeReversal) < 0.01,
+      "Cancellation changed progress or left the track enlarged or animating")
+    let detachedProbe = PlayerTrackSlider(frame: slider.bounds)
+    detachedProbe.alpha = 0
+    slider.superview?.addSubview(detachedProbe)
+    detachedProbe.setTrackExpandedForSmoke(true)
+    detachedProbe.removeFromSuperview()
+    try check(!detachedProbe.isTrackHeightAnimatingForSmoke &&
+      abs(detachedProbe.trackRect(forBounds: detachedProbe.bounds).height - detachedProbe.restingTrackHeight) < 0.1,
+      "Removing the slider kept its thickness clock or expanded state")
+    let rowHeight = slider.bounds.height + 14
+    let gridSize = CGSize(width: slider.bounds.width + 48, height: rowHeight * CGFloat(frames.count))
+    let grid = UIGraphicsImageRenderer(size: gridSize).image { context in
+      UIColor.darkGray.setFill()
+      context.fill(CGRect(origin: .zero, size: gridSize))
+      for (index, frame) in frames.enumerated() {
+        let y = CGFloat(index) * rowHeight
+        frame.draw(at: CGPoint(x: 48, y: y))
+        let label = String(format: "%.2fs", frameTimes[index])
+        label.draw(at: CGPoint(x: 2, y: y + slider.bounds.height / 2 - 6), withAttributes: [
+          .font: UIFont.monospacedDigitSystemFont(ofSize: 10, weight: .regular),
+          .foregroundColor: UIColor.white,
+        ])
+      }
+    }
+    try grid.pngData()?.write(to: URL.documentsDirectory.appendingPathComponent("player-track-restoration-frames.png"))
+  }
+#endif
 
 #if DEBUG && targetEnvironment(simulator)
   extension SceneDelegate {
