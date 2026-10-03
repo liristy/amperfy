@@ -902,6 +902,67 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
                 return
               }
               smokeLog("Pause/resume artwork scale and single top options menu passed")
+              guard let progressSlider = controls.timeSlider as? SeekableTimeSlider else { return }
+              let restingProgressTrack = progressSlider.trackRect(forBounds: progressSlider.bounds)
+              for event in [UIControl.Event.touchUpInside, .touchUpOutside, .touchCancel] {
+                progressSlider.setTrackExpandedForSmoke(true)
+                controls.didElapsedTimeChange()
+                controls.refreshPlayer()
+                guard abs(progressSlider.trackRect(forBounds: progressSlider.bounds).height -
+                  progressSlider.activeTrackHeight) < 0.1 else {
+                  smokeLog("Progress press did not expand or a playback refresh reset the gesture"); return
+                }
+                progressSlider.sendActions(for: event)
+                try await Task.sleep(for: .milliseconds(250))
+                let restored = progressSlider.trackRect(forBounds: progressSlider.bounds)
+                guard abs(restored.height - restingProgressTrack.height) < 0.1,
+                      abs(restored.midY - restingProgressTrack.midY) < 0.1 else {
+                  smokeLog("Progress release/cancellation left the track thick or moved its center"); return
+                }
+              }
+              progressSlider.setTrackExpandedForSmoke(true)
+              progressSlider.cancelTracking(with: nil)
+              guard abs(progressSlider.trackRect(forBounds: progressSlider.bounds).height -
+                restingProgressTrack.height) < 0.1,
+                    !controls.isSmoothProgressRunning, !popup.isAmbientMotionRunning else {
+                smokeLog("Progress cancellation or paused animation cleanup failed"); return
+              }
+              self.appDelegate.player.continuePlay()
+              try await Task.sleep(for: .milliseconds(500))
+              guard controls.isSmoothProgressRunning else {
+                smokeLog("Visible playback did not start the smooth progress clock"); return
+              }
+              var progressValues = [Float]()
+              for _ in 0..<10 {
+                try await Task.sleep(for: .milliseconds(50))
+                progressValues.append(progressSlider.value)
+              }
+              guard Set(progressValues).count > 3,
+                    progressValues.last! > progressValues.first!,
+                    abs(Double(progressSlider.value) - self.appDelegate.player.elapsedTime) < 0.25 else {
+                smokeLog("Progress still advanced once per second or drifted from the audio engine: \(progressValues)"); return
+              }
+              let shouldAnimateAmbient = !UIAccessibility.isReduceMotionEnabled &&
+                !ProcessInfo.processInfo.isLowPowerModeEnabled
+              guard popup.isAmbientMotionRunning == shouldAnimateAmbient else {
+                smokeLog("Ambient motion did not follow visible playback/accessibility state"); return
+              }
+              popup.setPlayerPresentationVisible(false)
+              guard !controls.isSmoothProgressRunning, !popup.isAmbientMotionRunning else {
+                smokeLog("Hidden player kept its progress clock or background motion running"); return
+              }
+              popup.setPlayerPresentationVisible(true)
+              self.appDelegate.player.pause()
+              guard !controls.isSmoothProgressRunning, !popup.isAmbientMotionRunning else {
+                smokeLog("Paused player kept smooth progress or background motion running"); return
+              }
+              try await Task.sleep(for: .milliseconds(100))
+              let pausedProgressValue = progressSlider.value
+              try await Task.sleep(for: .milliseconds(150))
+              guard abs(progressSlider.value - pausedProgressValue) < 0.02 else {
+                smokeLog("Progress continued advancing while paused"); return
+              }
+              smokeLog("Progress restored its thin track after all release/cancel paths; sub-second engine samples, pause and hidden-player animation cleanup passed")
               guard self.appDelegate.player.elapsedTime >= 41 else { return }
               // Exercise real transport actions and the server-empty local fallback.
               controls.previousButtonPushed(controls.previousButton as Any)

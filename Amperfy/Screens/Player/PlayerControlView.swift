@@ -198,7 +198,7 @@ class PlayerControlView: UIView {
   )
 
   private var player: PlayerFacade!
-  private var rootView: PopupPlayerVC?
+  private weak var rootView: PopupPlayerVC?
   private var playerHandler: PlayerUIHandler?
   #if targetEnvironment(macCatalyst)
     private let volumeSlider = PlayerTrackSlider()
@@ -206,6 +206,11 @@ class PlayerControlView: UIView {
     private let volumeSlider = DragOnlySystemVolumeView(frame: .zero)
   #endif
   private var audioRouteTask: Task<Void, Never>?
+  private var progressDisplayLink: CADisplayLink?
+  private var isPlaybackPresentationActive = false
+  private var isApplicationActive = UIApplication.shared.applicationState == .active
+  private lazy var progressClock = PlayerProgressClock(owner: self)
+  var isSmoothProgressRunning: Bool { progressDisplayLink != nil }
   private static let audioIconPreferencesKey = "player.audioOutputIcons"
   private static var bluetoothIconCache = [String: String]()
   private var displayedAudioOutput: AudioOutput?
@@ -274,6 +279,11 @@ class PlayerControlView: UIView {
       name: AVAudioSession.routeChangeNotification, object: nil)
     NotificationCenter.default.addObserver(self, selector: #selector(audioRouteChanged(_:)),
       name: UIApplication.didBecomeActiveNotification, object: nil)
+    for name in [UIApplication.didBecomeActiveNotification, UIApplication.willResignActiveNotification,
+                 UIApplication.didEnterBackgroundNotification, .NSProcessInfoPowerStateDidChange] {
+      NotificationCenter.default.addObserver(self, selector: #selector(progressEnvironmentChanged(_:)),
+        name: name, object: nil)
+    }
 
     #if targetEnvironment(macCatalyst) // ok
       addSubview(airplayVolume!)
@@ -433,6 +443,47 @@ class PlayerControlView: UIView {
     super.didMoveToWindow()
     if window != nil { scheduleAudioOutputRefresh() }
     else { audioRouteTask?.cancel() }
+    updateProgressClock()
+  }
+
+  func setPlaybackPresentationActive(_ active: Bool) {
+    isPlaybackPresentationActive = active
+    updateProgressClock()
+  }
+
+  @objc private func progressEnvironmentChanged(_ notification: Notification) {
+    if notification.name == UIApplication.didBecomeActiveNotification { isApplicationActive = true }
+    if notification.name == UIApplication.willResignActiveNotification ||
+      notification.name == UIApplication.didEnterBackgroundNotification { isApplicationActive = false }
+    updateProgressClock()
+  }
+
+  private func updateProgressClock() {
+    let running = isPlaybackPresentationActive && isApplicationActive && window != nil &&
+      player.isPlaying && player.currentlyPlaying?.isRadio == false && timeSlider?.isEnabled == true
+    guard running else {
+      progressDisplayLink?.invalidate()
+      progressDisplayLink = nil
+      return
+    }
+    if progressDisplayLink == nil {
+      let link = CADisplayLink(target: progressClock, selector: #selector(PlayerProgressClock.tick(_:)))
+      link.add(to: .main, forMode: .common)
+      progressDisplayLink = link
+    }
+    let rate: Float = ProcessInfo.processInfo.isLowPowerModeEnabled ? 15 : 30
+    progressDisplayLink?.preferredFrameRateRange = CAFrameRateRange(minimum: rate, maximum: rate, preferred: rate)
+  }
+
+  fileprivate func refreshSmoothProgress() {
+    guard let timeSlider, !timeSlider.isTracking, isPlaybackPresentationActive,
+          isApplicationActive, player.isPlaying else { return }
+    // Sample the audio engine's actual playhead: buffering, seeking and playback
+    // speed remain authoritative. Do not advance an estimated one-second timer.
+    let elapsed = player.elapsedTime
+    guard elapsed.isFinite, elapsed >= 0 else { return }
+    let value = min(timeSlider.maximumValue, max(timeSlider.minimumValue, Float(elapsed)))
+    if value != timeSlider.value { timeSlider.setValue(value, animated: false) }
   }
 
   private func scheduleAudioOutputRefresh() {
@@ -610,6 +661,7 @@ class PlayerControlView: UIView {
       appDelegate.player.setPlayerMode(.music)
     }
     refreshPlayerModeChangeButton()
+    updateProgressClock()
   }
 
   func refreshView() {
@@ -641,6 +693,7 @@ class PlayerControlView: UIView {
     playerHandler?.refreshPrevNextButtons(previousButton: previousButton, nextButton: nextButton)
     playerHandler?.refreshDisplayPlaylistButton(displayPlaylistButton: displayPlaylistButton)
     refreshPlayerModeChangeButton()
+    updateProgressClock()
   }
 
   func createPlaybackRateMenu() -> UIMenuElement {
@@ -822,6 +875,18 @@ class PlayerControlView: UIView {
       playerModeButton.configuration?.image = .podcast
     }
     optionsStackView.layoutIfNeeded()
+  }
+}
+
+// CADisplayLink retains its target. Keep the owner weak so a dismissed player
+// cannot retain an animation clock or the complete player hierarchy.
+@MainActor
+private final class PlayerProgressClock: NSObject {
+  weak var owner: PlayerControlView?
+  init(owner: PlayerControlView) { self.owner = owner }
+  @objc func tick(_ link: CADisplayLink) {
+    guard let owner else { link.invalidate(); return }
+    owner.refreshSmoothProgress()
   }
 }
 

@@ -447,13 +447,17 @@ class PlayerUIHandler: NSObject {
     playTypeIcon: UIImageView,
     liveLabel: UILabel
   ) {
-    timeSlider.preferredBehavioralStyle = .pad
-    timeSlider.sliderStyle = .thumbless
+    // Reassigning UIKit's style every second can rebuild its track while a
+    // gesture is active and leave the enlarged track behind after touch-up.
+    if timeSlider.preferredBehavioralStyle != .pad { timeSlider.preferredBehavioralStyle = .pad }
+    if timeSlider.sliderStyle != .thumbless { timeSlider.sliderStyle = .thumbless }
     if let currentlyPlaying = player.currentlyPlaying {
       let supportTimeInteraction = !currentlyPlaying.isRadio
       timeSlider.isEnabled = supportTimeInteraction && (style != .miniPlayeriOS)
-      timeSlider.minimumValue = 0.0
-      timeSlider.maximumValue = Float(player.duration)
+      if timeSlider.minimumValue != 0 { timeSlider.minimumValue = 0 }
+      let duration = player.duration
+      let maximum = duration.isFinite && duration > 0 ? Float(duration) : 0
+      if timeSlider.maximumValue != maximum { timeSlider.maximumValue = maximum }
       if !timeSlider.isTracking, supportTimeInteraction {
         let elapsedClockTime = ClockTime(timeInSeconds: Int(player.elapsedTime))
         elapsedTimeLabel.text = elapsedClockTime.asShortString()

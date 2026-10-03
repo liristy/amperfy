@@ -48,6 +48,11 @@ class PopupPlayerVC: UIViewController, UIScrollViewDelegate, UIGestureRecognizer
   }()
   internal var artworkGradientColors = [UIColor]()
   internal let artworkGradientLayer = CAGradientLayer()
+  internal let artworkAmbientLayer = CALayer()
+  internal let artworkColorLayers = [CAGradientLayer(), CAGradientLayer()]
+  internal var artworkMotionSize: CGSize = .zero
+  internal var isPlayerPresentationVisible = false
+  internal var isAmbientApplicationActive = UIApplication.shared.applicationState == .active
   internal var backgroundArtworkKey: String?
   internal var backgroundArtworkTask: Task<Void, Never>?
   private var portraitLayoutConstraints = [NSLayoutConstraint]()
@@ -121,6 +126,21 @@ class PopupPlayerVC: UIViewController, UIScrollViewDelegate, UIGestureRecognizer
     overrideUserInterfaceStyle = .dark
     view.backgroundColor = UIColor(white: 0.12, alpha: 1)
     backgroundImage.layer.insertSublayer(artworkGradientLayer, at: 0)
+    backgroundImage.layer.insertSublayer(artworkAmbientLayer, at: 1)
+    backgroundImage.clipsToBounds = true
+    for layer in artworkColorLayers {
+      layer.type = .radial
+      layer.startPoint = CGPoint(x: 0.5, y: 0.5)
+      layer.endPoint = CGPoint(x: 1, y: 1)
+      layer.locations = [0, 0.42, 1]
+      artworkAmbientLayer.addSublayer(layer)
+    }
+    for name in [UIApplication.didBecomeActiveNotification, UIApplication.willResignActiveNotification,
+                 UIApplication.didEnterBackgroundNotification, .NSProcessInfoPowerStateDidChange,
+                 UIAccessibility.reduceMotionStatusDidChangeNotification] {
+      NotificationCenter.default.addObserver(self, selector: #selector(ambientEnvironmentChanged(_:)),
+        name: name, object: nil)
+    }
 
     controlPlaceholderHeightConstraint.constant = PlayerControlView
       .frameHeight + safetyMarginOnBottom
@@ -274,12 +294,14 @@ class PopupPlayerVC: UIViewController, UIScrollViewDelegate, UIGestureRecognizer
 
   override func viewWillDisappear(_ animated: Bool) {
     super.viewWillDisappear(animated)
+    setPlayerPresentationVisible(false)
     lyricsControlsTask?.cancel()
     resignFirstResponder()
   }
 
   override func viewDidAppear(_ animated: Bool) {
     super.viewDidAppear(animated)
+    setPlayerPresentationVisible(true)
     updateQueueModeBackgrounds()
     lyricsModeDidChange()
   }
@@ -316,6 +338,7 @@ class PopupPlayerVC: UIViewController, UIScrollViewDelegate, UIGestureRecognizer
       appDelegate.storage.settings.user.playerDisplayStyle == .large) else { return }
     guard hidden != areLyricsControlsHidden else { return }
     areLyricsControlsHidden = hidden
+    controlView?.setPlaybackPresentationActive(isPlayerPresentationVisible && !hidden)
     view.layoutIfNeeded()
     controlPlaceholderView.isUserInteractionEnabled = !hidden
     controlPlaceholderView.accessibilityElementsHidden = hidden
@@ -684,11 +707,13 @@ extension PopupPlayerVC: MusicPlayable {
     reloadData()
     refresh()
     largeCurrentlyPlayingView?.refreshPlaybackAppearance(animated: true)
+    updateAmbientAnimation()
   }
 
   func didStopPlaying() {
     reloadData()
     refresh()
+    updateAmbientAnimation()
   }
 
   func didPlaylistChange() {
@@ -698,6 +723,7 @@ extension PopupPlayerVC: MusicPlayable {
 
   func didPause() {
     largeCurrentlyPlayingView?.refreshPlaybackAppearance(animated: true)
+    updateAmbientAnimation()
   }
   func didElapsedTimeChange() {}
 
