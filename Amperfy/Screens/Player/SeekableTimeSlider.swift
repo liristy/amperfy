@@ -267,7 +267,8 @@ struct RelativeVolumeDrag {
         trackPresentation.transform = transform
         return
       }
-      UIView.animate(withDuration: expanded ? 0.16 : 0.2, delay: 0,
+      UIView.animate(withDuration: expanded ? PlayerTrackSlider.standardExpansionDuration :
+        PlayerTrackSlider.standardRestorationDuration, delay: 0,
         options: [.beginFromCurrentState, .allowUserInteraction, .curveEaseInOut]) {
         self.trackPresentation.transform = transform
       }
@@ -289,9 +290,17 @@ struct RelativeVolumeDrag {
 class PlayerTrackSlider: UISlider {
   static let standardRestingTrackHeight: CGFloat = 7
   static let standardActiveTrackHeight: CGFloat = 11
+  static let standardExpansionDuration: CFTimeInterval = 0.16
+  static let standardRestorationDuration: CFTimeInterval = 0.28
   var restingTrackHeight: CGFloat = PlayerTrackSlider.standardRestingTrackHeight
   var activeTrackHeight: CGFloat = PlayerTrackSlider.standardActiveTrackHeight
   private var displayedTrackHeight: CGFloat?
+  private var isTrackExpanded = false
+  private var isTrackApplicationActive = UIApplication.shared.applicationState == .active
+  private var trackHeightDisplayLink: CADisplayLink?
+  private var trackHeightTransition: (from: CGFloat, to: CGFloat, start: CFTimeInterval,
+                                      duration: CFTimeInterval)?
+  private lazy var trackHeightClock = PlayerTrackHeightClock(owner: self)
 
   override init(frame: CGRect) {
     super.init(frame: frame)
@@ -305,9 +314,26 @@ class PlayerTrackSlider: UISlider {
 
   private func configureTrackRestoration() {
     addTarget(self, action: #selector(restoreTrack), for: [.touchUpInside, .touchUpOutside, .touchCancel])
+    for name in [UIApplication.didBecomeActiveNotification, UIApplication.willResignActiveNotification,
+                 UIApplication.didEnterBackgroundNotification, UIAccessibility.reduceMotionStatusDidChangeNotification] {
+      NotificationCenter.default.addObserver(self, selector: #selector(trackEnvironmentChanged(_:)),
+        name: name, object: nil)
+    }
   }
 
   @objc private func restoreTrack() { setTrackExpanded(false) }
+
+  @objc private func trackEnvironmentChanged(_ notification: Notification) {
+    if notification.name == UIApplication.didBecomeActiveNotification { isTrackApplicationActive = true }
+    if notification.name == UIApplication.willResignActiveNotification ||
+      notification.name == UIApplication.didEnterBackgroundNotification {
+      isTrackApplicationActive = false
+      isTrackExpanded = false
+      finishTrackHeightAnimation()
+    } else if UIAccessibility.isReduceMotionEnabled {
+      finishTrackHeightAnimation()
+    }
+  }
 
   override func didMoveToWindow() {
     super.didMoveToWindow()
@@ -339,22 +365,80 @@ class PlayerTrackSlider: UISlider {
   }
 
   private func setTrackExpanded(_ expanded: Bool) {
-    layoutIfNeeded()
-    displayedTrackHeight = expanded ? activeTrackHeight : nil
-    setNeedsLayout()
-    if window == nil || UIAccessibility.isReduceMotionEnabled {
-      layoutIfNeeded()
-    } else {
-      UIView.animate(withDuration: expanded ? 0.16 : 0.2, delay: 0,
-        options: [.beginFromCurrentState, .allowUserInteraction, .curveEaseInOut]) {
-        self.layoutIfNeeded()
-      }
+    guard window != nil, isTrackApplicationActive, !UIAccessibility.isReduceMotionEnabled else {
+      isTrackExpanded = expanded
+      finishTrackHeightAnimation()
+      return
     }
+    // UIKit can send a release action from super.endTracking before calling our
+    // override. Repeating that action must not restart or finish the transition.
+    guard expanded != isTrackExpanded else { return }
+    isTrackExpanded = expanded
+    let from = displayedTrackHeight ?? restingTrackHeight
+    let to = expanded ? activeTrackHeight : restingTrackHeight
+    stopTrackHeightClock()
+    guard abs(from - to) > 0.01 else {
+      finishTrackHeightAnimation()
+      return
+    }
+    // trackRect reads an ordinary CGFloat, which UIView.animate cannot animate.
+    // Interpolate that actual geometry, leaving touch coordinates and value intact.
+    trackHeightTransition = (from, to, CACurrentMediaTime(), expanded ?
+      Self.standardExpansionDuration : Self.standardRestorationDuration)
+    let link = CADisplayLink(target: trackHeightClock, selector: #selector(PlayerTrackHeightClock.tick(_:)))
+    link.preferredFrameRateRange = CAFrameRateRange(minimum: 30, maximum: 60, preferred: 60)
+    trackHeightDisplayLink = link
+    link.add(to: .main, forMode: .common)
+  }
+
+  fileprivate func advanceTrackHeight(at timestamp: CFTimeInterval) {
+    guard let transition = trackHeightTransition else { return }
+    guard window != nil, isTrackApplicationActive, !UIAccessibility.isReduceMotionEnabled else {
+      finishTrackHeightAnimation()
+      return
+    }
+    let progress = min(1, max(0, (timestamp - transition.start) / transition.duration))
+    guard progress < 1 else {
+      finishTrackHeightAnimation()
+      return
+    }
+    let eased = CGFloat(progress * progress * (3 - 2 * progress))
+    applyTrackHeight(transition.from + (transition.to - transition.from) * eased)
+  }
+
+  private func applyTrackHeight(_ height: CGFloat?) {
+    displayedTrackHeight = height
+    UIView.performWithoutAnimation {
+      self.setNeedsLayout()
+      self.layoutIfNeeded()
+    }
+  }
+
+  private func stopTrackHeightClock() {
+    trackHeightDisplayLink?.invalidate()
+    trackHeightDisplayLink = nil
+    trackHeightTransition = nil
+  }
+
+  private func finishTrackHeightAnimation() {
+    stopTrackHeightClock()
+    applyTrackHeight(isTrackExpanded ? activeTrackHeight : nil)
   }
 
   #if DEBUG && targetEnvironment(simulator)
     func setTrackExpandedForSmoke(_ expanded: Bool) { setTrackExpanded(expanded) }
+    var isTrackHeightAnimatingForSmoke: Bool { trackHeightDisplayLink != nil }
   #endif
+}
+
+@MainActor
+private final class PlayerTrackHeightClock: NSObject {
+  weak var owner: PlayerTrackSlider?
+  init(owner: PlayerTrackSlider) { self.owner = owner }
+  @objc func tick(_ link: CADisplayLink) {
+    guard let owner else { link.invalidate(); return }
+    owner.advanceTrackHeight(at: link.timestamp)
+  }
 }
 
 class SeekableTimeSlider: PlayerTrackSlider {
