@@ -928,7 +928,7 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
                     !controls.isSmoothProgressRunning, !popup.isAmbientMotionRunning else {
                 smokeLog("Progress cancellation or paused animation cleanup failed"); return
               }
-              self.appDelegate.player.continuePlay()
+              self.appDelegate.player.play()
               try await Task.sleep(for: .milliseconds(500))
               guard controls.isSmoothProgressRunning else {
                 smokeLog("Visible playback did not start the smooth progress clock"); return
