@@ -75,6 +75,8 @@ jobs:
           path: |
             build/validation/player.stdout.log
             build/validation/player.stderr.log
+            build/validation/player-touch-test.log
+            build/validation/player-touch-samples.json
             build/validation/server.log
             build/validation/*-preview.jpg
             build/validation/player-queue-glass-*.png
@@ -95,6 +97,7 @@ jobs:
           path: |
             build/validation/*.log
             build/validation/PlaylistTests.xcresult
+            build/validation/PlayerTouchTests.xcresult
             build/validation/*.png
             build/validation/*.jpg
             build/validation/player-motion.mp4

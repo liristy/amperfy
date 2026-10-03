@@ -299,6 +299,7 @@ class PlayerControlView: UIView {
     timeSlider.minimumTrackTintColor = .white.withAlphaComponent(0.8)
     timeSlider.maximumTrackTintColor = .white.withAlphaComponent(0.18)
     timeSlider.accessibilityLabel = "Playback position".localized
+    timeSlider.accessibilityIdentifier = "player.playbackPosition"
     for label in [elapsedTimeLabel, remainingTimeLabel, audioInfoLabel] {
       label?.font = .monospacedDigitSystemFont(ofSize: 12, weight: .medium)
       label?.textColor = .white.withAlphaComponent(0.65)

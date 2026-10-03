@@ -101,6 +101,16 @@ ready=false
 # The player suite also checks all statistics panels and native detail returns.
 # Bound polling between compositor captures; report an explicit failure immediately.
 for attempt in {1..150}; do
+  if [[ -f "$container/Documents/player-touch-ready" && -z "${touch_test_pid:-}" ]]; then
+    xcodebuild test-without-building \
+      -project BuildTools/PlayerTouchTests.xcodeproj -scheme PlayerTouchTests \
+      -destination "platform=iOS Simulator,id=$device_id" \
+      -derivedDataPath build/validation/TouchDerivedData \
+      -resultBundlePath build/validation/PlayerTouchTests.xcresult \
+      -parallel-testing-enabled NO CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO \
+      > build/validation/player-touch-test.log 2>&1 &
+    touch_test_pid=$!
+  fi
   if [[ -f "$container/Documents/player-screenshot-request" ]]; then
     screenshot_name=$(cat "$container/Documents/player-screenshot-request")
     if [[ ! "$screenshot_name" =~ ^player-[a-z0-9-]+\.png$ ]]; then
@@ -123,7 +133,7 @@ kill -INT "$motion_pid" 2>/dev/null || true
 wait "$motion_pid" || true
 motion_pid=
 xcrun simctl io "$device_id" screenshot build/validation/player-dismissed-zh-Hans.png
-for screenshot in player-track-restoration-frames player-transport-play-pause-frames player-transport-pressed player-transport-playing-transition player-transport-previous-transition player-transport-next-transition player-autoplay-queue player-queue-scroll-history-near-top player-queue-scroll-history-title-edge player-queue-history-reopened player-queue-scroll-history player-queue-scroll-current player-queue-scroll-modes player-queue-scroll-beyond player-queue-empty player-queue-resumed player-opening player-opening-refreshed player-closing-capsule player-next-song player-paused-artwork player-mini-spacing player-native-library player-mini-collapsed player-search-keyboard player-lyrics-controls player-queue-from-lyrics player-queue-multiple player-mini-drag player-mini-drag-previous player-lyrics-reopened player-queue-closed-artwork player-statistics-overview player-statistics-ranking player-statistics-trend player-statistics-top player-statistics-history; do
+for screenshot in player-touch-drag-frames player-track-restoration-frames player-transport-play-pause-frames player-transport-pressed player-transport-playing-transition player-transport-previous-transition player-transport-next-transition player-autoplay-queue player-queue-scroll-history-near-top player-queue-scroll-history-title-edge player-queue-history-reopened player-queue-scroll-history player-queue-scroll-current player-queue-scroll-modes player-queue-scroll-beyond player-queue-empty player-queue-resumed player-opening player-opening-refreshed player-closing-capsule player-next-song player-paused-artwork player-mini-spacing player-native-library player-mini-collapsed player-search-keyboard player-lyrics-controls player-queue-from-lyrics player-queue-multiple player-mini-drag player-mini-drag-previous player-lyrics-reopened player-queue-closed-artwork player-statistics-overview player-statistics-ranking player-statistics-trend player-statistics-top player-statistics-history; do
   source="$container/Documents/$screenshot.png"
   if [[ -f "$source" ]]; then
     sips -s format jpeg -s formatOptions 80 -Z 1000 "$source" --out "build/validation/$screenshot-preview.jpg" >/dev/null
@@ -135,6 +145,9 @@ if [[ "$ready" != true ]]; then
   cat build/validation/player.stderr.log
   exit 1
 fi
+[[ -n "${touch_test_pid:-}" ]] || { echo "Actual-touch UI tests were never started"; exit 1; }
+wait "$touch_test_pid" || { cat build/validation/player-touch-test.log; exit 1; }
+cp "$container/Documents/player-touch-samples.json" build/validation/
 echo "Original audio streaming, seek and synchronized lyrics smoke test passed"
 cat build/validation/player.stdout.log
 

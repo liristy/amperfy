@@ -909,6 +909,8 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
                 controls.refreshPlayer()
               }
               smokeLog("Track restoration rendered intermediate thicknesses without snapping; duplicate releases, quick reversal and detached-clock cleanup passed")
+              try await verifyPlayerTouchDragging(progressSlider)
+              smokeLog("Actual touchscreen dragging, held progress, release outside and native rendered thickness passed")
               guard !controls.isSmoothProgressRunning, !popup.isAmbientMotionRunning else {
                 smokeLog("Progress cancellation or paused animation cleanup failed"); return
               }

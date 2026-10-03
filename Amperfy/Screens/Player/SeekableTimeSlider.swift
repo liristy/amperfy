@@ -296,6 +296,12 @@ class PlayerTrackSlider: UISlider {
   var activeTrackHeight: CGFloat = PlayerTrackSlider.standardActiveTrackHeight
   private var displayedTrackHeight: CGFloat?
   private var isTrackExpanded = false
+  private var touchDrag: (startX: CGFloat, value: Float)?
+  #if DEBUG && targetEnvironment(simulator)
+    private(set) var touchBeginsForSmoke = 0
+    private(set) var touchEndsForSmoke = 0
+    private(set) var touchChangesForSmoke = 0
+  #endif
   private var isTrackApplicationActive = UIApplication.shared.applicationState == .active
   private var trackHeightDisplayLink: CADisplayLink?
   private var trackHeightTransition: (from: CGFloat, to: CGFloat, start: CFTimeInterval,
@@ -328,6 +334,7 @@ class PlayerTrackSlider: UISlider {
     if notification.name == UIApplication.willResignActiveNotification ||
       notification.name == UIApplication.didEnterBackgroundNotification {
       isTrackApplicationActive = false
+      cancelTracking(with: nil)
       isTrackExpanded = false
       finishTrackHeightAnimation()
     } else if UIAccessibility.isReduceMotionEnabled {
@@ -349,19 +356,49 @@ class PlayerTrackSlider: UISlider {
   }
 
   override func beginTracking(_ touch: UITouch, with event: UIEvent?) -> Bool {
-    let accepted = super.beginTracking(touch, with: event)
-    if accepted { setTrackExpanded(true) }
-    return accepted
+    guard isEnabled, maximumValue > minimumValue else { return false }
+    // UISlider's iOS 26 tracking implementation adds its own enlargement and
+    // glass thumb. Own the drag here so only our thickness transition runs.
+    touchDrag = (touch.location(in: self).x, value)
+    #if DEBUG && targetEnvironment(simulator)
+      touchBeginsForSmoke += 1
+    #endif
+    setTrackExpanded(true)
+    return true
+  }
+
+  override func continueTracking(_ touch: UITouch, with event: UIEvent?) -> Bool {
+    guard touchDrag != nil else { return false }
+    updateTouchDrag(at: touch.location(in: self).x)
+    #if DEBUG && targetEnvironment(simulator)
+      touchChangesForSmoke += 1
+    #endif
+    if isContinuous { sendActions(for: .valueChanged) }
+    return true
   }
 
   override func endTracking(_ touch: UITouch?, with event: UIEvent?) {
-    super.endTracking(touch, with: event)
+    guard let drag = touchDrag else { setTrackExpanded(false); return }
+    if let touch { updateTouchDrag(at: touch.location(in: self).x) }
+    touchDrag = nil
+    #if DEBUG && targetEnvironment(simulator)
+      touchEndsForSmoke += 1
+    #endif
     setTrackExpanded(false)
+    if !isContinuous, value != drag.value { sendActions(for: .valueChanged) }
   }
 
   override func cancelTracking(with event: UIEvent?) {
-    super.cancelTracking(with: event)
+    if let drag = touchDrag { value = drag.value }
+    touchDrag = nil
     setTrackExpanded(false)
+  }
+
+  private func updateTouchDrag(at x: CGFloat) {
+    guard let drag = touchDrag,
+          let relative = RelativeVolumeDrag(value: drag.value, minimum: minimumValue,
+            maximum: maximumValue, width: trackRect(forBounds: bounds).width) else { return }
+    setValue(relative.value(forTranslationX: x - drag.startX), animated: false)
   }
 
   private func setTrackExpanded(_ expanded: Bool) {
@@ -370,8 +407,8 @@ class PlayerTrackSlider: UISlider {
       finishTrackHeightAnimation()
       return
     }
-    // UIKit can send a release action from super.endTracking before calling our
-    // override. Repeating that action must not restart or finish the transition.
+    // UIControl release actions and tracking callbacks can both restore the track.
+    // Repeating that action must not restart or finish the transition.
     guard expanded != isTrackExpanded else { return }
     isTrackExpanded = expanded
     let from = displayedTrackHeight ?? restingTrackHeight
@@ -495,3 +532,75 @@ class SeekableTimeSlider: PlayerTrackSlider {
     #endif
   }
 }
+
+#if DEBUG && targetEnvironment(simulator)
+  @MainActor
+  func verifyPlayerTouchDragging(_ slider: SeekableTimeSlider) async throws {
+    let directory = URL.documentsDirectory
+    var complete = false
+    let finish = UIButton(type: .system)
+    finish.setTitle("Finish touch test", for: .normal)
+    finish.accessibilityIdentifier = "player.finishTouchTest"
+    finish.frame = CGRect(x: 12, y: 52, width: 160, height: 36)
+    finish.addAction(UIAction { _ in complete = true }, for: .touchUpInside)
+    slider.window?.addSubview(finish)
+    defer { finish.removeFromSuperview() }
+    let begins = slider.touchBeginsForSmoke
+    let ends = slider.touchEndsForSmoke
+    let changes = slider.touchChangesForSmoke
+    let originalFrame = slider.frame
+    try Data().write(to: directory.appendingPathComponent("player-touch-ready"))
+    let started = CACurrentMediaTime()
+    var records = [[String: Any]]()
+    var frames = [UIImage]()
+    while !complete && CACurrentMediaTime() - started < 120 {
+      // Capture the view while XCTest is delivering real touches, not while a
+      // DEBUG helper toggles its appearance with native tracking idle.
+      if slider.touchBeginsForSmoke > begins {
+        let track = slider.trackRect(forBounds: slider.bounds)
+        records.append(["time": CACurrentMediaTime() - started, "height": track.height,
+          "center": track.midY, "tracking": slider.isTracking, "value": slider.value,
+          "begins": slider.touchBeginsForSmoke - begins, "ends": slider.touchEndsForSmoke - ends])
+        if frames.count < 600 {
+          frames.append(UIGraphicsImageRenderer(bounds: slider.bounds).image { _ in
+            slider.drawHierarchy(in: slider.bounds, afterScreenUpdates: false)
+          })
+        }
+        guard slider.frame == originalFrame else {
+          throw NSError(domain: "PlayerTouchSmoke", code: 2,
+            userInfo: [NSLocalizedDescriptionKey: "Touch tracking moved the progress slider frame"])
+        }
+      }
+      try await Task.sleep(for: .milliseconds(33))
+    }
+    try await Task.sleep(for: .milliseconds(350))
+    try JSONSerialization.data(withJSONObject: records, options: [.prettyPrinted, .sortedKeys])
+      .write(to: directory.appendingPathComponent("player-touch-samples.json"))
+    let selected = frames.indices.filter { $0 % max(1, frames.count / 60) == 0 }
+    let rowHeight = slider.bounds.height + 8
+    let size = CGSize(width: slider.bounds.width + 50, height: rowHeight * CGFloat(selected.count))
+    if !selected.isEmpty {
+      try UIGraphicsImageRenderer(size: size).image { context in
+        UIColor.darkGray.setFill()
+        context.fill(CGRect(origin: .zero, size: size))
+        for (row, index) in selected.enumerated() {
+          let y = CGFloat(row) * rowHeight
+          frames[index].draw(at: CGPoint(x: 50, y: y))
+          let time = records[index]["time"] as? Double ?? 0
+          String(format: "%.2fs", time).draw(at: CGPoint(x: 2, y: y + 8), withAttributes: [
+            .font: UIFont.monospacedDigitSystemFont(ofSize: 10, weight: .regular),
+            .foregroundColor: UIColor.white,
+          ])
+        }
+      }.pngData()?.write(to: directory.appendingPathComponent("player-touch-drag-frames.png"))
+    }
+    guard complete, slider.touchBeginsForSmoke - begins >= 6,
+          slider.touchEndsForSmoke - ends >= 6, slider.touchChangesForSmoke - changes > 5,
+          records.contains(where: { ($0["tracking"] as? Bool) == true }),
+          !slider.isTracking, !slider.isTrackHeightAnimatingForSmoke,
+          abs(slider.trackRect(forBounds: slider.bounds).height - slider.restingTrackHeight) < 0.1 else {
+      throw NSError(domain: "PlayerTouchSmoke", code: 1, userInfo: [NSLocalizedDescriptionKey:
+        "Real touch dragging did not complete, update values or restore its thin idle track"])
+    }
+  }
+#endif
