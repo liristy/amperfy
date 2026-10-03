@@ -20,7 +20,7 @@ cleanup() {
   fi
   # Preserve intermediate frames and the exact failing step even on a smoke failure.
   if [[ -n "${container:-}" ]]; then
-    find "$container/Documents" -name 'player-*.png' -exec cp {} build/validation/ \; 2>/dev/null || true
+    find "$container/Documents" \( -name 'player-*.png' -o -name 'player-touch-samples.json' \) -exec cp {} build/validation/ \; 2>/dev/null || true
   fi
   find "$HOME/Library/Logs/DiagnosticReports" -name 'Amperfy*.ips' -exec cp {} build/validation/crashes/ \; 2>/dev/null || true
   xcrun simctl spawn "$device_id" log show --last 5m --style compact --predicate 'process == "Amperfy"' > build/validation/simulator.log 2>&1 || true

@@ -5,7 +5,7 @@ final class PlayerTouchTests: XCTestCase {
     continueAfterFailure = false
     let app = XCUIApplication(bundleIdentifier: "de.familie-zimba.amperfy-music")
     app.activate()
-    let slider = app.sliders["player.playbackPosition"]
+    let slider = app.descendants(matching: .any)["player.playbackPosition"]
     XCTAssertTrue(slider.waitForExistence(timeout: 30))
     let finish = app.buttons["player.finishTouchTest"]
     XCTAssertTrue(finish.waitForExistence(timeout: 30))

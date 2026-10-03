@@ -15,7 +15,7 @@
             <rect key="frame" x="0.0" y="0.0" width="375" height="667"/>
             <autoresizingMask key="autoresizingMask" widthSizable="YES" heightSizable="YES"/>
             <subviews>
-                <slider opaque="NO" contentMode="scaleToFill" contentHorizontalAlignment="center" contentVerticalAlignment="center" value="0.5" minValue="0.0" maxValue="1" continuous="NO" translatesAutoresizingMaskIntoConstraints="NO" id="42q-l9-IXM" userLabel="Progress" customClass="SeekableTimeSlider" customModule="Amperfy">
+                <view opaque="NO" contentMode="scaleToFill" translatesAutoresizingMaskIntoConstraints="NO" id="42q-l9-IXM" userLabel="Progress" customClass="SeekableTimeSlider" customModule="Amperfy">
                     <rect key="frame" x="16" y="20" width="343" height="30"/>
                     <color key="tintColor" systemColor="labelColor"/>
                     <gestureRecognizers/>
@@ -27,7 +27,7 @@
                         <action selector="timeSliderIsChanging:" destination="iN0-l3-epB" eventType="touchDragOutside" id="azr-FZ-dLl"/>
                         <action selector="timeSliderIsChanging:" destination="iN0-l3-epB" eventType="touchDragInside" id="nz0-Yy-zFt"/>
                     </connections>
-                </slider>
+                </view>
                 <label opaque="NO" userInteractionEnabled="NO" contentMode="left" horizontalHuggingPriority="251" verticalHuggingPriority="251" text="0:15" lineBreakMode="tailTruncation" baselineAdjustment="alignBaselines" adjustsFontSizeToFit="NO" translatesAutoresizingMaskIntoConstraints="NO" id="okd-ac-nGY" userLabel="Elapsed time">
                     <rect key="frame" x="16" y="43" width="159" height="20"/>
                     <constraints>

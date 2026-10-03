@@ -287,7 +287,64 @@ struct RelativeVolumeDrag {
   }
 #endif
 
-class PlayerTrackSlider: UISlider {
+class PlayerTrackSlider: UIControl {
+  private let trackLayer = CALayer()
+  private let fillLayer = CALayer()
+  private var storedValue: Float = 0
+  var minimumValue: Float = 0 { didSet { value = storedValue; setNeedsLayout() } }
+  var maximumValue: Float = 1 { didSet { value = storedValue; setNeedsLayout() } }
+  var isContinuous = true
+  var minimumTrackTintColor: UIColor? = .label { didSet { setNeedsLayout() } }
+  var maximumTrackTintColor: UIColor? = .tertiaryLabel { didSet { setNeedsLayout() } }
+  var value: Float {
+    get { storedValue }
+    set {
+      guard newValue.isFinite else { return }
+      let clamped = min(max(minimumValue, maximumValue), max(minimumValue, newValue))
+      guard storedValue != clamped else { return }
+      storedValue = clamped
+      setNeedsLayout()
+    }
+  }
+
+  func setValue(_ value: Float, animated: Bool) { self.value = value }
+
+  override var isTracking: Bool { touchDrag != nil || super.isTracking }
+
+  override var accessibilityValue: String? {
+    get {
+      let range = maximumValue - minimumValue
+      return String(format: "%.0f%%", range > 0 ? (value - minimumValue) / range * 100 : 0)
+    }
+    set { super.accessibilityValue = newValue }
+  }
+
+  override func accessibilityIncrement() { adjustAccessibleValue(by: 0.05) }
+  override func accessibilityDecrement() { adjustAccessibleValue(by: -0.05) }
+
+  private func adjustAccessibleValue(by fraction: Float) {
+    guard isEnabled, maximumValue > minimumValue else { return }
+    value += (maximumValue - minimumValue) * fraction
+    sendActions(for: .valueChanged)
+  }
+
+  override func layoutSubviews() {
+    super.layoutSubviews()
+    // Draw only these two layers. Native UISlider visuals can enlarge separately
+    // from trackRect during real touches, even with custom tracking overrides.
+    let track = trackRect(forBounds: bounds)
+    let range = maximumValue - minimumValue
+    let fraction = range > 0 ? CGFloat((value - minimumValue) / range) : 0
+    CATransaction.begin()
+    CATransaction.setDisableActions(true)
+    trackLayer.frame = track
+    trackLayer.cornerRadius = track.height / 2
+    trackLayer.backgroundColor = maximumTrackTintColor?.resolvedColor(with: traitCollection).cgColor
+    fillLayer.frame = CGRect(x: 0, y: 0, width: track.width * min(1, max(0, fraction)), height: track.height)
+    fillLayer.cornerRadius = track.height / 2
+    fillLayer.backgroundColor = minimumTrackTintColor?.resolvedColor(with: traitCollection).cgColor
+    CATransaction.commit()
+  }
   static let standardRestingTrackHeight: CGFloat = 7
   static let standardActiveTrackHeight: CGFloat = 11
   static let standardExpansionDuration: CFTimeInterval = 0.16
@@ -319,6 +376,12 @@ class PlayerTrackSlider: UISlider {
   }
 
   private func configureTrackRestoration() {
+    isOpaque = false
+    isAccessibilityElement = true
+    accessibilityTraits = .adjustable
+    trackLayer.masksToBounds = true
+    layer.addSublayer(trackLayer)
+    trackLayer.addSublayer(fillLayer)
     addTarget(self, action: #selector(restoreTrack), for: [.touchUpInside, .touchUpOutside, .touchCancel])
     for name in [UIApplication.didBecomeActiveNotification, UIApplication.willResignActiveNotification,
                  UIApplication.didEnterBackgroundNotification, UIAccessibility.reduceMotionStatusDidChangeNotification] {
@@ -349,10 +412,9 @@ class PlayerTrackSlider: UISlider {
     }
   }
 
-  override func trackRect(forBounds bounds: CGRect) -> CGRect {
-    let track = super.trackRect(forBounds: bounds)
+  func trackRect(forBounds bounds: CGRect) -> CGRect {
     let height = min(bounds.height, displayedTrackHeight ?? restingTrackHeight)
-    return CGRect(x: track.minX, y: bounds.midY - height / 2, width: track.width, height: height)
+    return CGRect(x: bounds.minX, y: bounds.midY - height / 2, width: bounds.width, height: height)
   }
 
   override func beginTracking(_ touch: UITouch, with event: UIEvent?) -> Bool {
@@ -379,13 +441,16 @@ class PlayerTrackSlider: UISlider {
 
   override func endTracking(_ touch: UITouch?, with event: UIEvent?) {
     guard let drag = touchDrag else { setTrackExpanded(false); return }
+    let valueBeforeEnd = value
     if let touch { updateTouchDrag(at: touch.location(in: self).x) }
     touchDrag = nil
     #if DEBUG && targetEnvironment(simulator)
       touchEndsForSmoke += 1
     #endif
     setTrackExpanded(false)
-    if !isContinuous, value != drag.value { sendActions(for: .valueChanged) }
+    if (!isContinuous && value != drag.value) || (isContinuous && value != valueBeforeEnd) {
+      sendActions(for: .valueChanged)
+    }
   }
 
   override func cancelTracking(with event: UIEvent?) {
@@ -479,6 +544,16 @@ private final class PlayerTrackHeightClock: NSObject {
 }
 
 class SeekableTimeSlider: PlayerTrackSlider {
+  override init(frame: CGRect) {
+    super.init(frame: frame)
+    isContinuous = false
+  }
+
+  required init?(coder: NSCoder) {
+    super.init(coder: coder)
+    isContinuous = false
+  }
+
   static let verticalHitAreaExpansion: CGFloat = 20
   static let horizontalHitAreaExpansion: CGFloat = 8
 
@@ -543,7 +618,7 @@ class SeekableTimeSlider: PlayerTrackSlider {
     finish.accessibilityIdentifier = "player.finishTouchTest"
     finish.frame = CGRect(x: 12, y: 52, width: 160, height: 36)
     finish.addAction(UIAction { _ in complete = true }, for: .touchUpInside)
-    slider.window?.addSubview(finish)
+    slider.superview?.addSubview(finish)
     defer { finish.removeFromSuperview() }
     let begins = slider.touchBeginsForSmoke
     let ends = slider.touchEndsForSmoke
@@ -600,7 +675,7 @@ class SeekableTimeSlider: PlayerTrackSlider {
           !slider.isTracking, !slider.isTrackHeightAnimatingForSmoke,
           abs(slider.trackRect(forBounds: slider.bounds).height - slider.restingTrackHeight) < 0.1 else {
       throw NSError(domain: "PlayerTouchSmoke", code: 1, userInfo: [NSLocalizedDescriptionKey:
-        "Real touch dragging did not complete, update values or restore its thin idle track"])
+        "Real touch result: complete=\(complete), begins=\(slider.touchBeginsForSmoke - begins), ends=\(slider.touchEndsForSmoke - ends), changes=\(slider.touchChangesForSmoke - changes), tracking=\(slider.isTracking), sampledTracking=\(records.contains { ($0["tracking"] as? Bool) == true }), animating=\(slider.isTrackHeightAnimatingForSmoke)"])
     }
   }
 #endif

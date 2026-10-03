@@ -239,7 +239,7 @@ class PlayerControlView: UIView {
   weak var skipForwardButton: UIButton!
 
   @IBOutlet
-  weak var timeSlider: UISlider!
+  weak var timeSlider: PlayerTrackSlider!
   @IBOutlet
   weak var elapsedTimeLabel: UILabel!
   @IBOutlet
@@ -343,7 +343,6 @@ class PlayerControlView: UIView {
       volumeSlider.minimumTrackTintColor = .white.withAlphaComponent(0.7)
       volumeSlider.maximumTrackTintColor = .white.withAlphaComponent(0.18)
       volumeSlider.preferredBehavioralStyle = .pad
-      volumeSlider.sliderStyle = .thumbless
       volumeSlider.accessibilityLabel = "Volume".localized
       volumeSlider.addTarget(self, action: #selector(volumeChanged), for: .valueChanged)
     #else
