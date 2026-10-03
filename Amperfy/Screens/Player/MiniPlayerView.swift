@@ -124,7 +124,6 @@ class MiniPlayerView: UIView, UIGestureRecognizerDelegate {
 
   fileprivate lazy var timeSlider: SeekableTimeSlider = {
     let slider = SeekableTimeSlider(frame: .zero)
-    slider.preferredBehavioralStyle = .pad
     return slider
   }()
 

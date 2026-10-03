@@ -342,7 +342,6 @@ class PlayerControlView: UIView {
       volumeSlider.value = player.volume
       volumeSlider.minimumTrackTintColor = .white.withAlphaComponent(0.7)
       volumeSlider.maximumTrackTintColor = .white.withAlphaComponent(0.18)
-      volumeSlider.preferredBehavioralStyle = .pad
       volumeSlider.accessibilityLabel = "Volume".localized
       volumeSlider.addTarget(self, action: #selector(volumeChanged), for: .valueChanged)
     #else
