@@ -734,7 +734,8 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
                   nativeVolume.insertSubview(nativeSliderProbe, at: 0)
                   layoutProbe.setNeedsLayout()
                   layoutProbe.layoutIfNeeded()
-                  for nativeY in [CGFloat(-12), 6, 0, 18, -8] {
+                  let nativeOffsets: [CGFloat] = [-12, 6, 0, 18, -8]
+                  for nativeY in nativeOffsets {
                     try await Task.sleep(for: .milliseconds(50))
                     nativeSliderProbe.frame.origin.y = nativeY
                     let nativeFrame = nativeSliderProbe.frame
