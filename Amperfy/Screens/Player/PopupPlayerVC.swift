@@ -49,7 +49,7 @@ class PopupPlayerVC: UIViewController, UIScrollViewDelegate, UIGestureRecognizer
   internal var artworkGradientColors = [UIColor]()
   internal let artworkGradientLayer = CAGradientLayer()
   internal let artworkAmbientLayer = CALayer()
-  internal let artworkColorLayers = [CAGradientLayer(), CAGradientLayer()]
+  internal let artworkColorLayers = (0..<4).map { _ in CAGradientLayer() }
   internal var artworkMotionSize: CGSize = .zero
   internal var isPlayerPresentationVisible = false
   internal var isAmbientApplicationActive = UIApplication.shared.applicationState == .active
@@ -132,7 +132,7 @@ class PopupPlayerVC: UIViewController, UIScrollViewDelegate, UIGestureRecognizer
       layer.type = .radial
       layer.startPoint = CGPoint(x: 0.5, y: 0.5)
       layer.endPoint = CGPoint(x: 1, y: 1)
-      layer.locations = [0, 0.42, 1]
+      layer.locations = [0, 0.35, 0.7, 1]
       artworkAmbientLayer.addSublayer(layer)
     }
     for name in [UIApplication.didBecomeActiveNotification, UIApplication.willResignActiveNotification,

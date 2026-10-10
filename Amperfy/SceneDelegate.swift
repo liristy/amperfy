@@ -503,6 +503,8 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
                 throw NSError(domain: "PlayerSmoke", code: 1,
                   userInfo: [NSLocalizedDescriptionKey: "Simulator screenshot timed out: \(name)"])
               }
+              try verifyPlayerFlightShadow(pausedPopup)
+              smokeLog("Paused opening carried a scaled shadow with the shared cover")
               try await compositorScreenshot("player-opening-refreshed.png")
               miniPlayer.endPlayerExpansion(translation: pausedDistance * 0.85, velocity: 850)
               try await Task.sleep(for: .seconds(1))
@@ -595,6 +597,8 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
                 smokeLog("Held opening gesture did not move and enlarge the mini-player cover: \(coverFrame)")
                 return
               }
+              try verifyPlayerFlightShadow(openingPopup)
+              smokeLog("Playing opening carried a synchronized shadow before completion")
               smokeLog("Shared album cover moved from \(miniCoverFrame) to held frame \(coverFrame)")
               // The compositor captures native glass without asking UIKit to redraw
               // a paused transition into a separate graphics context.
@@ -683,6 +687,7 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
               try await Task.sleep(for: .milliseconds(80))
               popup.updateInteractiveDismissal(translation: 70)
               try await Task.sleep(for: .milliseconds(80))
+              try verifyPlayerFlightShadow(popup)
               popup.endInteractiveDismissal(translation: 70, velocity: -150, cancelled: true)
               try await Task.sleep(for: .seconds(1))
               guard vc.presentedViewController === popup, popup.view.transform == .identity,
@@ -692,7 +697,10 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
                 smokeLog("Cancelled player dismissal did not restore the player")
                 return
               }
-              smokeLog("Cancelled dismissal restored the player")
+              guard popup.view.superview?.subviews.contains(where: {
+                $0.accessibilityIdentifier == "player-surface-transition-shadow"
+              }) == false else { return }
+              smokeLog("Cancelled dismissal restored the player and removed the flying shadow")
               guard let fullPlayer = popup.largeCurrentlyPlayingView,
                     abs(fullPlayer.titleLabel.font.pointSize - 20) < 0.5,
                     abs(fullPlayer.artistLabel.font.pointSize - 20) < 0.5 else {
@@ -933,6 +941,10 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
                 !ProcessInfo.processInfo.isLowPowerModeEnabled
               guard popup.isAmbientMotionRunning == shouldAnimateAmbient else {
                 smokeLog("Ambient motion did not follow visible playback/accessibility state"); return
+              }
+              if shouldAnimateAmbient {
+                try await verifyPlayerAmbientFlow(popup, screenshot: compositorScreenshot)
+                smokeLog("Artwork mesh moved across real frames, preserved palette-refresh geometry and froze without a jump")
               }
               popup.setPlayerPresentationVisible(false)
               guard !controls.isSmoothProgressRunning, !popup.isAmbientMotionRunning else {

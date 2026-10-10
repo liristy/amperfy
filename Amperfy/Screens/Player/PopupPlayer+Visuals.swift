@@ -153,9 +153,9 @@ extension PopupPlayerVC {
       var alpha: CGFloat = 0
       color.getRed(&red, green: &green, blue: &blue, alpha: &alpha)
       let neutral = red * 0.2126 + green * 0.7152 + blue * 0.0722
-      let shadedRed = (red * 0.4 + neutral * 0.6) * brightness + 0.16
-      let shadedGreen = (green * 0.4 + neutral * 0.6) * brightness + 0.16
-      let shadedBlue = (blue * 0.4 + neutral * 0.6) * brightness + 0.16
+      let shadedRed = (red * 0.72 + neutral * 0.28) * brightness + 0.08
+      let shadedGreen = (green * 0.72 + neutral * 0.28) * brightness + 0.08
+      let shadedBlue = (blue * 0.72 + neutral * 0.28) * brightness + 0.08
       // White or very bright covers must not wash out the white controls.
       let luminance = shadedRed * 0.2126 + shadedGreen * 0.7152 + shadedBlue * 0.0722
       let attenuation = min(1, 0.4 / max(luminance, 0.001))
@@ -171,6 +171,7 @@ extension PopupPlayerVC {
     let first = artworkGradientColors.first ?? .darkGray
     let last = artworkGradientColors.last ?? first
     let accent = artworkGradientColors.count > 1 ? artworkGradientColors[1] : first
+    let palette = [first, accent, last, first]
     let geometryChanged = artworkMotionSize != backgroundImage.bounds.size
     if geometryChanged { stopAmbientAnimation() }
     CATransaction.begin()
@@ -185,16 +186,22 @@ extension PopupPlayerVC {
     artworkGradientLayer.locations = [0, 0.55, 1]
     artworkGradientLayer.startPoint = CGPoint(x: 0, y: 0)
     artworkGradientLayer.endPoint = CGPoint(x: 1, y: 1)
-    // Broad radial fields blend into the base palette without sharp diagonals,
-    // blur filters or a frame-by-frame bitmap render.
-    let diameter = max(backgroundImage.bounds.width, backgroundImage.bounds.height) * 1.15
+    // Overlapping elliptical color fields form a soft artwork-colored mesh.
+    // Gradients already feather to transparent; no live blur or bitmap redraw
+    // is needed as the compositor moves, rotates and stretches the fields.
+    let diameter = max(backgroundImage.bounds.width, backgroundImage.bounds.height)
+    let centers = [CGPoint(x: 0.05, y: 0.15), CGPoint(x: 0.9, y: 0.38),
+                   CGPoint(x: 0.2, y: 0.95), CGPoint(x: 0.85, y: 0.9)]
     for (index, layer) in artworkColorLayers.enumerated() {
-      layer.bounds = CGRect(x: 0, y: 0, width: diameter, height: diameter)
-      layer.position = CGPoint(x: backgroundImage.bounds.width * (index == 0 ? 0.12 : 0.88),
-                               y: backgroundImage.bounds.height * (index == 0 ? 0.18 : 0.78))
-      let color = UIColor(cgColor: shaded(index == 0 ? first : accent, brightness: 0.65))
-      layer.colors = [color.withAlphaComponent(0.65).cgColor,
-                      color.withAlphaComponent(0.3).cgColor,
+      if geometryChanged { layer.transform = CATransform3DIdentity }
+      layer.bounds = CGRect(x: 0, y: 0, width: diameter * (index.isMultiple(of: 2) ? 1 : 0.75),
+                            height: diameter * (index.isMultiple(of: 2) ? 0.7 : 1))
+      layer.position = CGPoint(x: backgroundImage.bounds.width * centers[index].x,
+                               y: backgroundImage.bounds.height * centers[index].y)
+      let color = UIColor(cgColor: shaded(palette[index], brightness: 0.85))
+      layer.colors = [color.withAlphaComponent(0.9).cgColor,
+                      color.withAlphaComponent(0.65).cgColor,
+                      color.withAlphaComponent(0.18).cgColor,
                       color.withAlphaComponent(0).cgColor]
     }
     artworkMotionSize = backgroundImage.bounds.size
@@ -214,7 +221,7 @@ extension PopupPlayerVC {
   }
 
   internal var isAmbientMotionRunning: Bool {
-    artworkColorLayers.contains { $0.animation(forKey: "ambient-x") != nil }
+    artworkColorLayers.contains { $0.animation(forKey: "ambient-flow") != nil }
   }
 
   internal func setPlayerPresentationVisible(_ visible: Bool) {
@@ -238,32 +245,40 @@ extension PopupPlayerVC {
       return
     }
     for (index, layer) in artworkColorLayers.enumerated() {
-      guard layer.animation(forKey: "ambient-x") == nil else { continue }
-      let direction: CGFloat = index == 0 ? 1 : -1
-      for (key, current, limit, duration) in [
-        ("x", layer.transform.m41, artworkMotionSize.width * 0.08 * direction, 18.0 + Double(index) * 5),
-        ("y", layer.transform.m42, artworkMotionSize.height * -0.06 * direction, 24.0 + Double(index) * 5),
-      ] {
-        let drift = CABasicAnimation(keyPath: "transform.translation.\(key)")
-        drift.fromValue = current
-        drift.toValue = abs(current - limit) < abs(limit) * 0.2 ? -limit : limit
-        drift.duration = duration
-        drift.autoreverses = true
-        drift.repeatCount = .infinity
-        drift.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
-        layer.add(drift, forKey: "ambient-\(key)")
+      guard layer.animation(forKey: "ambient-flow") == nil else { continue }
+      let current = layer.transform
+      let direction: CGFloat = index.isMultiple(of: 2) ? 1 : -1
+      let offsets = [CGPoint(x: 0.22, y: -0.16), CGPoint(x: -0.18, y: -0.08),
+                     CGPoint(x: -0.12, y: 0.18), CGPoint(x: 0.16, y: 0.12)]
+      var transforms = [NSValue(caTransform3D: current)]
+      for step in 0..<4 {
+        let offset = offsets[(step + index) % offsets.count]
+        var transform = CATransform3DMakeTranslation(
+          artworkMotionSize.width * offset.x * direction,
+          artworkMotionSize.height * offset.y * direction, 0)
+        transform = CATransform3DRotate(transform, direction * (step.isMultiple(of: 2) ? 0.32 : -0.24), 0, 0, 1)
+        let scale: CGFloat = step.isMultiple(of: 2) ? 1.18 : 0.94
+        transform = CATransform3DScale(transform, scale, scale, 1)
+        transforms.append(NSValue(caTransform3D: transform))
       }
+      transforms.append(NSValue(caTransform3D: current))
+      let flow = CAKeyframeAnimation(keyPath: "transform")
+      flow.values = transforms
+      flow.keyTimes = [0, 0.2, 0.4, 0.6, 0.8, 1]
+      flow.timingFunctions = (0..<5).map { _ in CAMediaTimingFunction(name: .easeInEaseOut) }
+      flow.duration = 24 + Double(index) * 7
+      flow.repeatCount = .infinity
+      layer.add(flow, forKey: "ambient-flow")
     }
   }
 
   private func stopAmbientAnimation() {
     CATransaction.begin()
     CATransaction.setDisableActions(true)
-    for layer in artworkColorLayers where layer.animation(forKey: "ambient-x") != nil {
-      // Freeze at the visible position so pause/background/resume never snaps.
+    for layer in artworkColorLayers where layer.animation(forKey: "ambient-flow") != nil {
+      // Keep the complete rendered transform, so resuming begins at this frame.
       if let transform = layer.presentation()?.transform { layer.transform = transform }
-      layer.removeAnimation(forKey: "ambient-x")
-      layer.removeAnimation(forKey: "ambient-y")
+      layer.removeAnimation(forKey: "ambient-flow")
     }
     CATransaction.commit()
   }
@@ -290,3 +305,43 @@ extension PopupPlayerVC {
     view.layoutMargins = UIEdgeInsets(top: 0, left: inset, bottom: 0, right: inset)
   }
 }
+
+#if DEBUG
+@MainActor
+func verifyPlayerAmbientFlow(_ popup: PopupPlayerVC,
+                            screenshot: @MainActor @Sendable (String) async throws -> Void) async throws {
+  func fail(_ message: String) -> NSError {
+    NSError(domain: "PlayerAmbientSmoke", code: 1,
+            userInfo: [NSLocalizedDescriptionKey: message])
+  }
+  guard popup.artworkColorLayers.count == 4 else { throw fail("Incomplete artwork mesh") }
+  let initial = popup.artworkColorLayers.map { ($0.presentation() ?? $0).transform }
+  try await screenshot("player-ambient-flow-start.png")
+  try await Task.sleep(for: .seconds(5))
+  let moved = popup.artworkColorLayers.map { ($0.presentation() ?? $0).transform }
+  guard zip(initial, moved).allSatisfy({ pair in
+    abs(pair.0.m41 - pair.1.m41) + abs(pair.0.m42 - pair.1.m42) > 1
+  }) else {
+    throw fail("Artwork mesh did not visibly flow during playback")
+  }
+  try await screenshot("player-ambient-flow-moved.png")
+  popup.applyGradientBackground(animated: true)
+  guard popup.isAmbientMotionRunning else { throw fail("Palette refresh stopped mesh motion") }
+  popup.ambientEnvironmentChanged(Notification(name: UIApplication.willResignActiveNotification))
+  guard !popup.isAmbientMotionRunning else { throw fail("Inactive app kept mesh motion running") }
+  let frozen = popup.artworkColorLayers.map { $0.transform }
+  try await Task.sleep(for: .milliseconds(150))
+  guard zip(frozen, popup.artworkColorLayers).allSatisfy({ pair in
+    CATransform3DEqualToTransform(pair.0, pair.1.transform)
+  }) else {
+    throw fail("Frozen artwork mesh continued moving")
+  }
+  popup.ambientEnvironmentChanged(Notification(name: UIApplication.didBecomeActiveNotification))
+  guard popup.isAmbientMotionRunning,
+        zip(frozen, popup.artworkColorLayers).allSatisfy({ pair in
+    CATransform3DEqualToTransform(pair.0, pair.1.transform)
+  }) else {
+    throw fail("Resuming mesh motion snapped the artwork geometry")
+  }
+}
+#endif
