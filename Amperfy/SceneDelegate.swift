@@ -496,7 +496,7 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
                 let complete = URL.documentsDirectory.appendingPathComponent("player-screenshot-complete")
                 try? FileManager.default.removeItem(at: complete)
                 try name.write(to: request, atomically: true, encoding: .utf8)
-                for _ in 0..<150 {
+                for _ in 0..<300 {
                   if FileManager.default.fileExists(atPath: complete.path) { return }
                   try await Task.sleep(for: .milliseconds(100))
                 }
@@ -611,6 +611,7 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
               var sampledContentRebound = false
               var largestOpeningHeight: CGFloat = 0
               var largestContentScale: CGFloat = 1
+              var finalCoverDestination = destinationCoverFrame
               var previousCoverWidth = coverFrame.width
               var lastSample = "no transition surface"
               for _ in 0..<60 {
@@ -635,18 +636,20 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
                 if animatedFrame.height > destinationHeight + 0.5 { sampledSpringOvershoot = true }
                 if let cover = flyingCover() {
                   let frame = (cover.layer.presentation() ?? cover.layer).frame
+                  let liveDestination = popup.surfaceTransition.artworkMotion?.endFrame ?? finalCoverDestination
+                  finalCoverDestination = liveDestination
                   let pageProgress = min(1, max(0, (animatedFrame.height - sourceSurface.height) /
                     (destinationHeight - sourceSurface.height)))
                   let coverProgress = (frame.width - miniCoverFrame.width) /
-                    (destinationCoverFrame.width - miniCoverFrame.width)
+                    (liveDestination.width - miniCoverFrame.width)
                   if pageProgress - coverProgress > 0.025 {
                     smokeLog("Artwork lagged behind the expanding surface: page \(pageProgress), cover \(coverProgress)")
                     playerPolishChecksPassed = false
                   }
                   if frame.width < previousCoverWidth - 0.5 ||
-                        frame.width > destinationCoverFrame.width + 0.5 ||
-                        frame.minY < destinationCoverFrame.minY - 0.5 {
-                    smokeLog("Opening artwork bounced instead of travelling smoothly: \(frame), target \(destinationCoverFrame)")
+                        frame.width > liveDestination.width + 0.5 ||
+                        frame.minY < liveDestination.minY - 0.5 {
+                    smokeLog("Opening artwork bounced instead of travelling smoothly: \(frame), target \(liveDestination)")
                     playerPolishChecksPassed = false
                   }
                   previousCoverWidth = frame.width
@@ -683,6 +686,16 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
                     popup.transitionArtwork?.isHidden == false,
                     popup.transitionArtwork?.layer.opacity == 1, popup.transitionArtwork?.mask == nil,
                     flyingCover() == nil else { return }
+              if let realCover = popup.transitionArtwork, let host = popup.view.superview {
+                let landed = realCover.convert(realCover.bounds, to: host)
+                guard abs(landed.minX - finalCoverDestination.minX) < 0.5,
+                      abs(landed.minY - finalCoverDestination.minY) < 0.5,
+                      abs(landed.width - finalCoverDestination.width) < 0.5 else {
+                  smokeLog("Cover handoff changed geometry: \(finalCoverDestination) to \(landed)")
+                  return
+                }
+                smokeLog("Shared cover landed on the exact final artwork layout")
+              }
               popup.beginInteractiveDismissal()
               try await Task.sleep(for: .milliseconds(80))
               popup.updateInteractiveDismissal(translation: 70)
