@@ -579,7 +579,7 @@ func verifyPlayerFlightShadow(_ popup: PopupPlayerVC) throws {
         layer.shadowOpacity > 0.005,
         abs(layer.shadowRadius - realShadow.layer.shadowRadius * scale) < 0.5,
         abs(layer.shadowOffset.height - realShadow.layer.shadowOffset.height * scale) < 0.5 else {
-    throw fail("Shadow did not travel/scale/fade with the actual album cover: \(layer.frame), opacity \(layer.shadowOpacity)")
+    throw fail("Shadow mismatch: frame \(layer.frame) vs cover \(coverLayer.frame), bounds \(layer.bounds) vs \(coverLayer.bounds), path \(layer.shadowPath != nil), clipped \(shadow.clipsToBounds), opacity \(layer.shadowOpacity) vs \(realShadow.layer.shadowOpacity * Float(expansion)), radius \(layer.shadowRadius) vs \(realShadow.layer.shadowRadius * scale), offset \(layer.shadowOffset) vs height \(realShadow.layer.shadowOffset.height * scale), endpoints \(motion.startFrame) -> \(motion.endFrame), real bounds \(realCover.bounds)")
   }
 }
 #endif
