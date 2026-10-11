@@ -189,53 +189,40 @@ final class PlayerTransportButton: UIButton {
     }
     let animationID = UUID()
     skipAnimationID = animationID
-    let overlay = UIView(frame: CGRect(origin: .zero, size: image.size))
+    // Move the complete configured glyph as one image. Its two arrowheads
+    // keep their spacing throughout the tap instead of splitting and rejoining.
+    let overlay = UIImageView(image: image)
+    overlay.tintColor = tintColor
+    overlay.bounds = CGRect(origin: .zero, size: image.size)
     overlay.center = CGPoint(x: symbolContainer.bounds.midX, y: symbolContainer.bounds.midY)
-    // Let complete arrow shapes enter/leave with opacity instead of slicing
-    // their tips into a bright vertical bar at the viewport edge.
-    overlay.clipsToBounds = false
     overlay.isUserInteractionEnabled = false
-    let slotWidth = image.size.width / 2
-    var lanes: [UIView] = []
-    for slot in (direction > 0 ? -1...1 : 0...2) {
-      let lane = UIView(frame: CGRect(x: CGFloat(slot) * slotWidth, y: 0,
-        width: slotWidth, height: image.size.height))
-      lane.clipsToBounds = true
-      lane.alpha = slot == (direction > 0 ? -1 : 2) ? 0 : 1
-      // Slice the configured skip symbol itself. A separately sized play.fill
-      // triangle changes its rounded corners, spacing and baseline mid-flight.
-      let sourceHalf = direction > 0 ? (slot == 1 ? 1 : 0) : (slot == 0 ? 0 : 1)
-      let glyph = UIImageView(image: image)
-      glyph.tintColor = tintColor
-      glyph.frame = CGRect(x: -CGFloat(sourceHalf) * slotWidth, y: 0,
-        width: image.size.width, height: image.size.height)
-      lane.addSubview(glyph)
-      overlay.addSubview(lane)
-      lanes.append(lane)
-    }
-    // Both the resting glyph and flying lanes share touch scale and center.
     symbolContainer.addSubview(overlay)
     skipOverlay = overlay
     symbolView.alpha = 0
-    let timing = UICubicTimingParameters(controlPoint1: CGPoint(x: 0.22, y: 0),
-      controlPoint2: CGPoint(x: 0.25, y: 1))
-    let animator = UIViewPropertyAnimator(duration: 0.28, timingParameters: timing)
-    animator.addAnimations {
-      for (index, lane) in lanes.enumerated() {
-        lane.transform = CGAffineTransform(translationX: direction * slotWidth, y: 0)
-        lane.alpha = index == (direction > 0 ? 2 : 0) ? 0 : 1
-      }
+    let distance = min(6, image.size.width * 0.14)
+    let animator = UIViewPropertyAnimator(duration: 0.1, curve: .easeOut) {
+      overlay.transform = CGAffineTransform(translationX: direction * distance, y: 0)
     }
     animator.addCompletion { [weak self, weak overlay] _ in
-      overlay?.removeFromSuperview()
-      guard let self, skipAnimationID == animationID else { return }
-      skipAnimator = nil
-      skipOverlay = nil
-      symbolView.alpha = 1
-      if let pending = pendingSkipDirection {
-        pendingSkipDirection = nil
-        animateActivation(direction: pending)
+      guard let self, let overlay, skipAnimationID == animationID else { return }
+      let settle = UIViewPropertyAnimator(duration: 0.2, curve: .easeInOut) {
+        overlay.transform = .identity
       }
+      settle.addCompletion { [weak self, weak overlay] _ in
+        guard let self, skipAnimationID == animationID else { return }
+        // Swap only once the entire glyph has returned to its resting position.
+        // Both images have the same pixels, center, tint and touch scale.
+        symbolView.alpha = 1
+        overlay?.removeFromSuperview()
+        skipAnimator = nil
+        skipOverlay = nil
+        if let pending = pendingSkipDirection {
+          pendingSkipDirection = nil
+          animateActivation(direction: pending)
+        }
+      }
+      skipAnimator = settle
+      settle.startAnimation()
     }
     skipAnimator = animator
     animator.startAnimation()
@@ -243,7 +230,14 @@ final class PlayerTransportButton: UIButton {
 
   #if DEBUG && targetEnvironment(simulator)
     var skipPresentationOffsets: [CGFloat]? {
-      skipOverlay?.subviews.compactMap { $0.layer.presentation()?.transform.m41 }
+      skipOverlay?.layer.presentation().map { [$0.transform.m41] }
+    }
+
+    var isSkipGlyphIntact: Bool {
+      guard let overlay = skipOverlay as? UIImageView else { return false }
+      return overlay.subviews.isEmpty && overlay.alpha == 1 &&
+        overlay.image?.pngData() == image(for: .normal)?.pngData() &&
+        overlay.bounds.size == image(for: .normal)?.size
     }
 
     var isRenderedSymbolSettled: Bool {
@@ -1043,14 +1037,21 @@ extension PlayerControlView: MusicPlayable {
     for _ in 0..<14 {
       try await Task.sleep(for: .milliseconds(25))
       frames.append(frame())
-      if let offset = button.skipPresentationOffsets?.first { offsets.append(offset) }
+      if let offset = button.skipPresentationOffsets?.first {
+        try require(button.isSkipGlyphIntact, "skip split, duplicated or faded the configured glyph")
+        offsets.append(offset)
+      }
     }
     try require(button.isRenderedSymbolSettled, "release left a stale, scaled or off-center glyph")
     if direction != 0 && !UIAccessibility.isReduceMotionEnabled {
-      try require(offsets.count >= 3 && abs(offsets.last! - offsets.first!) > 1,
+      let distances = offsets.map { $0 * direction }
+      try require(distances.count >= 6 && (distances.max() ?? 0) > 2,
         "skip did not move through real presentation frames: \(offsets)")
-      try require(zip(offsets, offsets.dropFirst()).allSatisfy { ($0.1 - $0.0) * direction >= -0.1 },
-        "skip reversed or jumped mid-flight: \(offsets)")
+      try require(distances.allSatisfy { $0 >= -0.1 && $0 <= 6.1 } &&
+        (distances.last ?? 6) < 0.6,
+        "skip overshot or did not return smoothly: \(offsets)")
+      try require(zip(offsets, offsets.dropFirst()).allSatisfy { abs($0.1 - $0.0) < 3 },
+        "skip jumped between presentation frames: \(offsets)")
       button.animateActivation(direction: direction)
       try await Task.sleep(for: .milliseconds(60))
       let before = button.skipPresentationOffsets?.first
@@ -1072,7 +1073,7 @@ extension PlayerControlView: MusicPlayable {
       button.setImage(replacement, for: .normal)
       button.configuration?.image = replacement
       button.renderSymbol(replacement, identifier: "smoke-replacement")
-      try require(button.skipPresentationOffsets == nil, "symbol replacement retained flying lanes")
+      try require(button.skipPresentationOffsets == nil, "symbol replacement retained a moving glyph")
       try await Task.sleep(for: .milliseconds(350))
       try require(button.isRenderedSymbolSettled, "replacement left a stale or hidden glyph")
       button.setImage(original, for: .normal)
