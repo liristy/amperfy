@@ -191,22 +191,28 @@ final class PlayerTransportButton: UIButton {
     skipAnimationID = animationID
     // Move the complete configured glyph as one image. Its two arrowheads
     // keep their spacing throughout the tap instead of splitting and rejoining.
-    let overlay = UIImageView(image: image)
-    overlay.tintColor = tintColor
-    overlay.bounds = CGRect(origin: .zero, size: image.size)
+    let overlay = UIView(frame: CGRect(origin: .zero, size: image.size))
     overlay.center = CGPoint(x: symbolContainer.bounds.midX, y: symbolContainer.bounds.midY)
     overlay.isUserInteractionEnabled = false
+    // Layout owns the fixed outer canvas; animate its contents so a layout pass
+    // cannot reset the moving glyph's position while the press scale settles.
+    let movingGlyph = UIView(frame: overlay.bounds)
+    let glyph = UIImageView(image: image)
+    glyph.tintColor = tintColor
+    glyph.frame = movingGlyph.bounds
+    movingGlyph.addSubview(glyph)
+    overlay.addSubview(movingGlyph)
     symbolContainer.addSubview(overlay)
     skipOverlay = overlay
     symbolView.alpha = 0
     let distance = min(6, image.size.width * 0.14)
     let animator = UIViewPropertyAnimator(duration: 0.1, curve: .easeOut) {
-      overlay.transform = CGAffineTransform(translationX: direction * distance, y: 0)
+      movingGlyph.transform = CGAffineTransform(translationX: direction * distance, y: 0)
     }
     animator.addCompletion { [weak self, weak overlay] _ in
       guard let self, let overlay, skipAnimationID == animationID else { return }
       let settle = UIViewPropertyAnimator(duration: 0.2, curve: .easeInOut) {
-        overlay.transform = .identity
+        movingGlyph.transform = .identity
       }
       settle.addCompletion { [weak self, weak overlay] _ in
         guard let self, skipAnimationID == animationID else { return }
@@ -230,14 +236,18 @@ final class PlayerTransportButton: UIButton {
 
   #if DEBUG && targetEnvironment(simulator)
     var skipPresentationOffsets: [CGFloat]? {
-      skipOverlay?.layer.presentation().map { [$0.transform.m41] }
+      skipOverlay?.subviews.compactMap { view in
+        view.layer.presentation().map { $0.transform.m41 + $0.position.x - view.center.x }
+      }
     }
 
     var isSkipGlyphIntact: Bool {
-      guard let overlay = skipOverlay as? UIImageView else { return false }
-      return overlay.subviews.isEmpty && overlay.alpha == 1 &&
-        overlay.image?.pngData() == image(for: .normal)?.pngData() &&
-        overlay.bounds.size == image(for: .normal)?.size
+      guard let overlay = skipOverlay, overlay.subviews.count == 1,
+            let movingGlyph = overlay.subviews.first, movingGlyph.subviews.count == 1,
+            let glyph = movingGlyph.subviews.first as? UIImageView else { return false }
+      return overlay.alpha == 1 && movingGlyph.alpha == 1 && glyph.alpha == 1 &&
+        glyph.image?.pngData() == image(for: .normal)?.pngData() &&
+        glyph.bounds.size == image(for: .normal)?.size
     }
 
     var isRenderedSymbolSettled: Bool {
@@ -1028,6 +1038,19 @@ extension PlayerControlView: MusicPlayable {
       }
     }
     var frames = [frame()]
+    func saveFrames() throws {
+      let gridSize = CGSize(width: size.width * 8, height: size.height * 2)
+      let grid = UIGraphicsImageRenderer(size: gridSize).image { context in
+        UIColor.darkGray.setFill()
+        context.fill(CGRect(origin: .zero, size: gridSize))
+        for (index, image) in frames.enumerated() {
+          image.draw(at: CGPoint(x: CGFloat(index % 8) * size.width,
+            y: CGFloat(index / 8) * size.height))
+        }
+      }
+      try grid.pngData()?.write(to: URL.documentsDirectory.appendingPathComponent("\(name).png"))
+    }
+    defer { try? saveFrames() } // Preserve actual motion frames on assertion failures too.
     button.isHighlighted = true
     try await Task.sleep(for: .milliseconds(100))
     frames.append(frame())
@@ -1087,16 +1110,7 @@ extension PlayerControlView: MusicPlayable {
     button.isHighlighted = false // Cancelled press: no playback action.
     try await Task.sleep(for: .milliseconds(220))
     try require(button.isRenderedSymbolSettled, "cancelled press did not restore its glyph")
-    let gridSize = CGSize(width: size.width * 8, height: size.height * 2)
-    let grid = UIGraphicsImageRenderer(size: gridSize).image { context in
-      UIColor.darkGray.setFill()
-      context.fill(CGRect(origin: .zero, size: gridSize))
-      for (index, image) in frames.enumerated() {
-        image.draw(at: CGPoint(x: CGFloat(index % 8) * size.width,
-          y: CGFloat(index / 8) * size.height))
-      }
-    }
-    try grid.pngData()?.write(to: URL.documentsDirectory.appendingPathComponent("\(name).png"))
+    try saveFrames()
     NSLog("PlayerTransportSmoke: %@ passed presentation motion, rapid taps, interruption and cancellation", name)
   }
 #endif
