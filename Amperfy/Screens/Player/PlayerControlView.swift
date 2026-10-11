@@ -191,7 +191,9 @@ final class PlayerTransportButton: UIButton {
     skipAnimationID = animationID
     let overlay = UIView(frame: CGRect(origin: .zero, size: image.size))
     overlay.center = CGPoint(x: symbolContainer.bounds.midX, y: symbolContainer.bounds.midY)
-    overlay.clipsToBounds = true
+    // Let complete arrow shapes enter/leave with opacity instead of slicing
+    // their tips into a bright vertical bar at the viewport edge.
+    overlay.clipsToBounds = false
     overlay.isUserInteractionEnabled = false
     let slotWidth = image.size.width / 2
     var lanes: [UIView] = []
@@ -199,6 +201,7 @@ final class PlayerTransportButton: UIButton {
       let lane = UIView(frame: CGRect(x: CGFloat(slot) * slotWidth, y: 0,
         width: slotWidth, height: image.size.height))
       lane.clipsToBounds = true
+      lane.alpha = slot == (direction > 0 ? -1 : 2) ? 0 : 1
       // Slice the configured skip symbol itself. A separately sized play.fill
       // triangle changes its rounded corners, spacing and baseline mid-flight.
       let sourceHalf = direction > 0 ? (slot == 1 ? 1 : 0) : (slot == 0 ? 0 : 1)
@@ -218,7 +221,10 @@ final class PlayerTransportButton: UIButton {
       controlPoint2: CGPoint(x: 0.25, y: 1))
     let animator = UIViewPropertyAnimator(duration: 0.28, timingParameters: timing)
     animator.addAnimations {
-      for lane in lanes { lane.transform = CGAffineTransform(translationX: direction * slotWidth, y: 0) }
+      for (index, lane) in lanes.enumerated() {
+        lane.transform = CGAffineTransform(translationX: direction * slotWidth, y: 0)
+        lane.alpha = index == (direction > 0 ? 2 : 0) ? 0 : 1
+      }
     }
     animator.addCompletion { [weak self, weak overlay] _ in
       overlay?.removeFromSuperview()
