@@ -236,6 +236,21 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
                 smokeLog("Mini player content or progress escaped its capsule")
                 return
               }
+              try await miniPlayer.verifyMiniPlayMotion()
+              smokeLog("Mini play/pause uses the shared glyph animation and rapid taps settle correctly")
+              self.appDelegate.player.setAutoplayEnabled(false)
+              self.appDelegate.player.play(context: PlayContext(name: "Mini single song", playables: [nextSong]))
+              try await Task.sleep(for: .milliseconds(500))
+              try await miniPlayer.verifyMiniNextMotion()
+              guard !self.appDelegate.player.isPlaying,
+                    self.appDelegate.player.currentlyPlaying == nextSong,
+                    self.appDelegate.player.prevQueueCount == 0 else {
+                smokeLog("Mini single-song Next did not pause in place"); return
+              }
+              smokeLog("Mini next uses the shared flight and single-song Next pauses in place")
+              self.appDelegate.player.play(context: PlayContext(name: "Gapless smoke", playables: [song, nextSong]))
+              try await Task.sleep(for: .seconds(1))
+              try await compositorScreenshot("player-mini-transport.png")
               miniPlayer.beginTrackDrag()
               miniPlayer.updateTrackDrag(translation: -120)
               guard self.appDelegate.player.currentlyPlaying == song,
@@ -977,7 +992,10 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
               smokeLog("Progress restored its thin track after all release/cancel paths; sub-second engine samples, pause and hidden-player animation cleanup passed")
               guard self.appDelegate.player.elapsedTime >= 41 else { return }
               // Exercise real transport actions and the server-empty local fallback.
-              controls.previousButtonPushed(controls.previousButton as Any)
+              if let button = controls.previousButton as? PlayerTransportButton {
+                try await verifyPlayerTransportMotion(button, direction: -1,
+                  name: "player-previous-frames") { controls.previousButtonPushed(button) }
+              }
               try await Task.sleep(for: .milliseconds(70))
               try await compositorScreenshot("player-transport-previous-transition.png")
               self.appDelegate.player.setAutoplayEnabled(false)
@@ -985,7 +1003,10 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
               self.appDelegate.player.play(context: PlayContext(name: "Single song", playables: [nextSong]))
               try await Task.sleep(for: .milliseconds(700))
               self.appDelegate.player.seek(toSecond: 42)
-              controls.nextButtonPushed(controls.nextButton as Any)
+              if let button = controls.nextButton as? PlayerTransportButton {
+                try await verifyPlayerTransportMotion(button, direction: 1,
+                  name: "player-next-frames") { controls.nextButtonPushed(button) }
+              }
               try await Task.sleep(for: .milliseconds(70))
               try await compositorScreenshot("player-transport-next-transition.png")
               try await Task.sleep(for: .milliseconds(500))
@@ -995,6 +1016,7 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
                 smokeLog("Single-song Next reset the queue or did not pause")
                 return
               }
+              smokeLog("Full and mini skip animations keep configured glyphs, survive rapid taps and preserve single-song pause")
               self.appDelegate.player.setAutoplayEnabled(true)
               for _ in 0..<60 {
                 if !self.appDelegate.player.autoplayQueue.isEmpty { break }

@@ -36,9 +36,21 @@ final class PlayerTransportButton: UIButton {
   private var symbolTransitionID = UUID()
   private var skipOverlay: UIView?
   private var skipAnimationID = UUID()
+  private var skipAnimator: UIViewPropertyAnimator?
+  private var pendingSkipDirection: CGFloat?
+  private var currentSymbol: UIImage?
 
-  override func awakeFromNib() {
-    super.awakeFromNib()
+  override init(frame: CGRect) {
+    super.init(frame: frame)
+    prepareSymbolViews()
+  }
+
+  required init?(coder: NSCoder) {
+    super.init(coder: coder)
+    prepareSymbolViews()
+  }
+
+  private func prepareSymbolViews() {
     pressDisc.backgroundColor = .white.withAlphaComponent(0.12)
     pressDisc.alpha = 0
     for view in [pressDisc, symbolContainer] {
@@ -47,7 +59,46 @@ final class PlayerTransportButton: UIButton {
     }
     symbolContainer.addSubview(symbolView)
     symbolView.contentMode = .center
-    symbolView.tintColor = .white
+    symbolView.tintColor = tintColor
+    NotificationCenter.default.addObserver(self, selector: #selector(resetTransportMotion),
+      name: UIApplication.willResignActiveNotification, object: nil)
+    NotificationCenter.default.addObserver(self, selector: #selector(resetTransportMotion),
+      name: UIAccessibility.reduceMotionStatusDidChangeNotification, object: nil)
+  }
+
+  override func tintColorDidChange() {
+    super.tintColorDidChange()
+    symbolView.tintColor = tintColor
+    pressDisc.backgroundColor = tintColor.withAlphaComponent(0.12)
+  }
+
+  override func didMoveToWindow() {
+    super.didMoveToWindow()
+    if window == nil { resetTransportMotion() }
+  }
+
+  @objc private func resetTransportMotion() {
+    cancelSkipMotion()
+    symbolTransitionID = UUID()
+    symbolAnimator?.stopAnimation(true)
+    symbolAnimator = nil
+    symbolView.image = currentSymbol
+    symbolView.transform = .identity
+    symbolView.alpha = 1
+    pressDisc.layer.removeAllAnimations()
+    symbolContainer.layer.removeAllAnimations()
+    pressDisc.alpha = 0
+    symbolContainer.transform = .identity
+  }
+
+  private func cancelSkipMotion() {
+    skipAnimationID = UUID()
+    pendingSkipDirection = nil
+    skipAnimator?.stopAnimation(true)
+    skipAnimator = nil
+    skipOverlay?.removeFromSuperview()
+    skipOverlay = nil
+    symbolView.alpha = 1
   }
 
   override func layoutSubviews() {
@@ -63,7 +114,7 @@ final class PlayerTransportButton: UIButton {
     symbolContainer.center = pressDisc.center
     symbolView.bounds = symbolContainer.bounds
     symbolView.center = CGPoint(x: symbolContainer.bounds.midX, y: symbolContainer.bounds.midY)
-    skipOverlay?.center = pressDisc.center
+    skipOverlay?.center = CGPoint(x: symbolContainer.bounds.midX, y: symbolContainer.bounds.midY)
   }
 
   override var isHighlighted: Bool {
@@ -81,7 +132,9 @@ final class PlayerTransportButton: UIButton {
   }
 
   func renderSymbol(_ image: UIImage, identifier: String) {
-    guard symbolIdentifier != identifier else { return }
+    guard symbolIdentifier != identifier || currentSymbol?.size != image.size else { return }
+    cancelSkipMotion()
+    currentSymbol = image
     let animated = symbolIdentifier != nil && window != nil && !UIAccessibility.isReduceMotionEnabled
     symbolIdentifier = identifier
     let transitionID = UUID()
@@ -123,51 +176,68 @@ final class PlayerTransportButton: UIButton {
   }
 
   func animateActivation(direction: CGFloat = 0) {
-    // Play/pause touch highlighting already fades on release. Re-triggering it
-    // here would flash the circle a second time after every successful tap.
-    guard direction != 0 else { return }
-    pressDisc.layer.removeAllAnimations()
-    pressDisc.alpha = 1
-    UIView.animate(withDuration: 0.3, delay: 0.05, options: [.allowUserInteraction, .beginFromCurrentState]) {
-      self.pressDisc.alpha = 0
-    }
-    guard direction != 0, !UIAccessibility.isReduceMotionEnabled,
+    // Release already fades the press feedback. Do not flash it again on tap.
+    guard direction != 0, window != nil, !UIAccessibility.isReduceMotionEnabled,
           let image = symbolView.image else { return }
-    skipOverlay?.removeFromSuperview()
+    if skipAnimator != nil {
+      // Keep the visible flight continuous during rapid taps. Playback still
+      // responds to every tap; at most one more visual cycle waits behind it.
+      pendingSkipDirection = direction
+      return
+    }
     let animationID = UUID()
     skipAnimationID = animationID
     let overlay = UIView(frame: CGRect(origin: .zero, size: image.size))
-    overlay.center = pressDisc.center
+    overlay.center = CGPoint(x: symbolContainer.bounds.midX, y: symbolContainer.bounds.midY)
     overlay.clipsToBounds = true
     overlay.isUserInteractionEnabled = false
     let slotWidth = image.size.width / 2
-    var triangles: [UIImageView] = []
-    for slot in -1...1 {
-      let triangle = UIImageView(image: UIImage(systemName: "play.fill"))
-      triangle.tintColor = .white
-      triangle.contentMode = .scaleAspectFit
-      triangle.frame = CGRect(x: CGFloat(slot) * slotWidth, y: 0, width: slotWidth, height: image.size.height)
-      if direction < 0 {
-        triangle.frame.origin.x = CGFloat(slot + 1) * slotWidth
-        triangle.transform = CGAffineTransform(rotationAngle: .pi)
-      }
-      overlay.addSubview(triangle)
-      triangles.append(triangle)
+    var lanes: [UIView] = []
+    for slot in (direction > 0 ? -1...1 : 0...2) {
+      let lane = UIView(frame: CGRect(x: CGFloat(slot) * slotWidth, y: 0,
+        width: slotWidth, height: image.size.height))
+      lane.clipsToBounds = true
+      // Slice the configured skip symbol itself. A separately sized play.fill
+      // triangle changes its rounded corners, spacing and baseline mid-flight.
+      let sourceHalf = direction > 0 ? (slot == 1 ? 1 : 0) : (slot == 0 ? 0 : 1)
+      let glyph = UIImageView(image: image)
+      glyph.tintColor = tintColor
+      glyph.frame = CGRect(x: -CGFloat(sourceHalf) * slotWidth, y: 0,
+        width: image.size.width, height: image.size.height)
+      lane.addSubview(glyph)
+      overlay.addSubview(lane)
+      lanes.append(lane)
     }
-    addSubview(overlay)
+    // Both the resting glyph and flying lanes share touch scale and center.
+    symbolContainer.addSubview(overlay)
     skipOverlay = overlay
     symbolView.alpha = 0
-    UIView.animate(withDuration: 0.26, delay: 0, options: [.curveEaseOut, .allowUserInteraction]) {
-      for triangle in triangles { triangle.center.x += direction * slotWidth }
-    } completion: { [weak self, weak overlay] _ in
+    let timing = UICubicTimingParameters(controlPoint1: CGPoint(x: 0.22, y: 0),
+      controlPoint2: CGPoint(x: 0.25, y: 1))
+    let animator = UIViewPropertyAnimator(duration: 0.28, timingParameters: timing)
+    animator.addAnimations {
+      for lane in lanes { lane.transform = CGAffineTransform(translationX: direction * slotWidth, y: 0) }
+    }
+    animator.addCompletion { [weak self, weak overlay] _ in
       overlay?.removeFromSuperview()
       guard let self, skipAnimationID == animationID else { return }
+      skipAnimator = nil
       skipOverlay = nil
       symbolView.alpha = 1
+      if let pending = pendingSkipDirection {
+        pendingSkipDirection = nil
+        animateActivation(direction: pending)
+      }
     }
+    skipAnimator = animator
+    animator.startAnimation()
   }
 
   #if DEBUG && targetEnvironment(simulator)
+    var skipPresentationOffsets: [CGFloat]? {
+      skipOverlay?.subviews.compactMap { $0.layer.presentation()?.transform.m41 }
+    }
+
     var isRenderedSymbolSettled: Bool {
       func pixels(_ image: UIImage?) -> Data? {
         guard let image else { return nil }
@@ -177,7 +247,7 @@ final class PlayerTransportButton: UIButton {
         }.pngData()
       }
       guard let rendered = pixels(symbolView.image), let expected = pixels(image(for: .normal)) else { return false }
-      return rendered == expected && symbolAnimator == nil &&
+      return rendered == expected && symbolAnimator == nil && skipAnimator == nil && skipOverlay == nil &&
         symbolView.alpha == 1 && symbolView.transform == .identity &&
         symbolContainer.transform == .identity &&
         abs(symbolView.center.x - symbolContainer.bounds.midX) < 0.5 &&
@@ -933,3 +1003,87 @@ extension PlayerControlView: MusicPlayable {
 
   func didPlaybackRateChange() {}
 }
+
+#if DEBUG && targetEnvironment(simulator)
+  @MainActor
+  func verifyPlayerTransportMotion(_ button: PlayerTransportButton, direction: CGFloat,
+                                  name: String, action: () -> Void) async throws {
+    func require(_ condition: Bool, _ detail: String) throws {
+      if !condition {
+        throw NSError(domain: "PlayerTransportSmoke", code: 1,
+          userInfo: [NSLocalizedDescriptionKey: "\(name): \(detail)"])
+      }
+    }
+    button.layoutIfNeeded()
+    try await Task.sleep(for: .milliseconds(350))
+    try require(button.window != nil && button.isRenderedSymbolSettled, "initial glyph is not ready")
+    let size = button.bounds.size
+    func frame() -> UIImage {
+      UIGraphicsImageRenderer(size: size).image { context in
+        UIColor.darkGray.setFill()
+        context.fill(CGRect(origin: .zero, size: size))
+        (button.layer.presentation() ?? button.layer).render(in: context.cgContext)
+      }
+    }
+    var frames = [frame()]
+    button.isHighlighted = true
+    try await Task.sleep(for: .milliseconds(100))
+    frames.append(frame())
+    button.isHighlighted = false
+    action()
+    var offsets: [CGFloat] = []
+    for _ in 0..<14 {
+      try await Task.sleep(for: .milliseconds(25))
+      frames.append(frame())
+      if let offset = button.skipPresentationOffsets?.first { offsets.append(offset) }
+    }
+    try require(button.isRenderedSymbolSettled, "release left a stale, scaled or off-center glyph")
+    if direction != 0 && !UIAccessibility.isReduceMotionEnabled {
+      try require(offsets.count >= 3 && abs(offsets.last! - offsets.first!) > 1,
+        "skip did not move through real presentation frames: \(offsets)")
+      try require(zip(offsets, offsets.dropFirst()).allSatisfy { ($0.1 - $0.0) * direction >= -0.1 },
+        "skip reversed or jumped mid-flight: \(offsets)")
+      button.animateActivation(direction: direction)
+      try await Task.sleep(for: .milliseconds(60))
+      let before = button.skipPresentationOffsets?.first
+      button.animateActivation(direction: direction)
+      button.animateActivation(direction: direction)
+      try await Task.sleep(for: .milliseconds(30))
+      if let before, let after = button.skipPresentationOffsets?.first {
+        try require((after - before) * direction >= -0.1, "rapid taps restarted the visible flight")
+      } else {
+        try require(false, "rapid taps removed the visible flight")
+      }
+      try await Task.sleep(for: .milliseconds(650))
+      try require(button.isRenderedSymbolSettled, "rapid skips left an overlay or hidden original")
+      button.animateActivation(direction: direction)
+      button.renderSymbol(UIImage.play.withConfiguration(UIImage.SymbolConfiguration(pointSize: 20)),
+        identifier: "smoke-replacement")
+      try await Task.sleep(for: .milliseconds(350))
+      try require(button.isRenderedSymbolSettled == false,
+        "replacement unexpectedly still matches the configured skip image")
+      // Restore the actual configured image after interrupting an in-flight skip.
+      if let original = button.image(for: .normal) {
+        button.renderSymbol(original, identifier: direction > 0 ? "forward" : "backward")
+      }
+      try await Task.sleep(for: .milliseconds(350))
+      try require(button.isRenderedSymbolSettled, "symbol replacement did not cancel the old skip")
+    }
+    button.isHighlighted = true
+    try await Task.sleep(for: .milliseconds(60))
+    button.isHighlighted = false // Cancelled press: no playback action.
+    try await Task.sleep(for: .milliseconds(220))
+    try require(button.isRenderedSymbolSettled, "cancelled press did not restore its glyph")
+    let gridSize = CGSize(width: size.width * 8, height: size.height * 2)
+    let grid = UIGraphicsImageRenderer(size: gridSize).image { context in
+      UIColor.darkGray.setFill()
+      context.fill(CGRect(origin: .zero, size: gridSize))
+      for (index, image) in frames.enumerated() {
+        image.draw(at: CGPoint(x: CGFloat(index % 8) * size.width,
+          y: CGFloat(index / 8) * size.height))
+      }
+    }
+    try grid.pngData()?.write(to: URL.documentsDirectory.appendingPathComponent("\(name).png"))
+    NSLog("PlayerTransportSmoke: %@ passed presentation motion, rapid taps, interruption and cancellation", name)
+  }
+#endif

@@ -218,7 +218,7 @@ class MiniPlayerView: UIView, UIGestureRecognizerDelegate {
         UIImage
           .SymbolConfiguration(pointSize: PlayerUIHandler.playButtonImagePointSize)
       )
-    let button = UIButton(configuration: config)
+    let button = PlayerTransportButton(configuration: config)
     button.tintColor = .label
     button.addTarget(self, action: #selector(Self.playButtonPushed), for: .touchUpInside)
     return button
@@ -226,6 +226,7 @@ class MiniPlayerView: UIView, UIGestureRecognizerDelegate {
 
   @IBAction
   func playButtonPushed(_ sender: Any) {
+    (playButton as? PlayerTransportButton)?.animateActivation()
     playerHandler?.playButtonPushed()
     playerHandler?.refreshPlayButton(playButton)
   }
@@ -233,7 +234,7 @@ class MiniPlayerView: UIView, UIGestureRecognizerDelegate {
   fileprivate lazy var previousButton: UIButton = {
     var config = UIButton.Configuration.plain()
     config.image = .backwardFill.withConfiguration(UIImage.SymbolConfiguration(scale: .large))
-    let button = UIButton(configuration: config)
+    let button = PlayerTransportButton(configuration: config)
     button.tintColor = .label
     button.addTarget(self, action: #selector(Self.previousButtonPushed), for: .touchUpInside)
     return button
@@ -241,13 +242,14 @@ class MiniPlayerView: UIView, UIGestureRecognizerDelegate {
 
   @IBAction
   func previousButtonPushed(_ sender: Any) {
+    (previousButton as? PlayerTransportButton)?.animateActivation(direction: player.playerMode == .music ? -1 : 0)
     playerHandler?.previousButtonPushed()
   }
 
   fileprivate lazy var nextButton: UIButton = {
     var config = UIButton.Configuration.plain()
     config.image = .forwardFill.withConfiguration(UIImage.SymbolConfiguration(scale: .large))
-    let button = UIButton(configuration: config)
+    let button = PlayerTransportButton(configuration: config)
     button.tintColor = .label
     button.addTarget(self, action: #selector(Self.nextButtonPushed), for: .touchUpInside)
     return button
@@ -255,6 +257,7 @@ class MiniPlayerView: UIView, UIGestureRecognizerDelegate {
 
   @IBAction
   func nextButtonPushed(_ sender: Any) {
+    (nextButton as? PlayerTransportButton)?.animateActivation(direction: player.playerMode == .music ? 1 : 0)
     playerHandler?.nextButtonPushed()
   }
 
@@ -1104,6 +1107,34 @@ class MiniPlayerView: UIView, UIGestureRecognizerDelegate {
     refreshMoreButton()
     refreshTrailingButtons()
   }
+
+  #if DEBUG && targetEnvironment(simulator)
+    func verifyMiniPlayMotion() async throws {
+      guard let button = playButton as? PlayerTransportButton else { return }
+      try await verifyPlayerTransportMotion(button, direction: 0,
+        name: "player-mini-play-frames") { self.playButtonPushed(button) }
+      playButtonPushed(button)
+      try await Task.sleep(for: .milliseconds(400))
+      for _ in 0..<6 {
+        button.isHighlighted = true
+        try await Task.sleep(for: .milliseconds(40))
+        button.isHighlighted = false
+        playButtonPushed(button)
+        try await Task.sleep(for: .milliseconds(35))
+      }
+      try await Task.sleep(for: .milliseconds(400))
+      guard player.isPlaying, button.isRenderedSymbolSettled else {
+        throw NSError(domain: "PlayerTransportSmoke", code: 2,
+          userInfo: [NSLocalizedDescriptionKey: "Mini rapid play/pause left a stale glyph or playback state"])
+      }
+    }
+
+    func verifyMiniNextMotion() async throws {
+      guard let button = nextButton as? PlayerTransportButton else { return }
+      try await verifyPlayerTransportMotion(button, direction: 1,
+        name: "player-mini-next-frames") { self.nextButtonPushed(button) }
+    }
+  #endif
 
   required init?(coder: NSCoder) {
     fatalError("init(coder:) has not been implemented")
