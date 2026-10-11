@@ -85,6 +85,7 @@ final class PlayerTransportButton: UIButton {
     symbolView.image = currentSymbol
     symbolView.transform = .identity
     symbolView.alpha = 1
+    isHighlighted = false
     pressDisc.layer.removeAllAnimations()
     symbolContainer.layer.removeAllAnimations()
     pressDisc.alpha = 0
@@ -92,13 +93,14 @@ final class PlayerTransportButton: UIButton {
   }
 
   private func cancelSkipMotion() {
+    let hadSkipOverlay = skipOverlay != nil
     skipAnimationID = UUID()
     pendingSkipDirection = nil
     skipAnimator?.stopAnimation(true)
     skipAnimator = nil
     skipOverlay?.removeFromSuperview()
     skipOverlay = nil
-    symbolView.alpha = 1
+    if hadSkipOverlay { symbolView.alpha = 1 }
   }
 
   override func layoutSubviews() {
@@ -1056,18 +1058,22 @@ extension PlayerControlView: MusicPlayable {
       }
       try await Task.sleep(for: .milliseconds(650))
       try require(button.isRenderedSymbolSettled, "rapid skips left an overlay or hidden original")
-      button.animateActivation(direction: direction)
-      button.renderSymbol(UIImage.play.withConfiguration(UIImage.SymbolConfiguration(pointSize: 20)),
-        identifier: "smoke-replacement")
-      try await Task.sleep(for: .milliseconds(350))
-      try require(button.isRenderedSymbolSettled == false,
-        "replacement unexpectedly still matches the configured skip image")
-      // Restore the actual configured image after interrupting an in-flight skip.
-      if let original = button.image(for: .normal) {
-        button.renderSymbol(original, identifier: direction > 0 ? "forward" : "backward")
+      guard let original = button.image(for: .normal) else {
+        try require(false, "missing configured skip image"); return
       }
+      button.animateActivation(direction: direction)
+      let replacement = UIImage.play.withConfiguration(UIImage.SymbolConfiguration(pointSize: 20))
+      button.setImage(replacement, for: .normal)
+      button.configuration?.image = replacement
+      button.renderSymbol(replacement, identifier: "smoke-replacement")
+      try require(button.skipPresentationOffsets == nil, "symbol replacement retained flying lanes")
       try await Task.sleep(for: .milliseconds(350))
-      try require(button.isRenderedSymbolSettled, "symbol replacement did not cancel the old skip")
+      try require(button.isRenderedSymbolSettled, "replacement left a stale or hidden glyph")
+      button.setImage(original, for: .normal)
+      button.configuration?.image = original
+      button.renderSymbol(original, identifier: direction > 0 ? "forward" : "backward")
+      try await Task.sleep(for: .milliseconds(350))
+      try require(button.isRenderedSymbolSettled, "restoring the skip glyph did not settle")
     }
     button.isHighlighted = true
     try await Task.sleep(for: .milliseconds(60))
