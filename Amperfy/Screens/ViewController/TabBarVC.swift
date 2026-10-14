@@ -673,7 +673,7 @@ extension TabBarVC: MainSceneHostingViewController {
     let dockFrame = dock.frame
     var samples = 0
     var maxViewportDrift: CGFloat = 0
-    var playerY: [CGFloat] = []
+    var playerHeights: [CGFloat] = []
     func sample() throws {
       let drift = max(abs(scroll.bounds.height - size.height),
         abs(scroll.adjustedContentInset.bottom - inset.bottom),
@@ -685,7 +685,12 @@ extension TabBarVC: MainSceneHostingViewController {
       try require(!host.isTabBarHidden && host.tabBar.isUserInteractionEnabled == !dock.isCollapsed &&
         host.tabBar.accessibilityElementsHidden == dock.isCollapsed,
         "Native navigation layout or touch/accessibility ownership is incorrect")
-      if let layer = dock.miniPlayer.glassContainer.layer.presentation() { playerY.append(layer.frame.midY) }
+      // Native glass presents its effect layer in local coordinates. Its
+      // rendered bounds reliably expose resizing; placement is checked above
+      // and by the compact/expanded endpoint checks in the player smoke.
+      if let layer = dock.miniPlayer.glassContainer.layer.presentation() {
+        playerHeights.append(layer.bounds.height)
+      }
       samples += 1
     }
     // Sample the actual home collection throughout both springs, including
@@ -709,13 +714,13 @@ extension TabBarVC: MainSceneHostingViewController {
       try await Task.sleep(for: .milliseconds(25))
       try sample()
     }
-    let travel = (playerY.max() ?? 0) - (playerY.min() ?? 0)
-    NSLog("HomeDockScrollSmoke: viewport drift %.3f pt, rendered travel %.3f pt, native alpha %.3f",
-      Double(maxViewportDrift), Double(travel), Double(host.tabBar.alpha))
+    let heightChange = (playerHeights.max() ?? 0) - (playerHeights.min() ?? 0)
+    NSLog("HomeDockScrollSmoke: viewport drift %.3f pt, rendered height change %.3f pt, native alpha %.3f",
+      Double(maxViewportDrift), Double(heightChange), Double(host.tabBar.alpha))
     try require(!dock.isCollapsed && host.tabBar.alpha > 0.99,
       "Dock did not restore native navigation: alpha \(host.tabBar.alpha), compact \(dock.isCollapsed)")
-    try require(travel > 20,
-      "Dock did not move through rendered presentation frames: \(playerY)")
+    try require(heightChange > 6 && playerHeights.contains(where: { $0 > 49 && $0 < 55 }),
+      "Dock resizing did not render intermediate frames: \(playerHeights)")
     NSLog("HomeDockScrollSmoke: %d presentation samples kept home viewport/insets/offset stable; maximum drift %.3f pt",
       samples, Double(maxViewportDrift))
     scroll.setContentOffset(originalOffset, animated: false)
