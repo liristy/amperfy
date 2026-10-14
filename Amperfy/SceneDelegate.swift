@@ -402,7 +402,9 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
                 tabHost.updatePlayerDockForScroll(delta: -40, atTop: false)
                 try await Task.sleep(for: .milliseconds(650))
                 let compactFrame = miniPlayer.glassContainer.frame
-                guard dock.isCollapsed, tabHost.isTabBarHidden, abs(compactFrame.height - 48) < 0.5,
+                guard dock.isCollapsed, !tabHost.isTabBarHidden, tabHost.tabBar.alpha == 0,
+                      !tabHost.tabBar.isUserInteractionEnabled, tabHost.tabBar.accessibilityElementsHidden,
+                      abs(compactFrame.height - 48) < 0.5,
                       abs(compactFrame.midY - dock.navigationSlot.frame.midY) < 0.5,
                       abs(compactFrame.minX - dock.navigationSlot.frame.maxX - 12) < 0.5,
                       abs(dock.searchSlot.frame.minX - compactFrame.maxX - 12) < 0.5,
@@ -424,6 +426,7 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
                   return
                 }
                 smokeLog("Custom dock: 56pt player, 12pt external gap, 48pt sinking, reversal and gap hit testing passed")
+                try await verifyHomeDockScrollRestoration(tabHost)
               }
               func descendants(of view: UIView) -> [UIView] {
                 view.subviews + view.subviews.flatMap { descendants(of: $0) }
