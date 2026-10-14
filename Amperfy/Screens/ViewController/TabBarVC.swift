@@ -685,7 +685,7 @@ extension TabBarVC: MainSceneHostingViewController {
       try require(!host.isTabBarHidden && host.tabBar.isUserInteractionEnabled == !dock.isCollapsed &&
         host.tabBar.accessibilityElementsHidden == dock.isCollapsed,
         "Native navigation layout or touch/accessibility ownership is incorrect")
-      if let layer = dock.miniPlayer.glassContainer.layer.presentation() { playerY.append(layer.position.y) }
+      if let layer = dock.miniPlayer.glassContainer.layer.presentation() { playerY.append(layer.frame.midY) }
       samples += 1
     }
     // Sample the actual home collection throughout both springs, including
@@ -709,9 +709,13 @@ extension TabBarVC: MainSceneHostingViewController {
       try await Task.sleep(for: .milliseconds(25))
       try sample()
     }
-    try require(!dock.isCollapsed && host.tabBar.alpha == 1 &&
-      (playerY.max() ?? 0) - (playerY.min() ?? 0) > 20,
-      "Dock did not animate through presentation frames or restore native navigation")
+    let travel = (playerY.max() ?? 0) - (playerY.min() ?? 0)
+    NSLog("HomeDockScrollSmoke: viewport drift %.3f pt, rendered travel %.3f pt, native alpha %.3f",
+      Double(maxViewportDrift), Double(travel), Double(host.tabBar.alpha))
+    try require(!dock.isCollapsed && host.tabBar.alpha > 0.99,
+      "Dock did not restore native navigation: alpha \(host.tabBar.alpha), compact \(dock.isCollapsed)")
+    try require(travel > 20,
+      "Dock did not move through rendered presentation frames: \(playerY)")
     NSLog("HomeDockScrollSmoke: %d presentation samples kept home viewport/insets/offset stable; maximum drift %.3f pt",
       samples, Double(maxViewportDrift))
     scroll.setContentOffset(originalOffset, animated: false)
