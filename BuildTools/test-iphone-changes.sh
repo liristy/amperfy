@@ -59,4 +59,10 @@ app_path="build/validation/DerivedData/Build/Products/Debug-iphonesimulator/Ampe
 bundle_id=$(/usr/libexec/PlistBuddy -c 'Print CFBundleIdentifier' "$app_path/Info.plist")
 wait "$simulator_boot_pid"
 xcrun simctl bootstatus "$device_id" -b
+xcodebuild build-for-testing \
+  -project BuildTools/PlayerTouchTests.xcodeproj -scheme PlayerTouchTests \
+  -destination "platform=iOS Simulator,id=$device_id" \
+  -derivedDataPath build/validation/TouchDerivedData \
+  CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO \
+  2>&1 | tee build/validation/player-touch-build.log
 bash BuildTools/smoke-iphone-login.sh "$device_id" "$app_path" "$bundle_id"

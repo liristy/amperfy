@@ -58,6 +58,33 @@ class SsLyricsBySongId2ParserTest: AbstractSsParserTest {
     XCTAssertNil(lyrics.activeLineIndex(at: time(2000)))
   }
 
+  func testExactMillisecondSelectionWithPositiveAndNegativeOffsets() {
+    for start in [1001, 2002, 10101, 124124] {
+      for offset in [-100, 0, 100] {
+        var lyrics = StructuredLyrics()
+        lyrics.synced = true
+        lyrics.offset = offset
+        lyrics.line = [0, start, start + 1000].map { timestamp in
+          var line = LyricsLine()
+          line.start = timestamp
+          line.value = "Line"
+          return line
+        }
+        let target = CMTime(value: Int64(start - offset), timescale: 1000)
+        let playbackTime = StructuredLyrics.playbackTime(seconds: Double(start - offset) / 1000)
+        XCTAssertEqual(CMTimeCompare(playbackTime, target), 0)
+        XCTAssertEqual(lyrics.activeLineIndex(at: playbackTime), 1)
+        XCTAssertEqual(lyrics.activeLineIndex(at: target), 1)
+        let before = CMTimeSubtract(target, CMTime(value: 1, timescale: 1_000_000_000))
+        XCTAssertEqual(lyrics.activeLineIndex(at: before), 0)
+        XCTAssertEqual(lyrics.activeLineIndex(at: CMTimeAdd(target, CMTime(value: 1, timescale: 1000))), 1)
+      }
+    }
+    for seconds in [Double.nan, .infinity, -.infinity, .greatestFiniteMagnitude] {
+      XCTAssertFalse(StructuredLyrics.playbackTime(seconds: seconds).isValid)
+    }
+  }
+
   override func checkCorrectParsing() {
     guard let lyricsParser = ssParserDelegate as? SsLyricsParserDelegate,
           let lyricsList = lyricsParser.lyricsList

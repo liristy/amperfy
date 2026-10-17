@@ -20,7 +20,7 @@ cleanup() {
   fi
   # Preserve intermediate frames and the exact failing step even on a smoke failure.
   if [[ -n "${container:-}" ]]; then
-    find "$container/Documents" -name 'player-*.png' -exec cp {} build/validation/ \; 2>/dev/null || true
+    find "$container/Documents" \( -name 'player-*.png' -o -name 'player-touch-samples.json' \) -exec cp {} build/validation/ \; 2>/dev/null || true
   fi
   find "$HOME/Library/Logs/DiagnosticReports" -name 'Amperfy*.ips' -exec cp {} build/validation/crashes/ \; 2>/dev/null || true
   xcrun simctl spawn "$device_id" log show --last 5m --style compact --predicate 'process == "Amperfy"' > build/validation/simulator.log 2>&1 || true
@@ -99,8 +99,21 @@ xcrun simctl launch \
   "$device_id" "$bundle_id" -AppleLanguages '(zh-Hans)' --smoke-login --smoke-player
 ready=false
 # The player suite also checks all statistics panels and native detail returns.
-# Bound polling between compositor captures; report an explicit failure immediately.
-for attempt in {1..150}; do
+# Captures and actual finger injection take variable time. Use an elapsed-time
+# budget for the whole suite and acknowledge compositor requests promptly.
+player_smoke_deadline=$((SECONDS + 900))
+while (( SECONDS < player_smoke_deadline )); do
+  if [[ -f "$container/Documents/player-touch-ready" && -z "${touch_test_pid:-}" ]]; then
+    xcodebuild test-without-building \
+      -project BuildTools/PlayerTouchTests.xcodeproj -scheme PlayerTouchTests \
+      -only-testing:PlayerTouchTests/PlayerTouchTests/testActualFingerDragging \
+      -destination "platform=iOS Simulator,id=$device_id" \
+      -derivedDataPath build/validation/TouchDerivedData \
+      -resultBundlePath build/validation/PlayerTouchTests.xcresult \
+      -parallel-testing-enabled NO CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO \
+      > build/validation/player-touch-test.log 2>&1 &
+    touch_test_pid=$!
+  fi
   if [[ -f "$container/Documents/player-screenshot-request" ]]; then
     screenshot_name=$(cat "$container/Documents/player-screenshot-request")
     if [[ ! "$screenshot_name" =~ ^player-[a-z0-9-]+\.png$ ]]; then
@@ -117,13 +130,13 @@ for attempt in {1..150}; do
     break
   fi
   [[ -f "$container/Documents/player-smoke-failed" ]] && break
-  sleep 2
+  sleep 0.2
 done
 kill -INT "$motion_pid" 2>/dev/null || true
 wait "$motion_pid" || true
 motion_pid=
 xcrun simctl io "$device_id" screenshot build/validation/player-dismissed-zh-Hans.png
-for screenshot in player-transport-play-pause-frames player-transport-pressed player-transport-playing-transition player-transport-previous-transition player-transport-next-transition player-autoplay-queue player-queue-scroll-history-near-top player-queue-scroll-history-title-edge player-queue-history-reopened player-queue-scroll-history player-queue-scroll-current player-queue-scroll-modes player-queue-scroll-beyond player-queue-empty player-queue-resumed player-opening player-opening-refreshed player-closing-capsule player-next-song player-paused-artwork player-mini-spacing player-native-library player-mini-collapsed player-search-keyboard player-lyrics-controls player-queue-from-lyrics player-queue-multiple player-mini-drag player-mini-drag-previous player-lyrics-reopened player-queue-closed-artwork player-statistics-overview player-statistics-ranking player-statistics-trend player-statistics-top player-statistics-history; do
+for screenshot in player-mini-transport player-mini-play-frames player-mini-next-frames player-previous-frames player-next-frames player-ambient-flow-start player-ambient-flow-moved player-touch-drag-frames player-track-restoration-frames player-transport-play-pause-frames player-transport-pressed player-transport-playing-transition player-transport-previous-transition player-transport-next-transition player-autoplay-queue player-queue-scroll-history-near-top player-queue-scroll-history-title-edge player-queue-history-reopened player-queue-scroll-history player-queue-scroll-current player-queue-scroll-modes player-queue-scroll-beyond player-queue-empty player-queue-resumed player-opening player-opening-refreshed player-closing-capsule player-next-song player-paused-artwork player-mini-spacing player-native-library player-mini-collapsed player-search-keyboard player-lyrics-controls player-queue-from-lyrics player-queue-multiple player-mini-drag player-mini-drag-previous player-lyrics-reopened player-queue-closed-artwork player-statistics-overview player-statistics-ranking player-statistics-trend player-statistics-top player-statistics-history; do
   source="$container/Documents/$screenshot.png"
   if [[ -f "$source" ]]; then
     sips -s format jpeg -s formatOptions 80 -Z 1000 "$source" --out "build/validation/$screenshot-preview.jpg" >/dev/null
@@ -135,6 +148,9 @@ if [[ "$ready" != true ]]; then
   cat build/validation/player.stderr.log
   exit 1
 fi
+[[ -n "${touch_test_pid:-}" ]] || { echo "Actual-touch UI tests were never started"; exit 1; }
+wait "$touch_test_pid" || { cat build/validation/player-touch-test.log; exit 1; }
+cp "$container/Documents/player-touch-samples.json" build/validation/
 echo "Original audio streaming, seek and synchronized lyrics smoke test passed"
 cat build/validation/player.stdout.log
 

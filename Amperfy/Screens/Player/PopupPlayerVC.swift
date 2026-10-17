@@ -48,6 +48,11 @@ class PopupPlayerVC: UIViewController, UIScrollViewDelegate, UIGestureRecognizer
   }()
   internal var artworkGradientColors = [UIColor]()
   internal let artworkGradientLayer = CAGradientLayer()
+  internal let artworkAmbientLayer = CALayer()
+  internal let artworkColorLayers = (0..<4).map { _ in CAGradientLayer() }
+  internal var artworkMotionSize: CGSize = .zero
+  internal var isPlayerPresentationVisible = false
+  internal var isAmbientApplicationActive = UIApplication.shared.applicationState == .active
   internal var backgroundArtworkKey: String?
   internal var backgroundArtworkTask: Task<Void, Never>?
   private var portraitLayoutConstraints = [NSLayoutConstraint]()
@@ -56,7 +61,16 @@ class PopupPlayerVC: UIViewController, UIScrollViewDelegate, UIGestureRecognizer
   private var lyricsControlsTask: Task<Void, Never>?
   private(set) var areLyricsControlsHidden = false
   let surfaceTransition = PlayerSurfaceTransitionDelegate()
+  private lazy var lyricsControlsSwipe = UISwipeGestureRecognizer(target: self, action: #selector(restoreLyricsControls))
   private lazy var dismissPan = UIPanGestureRecognizer(target: self, action: #selector(dragToDismiss(_:)))
+  private weak var sourceMiniPlayer: MiniPlayerView?
+  #if DEBUG && targetEnvironment(simulator)
+    func prepareLyricsGestureCheck() {
+      lyricsControlsTask?.cancel()
+      setLyricsControlsHidden(false, animated: false)
+      view.layoutIfNeeded()
+    }
+  #endif
   override var preferredStatusBarStyle: UIStatusBarStyle { .lightContent }
 
   lazy var tableViewKeyCommandsController = TableViewKeyCommandsController(
@@ -121,6 +135,21 @@ class PopupPlayerVC: UIViewController, UIScrollViewDelegate, UIGestureRecognizer
     overrideUserInterfaceStyle = .dark
     view.backgroundColor = UIColor(white: 0.12, alpha: 1)
     backgroundImage.layer.insertSublayer(artworkGradientLayer, at: 0)
+    backgroundImage.layer.insertSublayer(artworkAmbientLayer, at: 1)
+    backgroundImage.clipsToBounds = true
+    for layer in artworkColorLayers {
+      layer.type = .radial
+      layer.startPoint = CGPoint(x: 0.5, y: 0.5)
+      layer.endPoint = CGPoint(x: 1, y: 1)
+      layer.locations = [0, 0.35, 0.7, 1]
+      artworkAmbientLayer.addSublayer(layer)
+    }
+    for name in [UIApplication.didBecomeActiveNotification, UIApplication.willResignActiveNotification,
+                 UIApplication.didEnterBackgroundNotification, .NSProcessInfoPowerStateDidChange,
+                 UIAccessibility.reduceMotionStatusDidChangeNotification] {
+      NotificationCenter.default.addObserver(self, selector: #selector(ambientEnvironmentChanged(_:)),
+        name: name, object: nil)
+    }
 
     controlPlaceholderHeightConstraint.constant = PlayerControlView
       .frameHeight + safetyMarginOnBottom
@@ -138,9 +167,9 @@ class PopupPlayerVC: UIViewController, UIScrollViewDelegate, UIGestureRecognizer
       controlPlaceholderView.addSubview(createdPlayerControlView)
     }
     controlPlaceholderView.clipsToBounds = true
-    let restoreControls = UITapGestureRecognizer(target: self, action: #selector(restoreLyricsControls))
-    restoreControls.delegate = self
-    view.addGestureRecognizer(restoreControls)
+    lyricsControlsSwipe.direction = .down
+    lyricsControlsSwipe.delegate = self
+    view.addGestureRecognizer(lyricsControlsSwipe)
     dismissPan.delegate = self
     dismissPan.maximumNumberOfTouches = 1
     view.addGestureRecognizer(dismissPan)
@@ -260,6 +289,7 @@ class PopupPlayerVC: UIViewController, UIScrollViewDelegate, UIGestureRecognizer
 
   override func viewIsAppearing(_ animated: Bool) {
     super.viewIsAppearing(animated)
+    sourceMiniPlayer?.setTrackSwipingSuspended(true)
     appDelegate.userStatistics.visited(.popupPlayer)
     becomeFirstResponder()
     changeDisplayStyleVisually(
@@ -274,14 +304,25 @@ class PopupPlayerVC: UIViewController, UIScrollViewDelegate, UIGestureRecognizer
 
   override func viewWillDisappear(_ animated: Bool) {
     super.viewWillDisappear(animated)
+    setPlayerPresentationVisible(false)
     lyricsControlsTask?.cancel()
     resignFirstResponder()
   }
 
   override func viewDidAppear(_ animated: Bool) {
     super.viewDidAppear(animated)
+    setPlayerPresentationVisible(true)
     updateQueueModeBackgrounds()
     lyricsModeDidChange()
+  }
+
+  override func viewDidDisappear(_ animated: Bool) {
+    super.viewDidDisappear(animated)
+    // Keep the dock suspended if another full-screen presentation covers us.
+    // Resume only after dismissal or a cancelled opening transition.
+    if isBeingDismissed || presentingViewController == nil {
+      sourceMiniPlayer?.setTrackSwipingSuspended(false)
+    }
   }
 
   func lyricsModeDidChange() {
@@ -316,6 +357,7 @@ class PopupPlayerVC: UIViewController, UIScrollViewDelegate, UIGestureRecognizer
       appDelegate.storage.settings.user.playerDisplayStyle == .large) else { return }
     guard hidden != areLyricsControlsHidden else { return }
     areLyricsControlsHidden = hidden
+    controlView?.setPlaybackPresentationActive(isPlayerPresentationVisible && !hidden)
     view.layoutIfNeeded()
     controlPlaceholderView.isUserInteractionEnabled = !hidden
     controlPlaceholderView.accessibilityElementsHidden = hidden
@@ -326,7 +368,7 @@ class PopupPlayerVC: UIViewController, UIScrollViewDelegate, UIGestureRecognizer
       self.view.layoutIfNeeded()
     }
     if animated, !UIAccessibility.isReduceMotionEnabled {
-      UIView.animate(withDuration: 0.4, delay: 0, options: [.beginFromCurrentState, .curveEaseInOut],
+      UIView.animate(withDuration: 0.4, delay: 0, options: [.beginFromCurrentState, .allowUserInteraction, .curveEaseInOut],
                      animations: changes)
     } else { changes() }
   }
@@ -338,15 +380,25 @@ class PopupPlayerVC: UIViewController, UIScrollViewDelegate, UIGestureRecognizer
 
   func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer, shouldReceive touch: UITouch) -> Bool {
     let isDismissPan = gestureRecognizer === dismissPan
-    guard isDismissPan || areLyricsControlsHidden else { return false }
+    let isLyricsFooter = areLyricsControlsHidden &&
+      touch.location(in: view).y >= view.bounds.maxY - max(160, view.safeAreaInsets.bottom + 120)
+    // A downward footer swipe reveals lyrics controls; it must not also start
+    // dismissing the full-screen player in the same direction.
+    if isDismissPan, isLyricsFooter { return false }
+    guard isDismissPan || (gestureRecognizer === lyricsControlsSwipe && isLyricsFooter) else { return false }
     var touchedView = touch.view
     while let current = touchedView {
+      // Reject dismissal before recognition, rather than making every new
+      // lyric drag wait for the player's pan recognizer to fail.
+      if isDismissPan, current is LyricsView { return false }
       #if !targetEnvironment(macCatalyst)
         if isDismissPan, current is DragOnlySystemVolumeView { return false }
       #endif
       if isDismissPan, current is MPVolumeView { return false }
-      if isDismissPan ? (current is UISlider) : (current is UIControl) { return false }
-      if !isDismissPan, current === largeCurrentlyPlayingView?.transitionArtwork { return false }
+      if isDismissPan ? (current is UISlider || current is PlayerTrackSlider) : (current is UIControl) { return false }
+      // The lyrics table handles its own downward pan without stealing row taps
+      // or competing with its scrolling gesture. This swipe covers the footer.
+      if !isDismissPan, current is LyricsView || current === largeCurrentlyPlayingView?.transitionArtwork { return false }
       touchedView = current.superview
     }
     return true
@@ -370,11 +422,9 @@ class PopupPlayerVC: UIViewController, UIScrollViewDelegate, UIGestureRecognizer
     return true
   }
 
-  func registerLyricsScrollView(_ lyricsView: LyricsView) {
-    lyricsView.panGestureRecognizer.require(toFail: dismissPan)
-  }
-
-  func configurePresentation(sourcePlayer: UIView?, sourceArtwork: UIImageView?) {
+  func configurePresentation(sourcePlayer: UIView?, sourceArtwork: UIImageView?, sourceMiniPlayer: MiniPlayerView? = nil) {
+    self.sourceMiniPlayer = sourceMiniPlayer
+    sourceMiniPlayer?.setTrackSwipingSuspended(true)
     surfaceTransition.sourcePlayer = sourcePlayer
     surfaceTransition.sourceArtwork = sourceArtwork
     modalPresentationStyle = .fullScreen
@@ -684,11 +734,13 @@ extension PopupPlayerVC: MusicPlayable {
     reloadData()
     refresh()
     largeCurrentlyPlayingView?.refreshPlaybackAppearance(animated: true)
+    updateAmbientAnimation()
   }
 
   func didStopPlaying() {
     reloadData()
     refresh()
+    updateAmbientAnimation()
   }
 
   func didPlaylistChange() {
@@ -698,6 +750,7 @@ extension PopupPlayerVC: MusicPlayable {
 
   func didPause() {
     largeCurrentlyPlayingView?.refreshPlaybackAppearance(animated: true)
+    updateAmbientAnimation()
   }
   func didElapsedTimeChange() {}
 

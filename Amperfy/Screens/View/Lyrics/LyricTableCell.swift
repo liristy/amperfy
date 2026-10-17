@@ -31,6 +31,11 @@ class LyricTableCellModel {
   var isActiveLine = false {
     didSet { if oldValue != isActiveLine { cell?.refresh(animated: true) } }
   }
+  var isManuallyReading = false {
+    didSet {
+      if oldValue != isManuallyReading { cell?.refresh(animated: !isManuallyReading) }
+    }
+  }
 
   var displayString: NSAttributedString {
     let paragraph = NSMutableParagraphStyle()
@@ -124,19 +129,24 @@ class LyricTableCell: UITableViewCell {
   private func updateEmphasis(animated: Bool) {
     guard let model = viewModel else { return }
     let changes = {
-      self.lyricLabel.alpha = model.isActiveLine ? 1 : (self.blurredLyrics.image == nil ? 0.32 : 0)
-      self.blurredLyrics.alpha = model.isActiveLine ? 0 : 0.5
+      self.lyricLabel.alpha = model.isActiveLine ? 1 : (model.isManuallyReading ? 0.65 : (self.blurredLyrics.image == nil ? 0.32 : 0))
+      self.blurredLyrics.alpha = model.isActiveLine || model.isManuallyReading ? 0 : 0.5
     }
     if animated, !UIAccessibility.isReduceMotionEnabled {
       UIView.animate(withDuration: 0.3, delay: 0, options: [.beginFromCurrentState, .allowUserInteraction], animations: changes)
-    } else { changes() }
+    } else {
+      lyricLabel.layer.removeAllAnimations()
+      blurredLyrics.layer.removeAllAnimations()
+      changes()
+    }
   }
 
   // Rasterize only when the text, wrapping width or display scale changes.
   // Playback emphasis crossfades these two layers without rerunning the filter.
   @discardableResult
   private func renderBlurredLyricsIfNeeded() -> Bool {
-    guard let text = lyricLabel.attributedText,
+    guard viewModel?.isManuallyReading != true,
+          let text = lyricLabel.attributedText,
           lyricLabel.bounds.width > 0, lyricLabel.bounds.height > 0 else { return false }
     let size = lyricLabel.bounds.size
     let scale = max(1, traitCollection.displayScale)
@@ -160,3 +170,12 @@ class LyricTableCell: UITableViewCell {
     return true
   }
 }
+
+#if DEBUG && targetEnvironment(simulator)
+  extension LyricTableCell {
+    var isPlaybackEmphasisVisible: Bool {
+      (lyricLabel.layer.presentation()?.opacity ?? lyricLabel.layer.opacity) > 0.95 &&
+        (blurredLyrics.layer.presentation()?.opacity ?? blurredLyrics.layer.opacity) < 0.05
+    }
+  }
+#endif

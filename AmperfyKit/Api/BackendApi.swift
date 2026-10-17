@@ -118,12 +118,21 @@ public struct StructuredLyrics {
     0 // The offset to apply to all lyrics, in milliseconds. Positive means lyrics appear sooner, negative means later. If not included, the offset must be assumed to be 0
   public init() {}
 
+  /// Lyric timestamps use milliseconds. Explicit rounding preserves exact
+  /// lyric seeks whose Double representation lies just below a millisecond.
+  public static func playbackTime(seconds: Double) -> CMTime {
+    guard let milliseconds = Int64(exactly: (seconds * 1_000).rounded()) else { return .invalid }
+    return CMTime(value: milliseconds, timescale: 1_000)
+  }
+
   public func activeLineIndex(at time: CMTime) -> Int? {
     guard synced, time.seconds.isFinite else { return nil }
-    let milliseconds = time.seconds * 1_000 + Double(offset)
+    // Compare rational media times. Converting 1.001 seconds back to floating
+    // milliseconds can produce 1000.9999999999999 and select the previous line.
+    let adjustedTime = CMTimeAdd(time, CMTime(value: Int64(offset), timescale: 1_000))
     return line.lastIndex { lyric in
       guard let start = lyric.start else { return false }
-      return Double(start) <= milliseconds
+      return CMTimeCompare(CMTime(value: Int64(start), timescale: 1_000), adjustedTime) <= 0
     }
   }
 }

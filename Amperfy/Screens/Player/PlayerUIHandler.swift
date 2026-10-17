@@ -423,12 +423,12 @@ class PlayerUIHandler: NSObject {
     return nil
   }
 
-  func timeSliderChanged(timeSlider: UISlider) {
+  func timeSliderChanged(timeSlider: PlayerTrackSlider) {
     player.seek(toSecond: Double(timeSlider.value))
   }
 
   func timeSliderIsChanging(
-    timeSlider: UISlider,
+    timeSlider: PlayerTrackSlider,
     elapsedTimeLabel: UILabel,
     remainingTimeLabel: UILabel
   ) {
@@ -440,20 +440,20 @@ class PlayerUIHandler: NSObject {
   }
 
   func refreshTimeInfo(
-    timeSlider: UISlider,
+    timeSlider: PlayerTrackSlider,
     elapsedTimeLabel: UILabel,
     remainingTimeLabel: UILabel,
     audioInfoLabel: UILabel,
     playTypeIcon: UIImageView,
     liveLabel: UILabel
   ) {
-    timeSlider.preferredBehavioralStyle = .pad
-    timeSlider.sliderStyle = .thumbless
     if let currentlyPlaying = player.currentlyPlaying {
       let supportTimeInteraction = !currentlyPlaying.isRadio
       timeSlider.isEnabled = supportTimeInteraction && (style != .miniPlayeriOS)
-      timeSlider.minimumValue = 0.0
-      timeSlider.maximumValue = Float(player.duration)
+      if timeSlider.minimumValue != 0 { timeSlider.minimumValue = 0 }
+      let duration = player.duration
+      let maximum = duration.isFinite && duration > 0 ? Float(duration) : 0
+      if timeSlider.maximumValue != maximum { timeSlider.maximumValue = maximum }
       if !timeSlider.isTracking, supportTimeInteraction {
         let elapsedClockTime = ClockTime(timeInSeconds: Int(player.elapsedTime))
         elapsedTimeLabel.text = elapsedClockTime.asShortString()

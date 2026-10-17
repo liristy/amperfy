@@ -31,8 +31,19 @@ class LyricsView: UITableView, UITableViewDataSource, UITableViewDelegate {
   private var lastScrolledIndex: Int?
   private var scrollAnimation = true
   private var suppressAutoScrollUntil: Date?
+  private var isFollowingPlayback = true {
+    didSet {
+      guard oldValue != isFollowingPlayback else { return }
+      lyricModels.forEach { $0.isManuallyReading = !isFollowingPlayback }
+    }
+  }
   private let edgeMask = CAGradientLayer()
   private var previousSize: CGSize = .zero
+  private let horizontalDragBlocker = LyricsHorizontalDragRecognizer(target: nil, action: nil)
+  #if DEBUG && targetEnvironment(simulator)
+    private var gestureProbeSelections = 0
+    private var gestureProbeDrags = 0
+  #endif
   public var onLyricSelected: ((LyricsLine) -> ())?
   public var onUpwardDrag: (() -> ())?
   public var onDownwardDrag: (() -> ())?
@@ -52,9 +63,23 @@ class LyricsView: UITableView, UITableViewDataSource, UITableViewDelegate {
     separatorStyle = .none
     backgroundColor = .clear
     showsVerticalScrollIndicator = false
+    alwaysBounceHorizontal = false
+    isDirectionalLockEnabled = true
     contentInsetAdjustmentBehavior = .never
     dataSource = self
     delegate = self
+    // Claim horizontal drags on the lyrics themselves. Merely rejecting the
+    // scroll pan can leave the row touch or an ancestor gesture unclaimed.
+    horizontalDragBlocker.name = "player.lyrics.horizontalDragBlocker"
+    horizontalDragBlocker.cancelsTouchesInView = true
+    horizontalDragBlocker.delaysTouchesBegan = false
+    horizontalDragBlocker.delaysTouchesEnded = false
+    addGestureRecognizer(horizontalDragBlocker)
+    panGestureRecognizer.require(toFail: horizontalDragBlocker)
+    #if DEBUG && targetEnvironment(simulator)
+      horizontalDragBlocker.isEnabled = !ProcessInfo.processInfo.arguments.contains("--lyrics-gesture-baseline")
+    #endif
+    accessibilityIdentifier = "player.lyricsTable"
     edgeMask.colors = [UIColor.clear.cgColor, UIColor.white.cgColor,
                        UIColor.white.cgColor, UIColor.clear.cgColor]
     edgeMask.locations = [0, 0.08, 0.90, 1]
@@ -76,7 +101,9 @@ class LyricsView: UITableView, UITableViewDataSource, UITableViewDelegate {
     // height every frame; rebuilding all cells there interrupts highlighting.
     if widthChanged { reloadData() }
     lastScrolledIndex = nil
-    if lastIndex == nil { setContentOffset(CGPoint(x: 0, y: -contentInset.top), animated: false) }
+    if lastIndex == nil, isFollowingPlayback, !isTracking, !isDecelerating {
+      setContentOffset(CGPoint(x: 0, y: -contentInset.top), animated: false)
+    }
   }
 
   public func display(lyrics: StructuredLyrics, scrollAnimation: Bool) {
@@ -96,6 +123,7 @@ class LyricsView: UITableView, UITableViewDataSource, UITableViewDelegate {
     lastIndex = nil
     lastScrolledIndex = nil
     suppressAutoScrollUntil = nil
+    isFollowingPlayback = true
     reloadData()
     setContentOffset(CGPoint(x: 0, y: -contentInset.top), animated: false)
   }
@@ -107,6 +135,8 @@ class LyricsView: UITableView, UITableViewDataSource, UITableViewDelegate {
     lyricModels.removeAll()
     lastIndex = nil
     lastScrolledIndex = nil
+    isFollowingPlayback = true
+    suppressAutoScrollUntil = nil
     reloadData()
   }
 
@@ -131,15 +161,28 @@ class LyricsView: UITableView, UITableViewDataSource, UITableViewDelegate {
   public func tableView(_ tableView: UITableView, didSelectRowAt indexPath: IndexPath) {
     guard let lyrics, lyrics.synced, var lyric = lyricModels[indexPath.row].lyric,
           let start = lyric.start else { return }
+    tableView.deselectRow(at: indexPath, animated: false)
+    #if DEBUG && targetEnvironment(simulator)
+      gestureProbeSelections += 1
+    #endif
     // OpenSubsonic's positive offset means the line appears earlier.
     lyric.start = max(0, start - lyrics.offset)
+    // Stop an older automatic scroll at its rendered position before centering
+    // the selected line, rather than letting its animation pull the list back.
+    let visibleOffset = layer.presentation()?.bounds.origin ?? contentOffset
+    setContentOffset(visibleOffset, animated: false)
     suppressAutoScrollUntil = nil
+    isFollowingPlayback = true
     lastScrolledIndex = nil
     onLyricSelected?(lyric)
-    scroll(toTime: lyric.startTime)
+    scroll(toTime: lyric.startTime, forceFollow: true)
   }
 
   public func scrollViewWillBeginDragging(_ scrollView: UIScrollView) {
+    #if DEBUG && targetEnvironment(simulator)
+      gestureProbeDrags += 1
+    #endif
+    isFollowingPlayback = false
     handleDrag(velocity: scrollView.panGestureRecognizer.velocity(in: scrollView))
     lastScrolledIndex = nil
     suppressAutoScrollUntil = Date().addingTimeInterval(5)
@@ -152,14 +195,14 @@ class LyricsView: UITableView, UITableViewDataSource, UITableViewDelegate {
   }
 
   public func scrollViewDidEndDragging(_ scrollView: UIScrollView, willDecelerate decelerate: Bool) {
-    if !decelerate { suppressAutoScrollUntil = Date().addingTimeInterval(5) }
+    if !isFollowingPlayback, !decelerate { suppressAutoScrollUntil = Date().addingTimeInterval(5) }
   }
 
   public func scrollViewDidEndDecelerating(_ scrollView: UIScrollView) {
-    suppressAutoScrollUntil = Date().addingTimeInterval(5)
+    if !isFollowingPlayback { suppressAutoScrollUntil = Date().addingTimeInterval(5) }
   }
 
-  func scroll(toTime time: CMTime) {
+  func scroll(toTime time: CMTime, forceFollow: Bool = false) {
     guard let lyrics, lyrics.synced, !lyricModels.isEmpty else { return }
     let index = lyrics.activeLineIndex(at: time)
     if index != lastIndex {
@@ -167,13 +210,167 @@ class LyricsView: UITableView, UITableViewDataSource, UITableViewDelegate {
       if let index { lyricModels[index].isActiveLine = true }
       lastIndex = index
     }
-    guard let index, index != lastScrolledIndex, !isDragging, !isDecelerating,
-          suppressAutoScrollUntil.map({ Date() >= $0 }) ?? true else { return }
+    guard forceFollow || (!isTracking && !isDragging && !isDecelerating &&
+            (suppressAutoScrollUntil.map { Date() >= $0 } ?? true)) else { return }
+    isFollowingPlayback = true
+    suppressAutoScrollUntil = nil
+    guard let index, forceFollow || index != lastScrolledIndex else { return }
     layoutIfNeeded()
     let row = rectForRow(at: IndexPath(row: index, section: 0))
     let target = max(-contentInset.top, row.minY - bounds.height * 0.26)
-    let animated = scrollAnimation && !UIAccessibility.isReduceMotionEnabled && lastScrolledIndex != nil
+    let animated = !forceFollow && scrollAnimation && !UIAccessibility.isReduceMotionEnabled && lastScrolledIndex != nil
     setContentOffset(CGPoint(x: 0, y: target), animated: animated)
     lastScrolledIndex = index
   }
 }
+
+// This recognizer only consumes deliberate sideways drags. A vertical movement
+// fails immediately, leaving UIKit's native scrolling and repeated flicks alone.
+private final class LyricsHorizontalDragRecognizer: UIGestureRecognizer {
+  private var origin: CGPoint?
+  #if DEBUG && targetEnvironment(simulator)
+    private(set) var recognizedDragCount = 0
+  #endif
+
+  override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent) {
+    guard origin == nil, touches.count == 1, let touch = touches.first else {
+      state = state == .began || state == .changed ? .cancelled : .failed
+      return
+    }
+    origin = touch.location(in: view?.window)
+  }
+
+  override func touchesMoved(_ touches: Set<UITouch>, with event: UIEvent) {
+    guard let origin, let touch = touches.first else { return }
+    let point = touch.location(in: view?.window)
+    let dx = abs(point.x - origin.x)
+    let dy = abs(point.y - origin.y)
+    if state == .possible {
+      if dy >= 8, dy >= dx { state = .failed }
+      else if dx >= 10, dx > dy * 1.5 {
+        state = .began
+        #if DEBUG && targetEnvironment(simulator)
+          recognizedDragCount += 1
+        #endif
+      }
+    } else if state == .began || state == .changed { state = .changed }
+  }
+
+  override func touchesEnded(_ touches: Set<UITouch>, with event: UIEvent) {
+    state = state == .began || state == .changed ? .ended : .failed
+  }
+
+  override func touchesCancelled(_ touches: Set<UITouch>, with event: UIEvent) {
+    state = state == .began || state == .changed ? .cancelled : .failed
+  }
+  override func reset() { super.reset(); origin = nil }
+}
+
+#if DEBUG && targetEnvironment(simulator)
+  extension LyricsView {
+    var gestureProbeState: [String: Any] {
+      ["offsetX": contentOffset.x, "offsetY": contentOffset.y,
+       "selections": gestureProbeSelections, "drags": gestureProbeDrags,
+       "blocked": horizontalDragBlocker.recognizedDragCount]
+    }
+    static func verifyMillisecondSelections() throws {
+      for offset in [-100, 0, 100] {
+        var lyrics = StructuredLyrics()
+        lyrics.synced = true
+        lyrics.offset = offset
+        lyrics.line = (0..<30).map { $0 * 1001 }.map { start in
+          var line = LyricsLine()
+          line.start = start
+          line.value = "Millisecond line \(start)"
+          return line
+        }
+        let tracking = LyricsDecelerationSmokeView(frame: CGRect(x: 0, y: 0, width: 360, height: 480), style: .plain)
+        let table: LyricsView = tracking
+        table.display(lyrics: lyrics, scrollAnimation: true)
+        var target: LyricsLine?
+        table.onLyricSelected = { target = $0 }
+        for row in [20, 1, 28, 0] {
+          table.scrollViewWillBeginDragging(table)
+          tracking.reportsDeceleration = true
+          table.selectRow(at: IndexPath(row: row, section: 0), animated: false, scrollPosition: .none)
+          table.tableView(table, didSelectRowAt: IndexPath(row: row, section: 0))
+          // Ending callbacks from the interrupted drag must not undo the seek.
+          table.scrollViewDidEndDragging(table, willDecelerate: false)
+          table.scrollViewDidEndDecelerating(table)
+          let expectedOffset = table.rectForRow(at: IndexPath(row: row, section: 0)).minY - table.bounds.height * 0.26
+          guard target?.start == max(0, lyrics.line[row].start! - offset),
+                table.lastIndex == row, table.lyricModels[row].isActiveLine,
+                table.isFollowingPlayback, table.suppressAutoScrollUntil == nil,
+                table.indexPathForSelectedRow == nil,
+                abs(table.contentOffset.y - expectedOffset) < 0.5 else {
+            throw NSError(domain: "LyricsSeekSmoke", code: 1,
+              userInfo: [NSLocalizedDescriptionKey: "Selecting row \(row) with offset \(offset) highlighted \(String(describing: table.lastIndex))"])
+          }
+          tracking.reportsDeceleration = false
+        }
+      }
+      NSLog("LyricsSeekSmoke: decelerating taps force the selected line into view; late drag callbacks preserve following; exact milliseconds, backward/rapid selection and signed offsets passed")
+    }
+
+    func verifyActualLyricsTouches(in popup: PopupPlayerVC) async throws {
+      var complete = false
+      var selection: LyricsLine?
+      var selectedAt: CFTimeInterval?
+      var selectedRate: Double = 0
+      let originalSelection = onLyricSelected
+      onLyricSelected = { line in
+        selection = line
+        selectedAt = CACurrentMediaTime()
+        selectedRate = popup.player.isPlaying ? popup.player.playbackRate.asDouble : 0
+        originalSelection?(line)
+      }
+      let finish = UIButton(type: .system)
+      finish.setTitle("Finish lyrics test", for: .normal)
+      finish.accessibilityIdentifier = "player.finishLyricsTouchTest"
+      finish.accessibilityValue = popup.areLyricsControlsHidden ? "hidden" : "shown"
+      finish.frame = CGRect(x: 12, y: popup.view.safeAreaInsets.top + 6, width: 180, height: 32)
+      finish.addAction(UIAction { _ in complete = true }, for: .touchUpInside)
+      popup.view.addSubview(finish)
+      defer {
+        finish.removeFromSuperview()
+        onLyricSelected = originalSelection
+      }
+      let started = CACurrentMediaTime()
+      while !complete && CACurrentMediaTime() - started < 90 {
+        let value = popup.areLyricsControlsHidden ? "hidden" : "shown"
+        if finish.accessibilityValue != value { finish.accessibilityValue = value }
+        try await Task.sleep(for: .milliseconds(25))
+      }
+      guard complete, let selection, let selectedAt, let start = selection.start, let lyrics,
+            let selectedIndex = lyrics.line.lastIndex(where: {
+              $0.value == selection.value && $0.start.map { max(0, $0 - lyrics.offset) } == start
+            }) else {
+        throw NSError(domain: "LyricsTouchSmoke", code: 1,
+          userInfo: [NSLocalizedDescriptionKey: "Actual lyrics touch session did not finish with a selected line"])
+      }
+      for _ in 0..<4 {
+        let actual = popup.player.elapsedTime
+        // Audio keeps playing while XCTest checks accessibility and taps Finish.
+        let expected = Double(start) / 1000 + (CACurrentMediaTime() - selectedAt) * selectedRate
+        layoutIfNeeded()
+        guard abs(actual - expected) < 1,
+              lastIndex == selectedIndex,
+              lyricModels[selectedIndex].isActiveLine,
+              let cell = lyricModels[selectedIndex].cell,
+              visibleCells.contains(where: { $0 === cell }),
+              cell.isPlaybackEmphasisVisible,
+              popup.areLyricsControlsHidden else {
+          throw NSError(domain: "LyricsTouchSmoke", code: 2,
+            userInfo: [NSLocalizedDescriptionKey: "Audio/visible lyric mismatch: target \(start) ms, expected \(expected), actual \(actual), row \(String(describing: lastIndex))"])
+        }
+        try await Task.sleep(for: .milliseconds(100))
+      }
+      NSLog("LyricsTouchSmoke: actual bottom tap stayed immersive; down revealed, up hid; tapped lyric followed the audio clock and visible text emphasis without a test-driven refresh")
+    }
+  }
+
+  private final class LyricsDecelerationSmokeView: LyricsView {
+    var reportsDeceleration = false
+    override var isDecelerating: Bool { reportsDeceleration || super.isDecelerating }
+  }
+#endif

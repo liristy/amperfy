@@ -262,7 +262,7 @@ class BackendAudioPlayer: NSObject {
   private func notifyLyricsTimeChanged() {
     let seconds = elapsedTime
     guard seconds.isFinite, seconds >= 0 else { return }
-    responder?.didLyricsTimeChange(time: CMTime(seconds: seconds, preferredTimescale: 1_000))
+    responder?.didLyricsTimeChange(time: StructuredLyrics.playbackTime(seconds: seconds))
   }
 
   private func startTimers() {
@@ -421,6 +421,11 @@ class BackendAudioPlayer: NSObject {
       player?.seek(to: toSecond)
     } else {
       seekTimeWhenStarted = toSecond
+    }
+    // A paused player has no lyrics timer. Publish the requested playhead now
+    // so every visible lyrics view follows the same seek immediately.
+    if isVisualUpdatesEnabled {
+      responder?.didLyricsTimeChange(time: StructuredLyrics.playbackTime(seconds: toSecond))
     }
   }
 

@@ -33,6 +33,7 @@ class MiniPlayerView: UIView, UIGestureRecognizerDelegate {
   private var hoverOverlayView: UIView?
   private var trackPan: UIPanGestureRecognizer?
   private var expandPan: UIPanGestureRecognizer?
+  private var isTrackSwipingSuspended = false
   private weak var expandingPlayer: PopupPlayerVC?
   private var trackViewport: UIView?
   private var trackContent: UIView?
@@ -124,7 +125,6 @@ class MiniPlayerView: UIView, UIGestureRecognizerDelegate {
 
   fileprivate lazy var timeSlider: SeekableTimeSlider = {
     let slider = SeekableTimeSlider(frame: .zero)
-    slider.preferredBehavioralStyle = .pad
     return slider
   }()
 
@@ -152,7 +152,7 @@ class MiniPlayerView: UIView, UIGestureRecognizerDelegate {
   }
 
   @objc
-  func timeSliderChanged(_ slider: UISlider) {
+  func timeSliderChanged(_ slider: PlayerTrackSlider) {
     playerHandler?.timeSliderChanged(timeSlider: timeSlider)
   }
 
@@ -219,7 +219,7 @@ class MiniPlayerView: UIView, UIGestureRecognizerDelegate {
         UIImage
           .SymbolConfiguration(pointSize: PlayerUIHandler.playButtonImagePointSize)
       )
-    let button = UIButton(configuration: config)
+    let button = PlayerTransportButton(configuration: config)
     button.tintColor = .label
     button.addTarget(self, action: #selector(Self.playButtonPushed), for: .touchUpInside)
     return button
@@ -227,6 +227,7 @@ class MiniPlayerView: UIView, UIGestureRecognizerDelegate {
 
   @IBAction
   func playButtonPushed(_ sender: Any) {
+    (playButton as? PlayerTransportButton)?.animateActivation()
     playerHandler?.playButtonPushed()
     playerHandler?.refreshPlayButton(playButton)
   }
@@ -234,7 +235,7 @@ class MiniPlayerView: UIView, UIGestureRecognizerDelegate {
   fileprivate lazy var previousButton: UIButton = {
     var config = UIButton.Configuration.plain()
     config.image = .backwardFill.withConfiguration(UIImage.SymbolConfiguration(scale: .large))
-    let button = UIButton(configuration: config)
+    let button = PlayerTransportButton(configuration: config)
     button.tintColor = .label
     button.addTarget(self, action: #selector(Self.previousButtonPushed), for: .touchUpInside)
     return button
@@ -242,13 +243,14 @@ class MiniPlayerView: UIView, UIGestureRecognizerDelegate {
 
   @IBAction
   func previousButtonPushed(_ sender: Any) {
+    (previousButton as? PlayerTransportButton)?.animateActivation(direction: player.playerMode == .music ? -1 : 0)
     playerHandler?.previousButtonPushed()
   }
 
   fileprivate lazy var nextButton: UIButton = {
     var config = UIButton.Configuration.plain()
     config.image = .forwardFill.withConfiguration(UIImage.SymbolConfiguration(scale: .large))
-    let button = UIButton(configuration: config)
+    let button = PlayerTransportButton(configuration: config)
     button.tintColor = .label
     button.addTarget(self, action: #selector(Self.nextButtonPushed), for: .touchUpInside)
     return button
@@ -256,6 +258,7 @@ class MiniPlayerView: UIView, UIGestureRecognizerDelegate {
 
   @IBAction
   func nextButtonPushed(_ sender: Any) {
+    (nextButton as? PlayerTransportButton)?.animateActivation(direction: player.playerMode == .music ? 1 : 0)
     playerHandler?.nextButtonPushed()
   }
 
@@ -675,7 +678,6 @@ class MiniPlayerView: UIView, UIGestureRecognizerDelegate {
     artworkImage.clipsToBounds = true
     timeSlider.minimumTrackTintColor = .secondaryLabel
     timeSlider.maximumTrackTintColor = .clear
-    timeSlider.sliderStyle = .thumbless
     timeSlider.restingTrackHeight = 2
     timeSlider.activeTrackHeight = 2
     timeSlider.isUserInteractionEnabled = false
@@ -766,6 +768,7 @@ class MiniPlayerView: UIView, UIGestureRecognizerDelegate {
 
   @objc
   private func handleTrackPan(_ gesture: UIPanGestureRecognizer) {
+    guard canSwipeTracks else { resetTrackDrag(); return }
     switch gesture.state {
     case .began: beginTrackDrag()
     case .changed: updateTrackDrag(translation: gesture.translation(in: self).x)
@@ -791,12 +794,28 @@ class MiniPlayerView: UIView, UIGestureRecognizerDelegate {
     }
     guard gestureRecognizer === trackPan, let pan = gestureRecognizer as? UIPanGestureRecognizer else { return true }
     let velocity = pan.velocity(in: self)
-    return player.currentlyPlaying != nil && trackDragAnimator == nil && abs(velocity.x) > abs(velocity.y)
+    return canSwipeTracks && player.currentlyPlaying != nil && trackDragAnimator == nil && abs(velocity.x) > abs(velocity.y)
+  }
+
+  private var canSwipeTracks: Bool {
+    // The dock remains in the hierarchy behind the full-screen player.
+    // Require the actual host; an unavailable host must not enable a gesture.
+    guard !isTrackSwipingSuspended,
+          let host = AppDelegate.mainWindowHostVC as? UIViewController,
+          let window, host.presentedViewController == nil,
+          window.rootViewController?.presentedViewController == nil else { return false }
+    return true
+  }
+
+  func setTrackSwipingSuspended(_ suspended: Bool) {
+    isTrackSwipingSuspended = suspended
+    trackPan?.isEnabled = !suspended
+    if suspended { resetTrackDrag() }
   }
 
   func beginTrackDrag() {
     resetTrackDrag()
-    guard let song = player.currentlyPlaying,
+    guard canSwipeTracks, let song = player.currentlyPlaying,
           let overlay = trackViewport, let content = trackContent else { return }
     layoutIfNeeded()
     // Move the live content inside its viewport. Snapshot substitutes do not
@@ -882,14 +901,14 @@ class MiniPlayerView: UIView, UIGestureRecognizerDelegate {
     let pullingBack = distance * velocity < 0 && abs(velocity) > 150
     let isNext = distance < 0
     let target = isNext ? trackDragNextSong : trackDragPreviousSong
-    let commit = !cancelled && !pullingBack && abs(distance) >= threshold && trackDragSong == player.currentlyPlaying && target != nil && target == adjacentPlayable(isNext: isNext)
+    let commit = canSwipeTracks && !cancelled && !pullingBack && abs(distance) >= threshold && trackDragSong == player.currentlyPlaying && target != nil && target == adjacentPlayable(isNext: isNext)
     let animator = UIViewPropertyAnimator(duration: UIAccessibility.isReduceMotionEnabled ? 0 : 0.18, curve: .easeOut) { [weak self] in
       self?.positionTrackPages(at: commit ? (isNext ? -overlay.bounds.width : overlay.bounds.width) : 0)
     }
     trackDragAnimator = animator
     animator.addCompletion { [weak self] position in
       guard let self else { return }
-      let shouldSwitch = position == .end && commit && self.trackDragSong == self.player.currentlyPlaying && target == self.adjacentPlayable(isNext: isNext)
+      let shouldSwitch = self.canSwipeTracks && position == .end && commit && self.trackDragSong == self.player.currentlyPlaying && target == self.adjacentPlayable(isNext: isNext)
       self.trackDragAnimator = nil
       if shouldSwitch {
         if isNext { self.player.playNext() } else { self.player.playPrevious() }
@@ -934,7 +953,7 @@ class MiniPlayerView: UIView, UIGestureRecognizerDelegate {
     guard let hostVC = AppDelegate.mainWindowHostVC as? UIViewController,
           hostVC.presentedViewController == nil else { return }
     let popupPlayer = PopupPlayerVC()
-    popupPlayer.configurePresentation(sourcePlayer: glassContainer, sourceArtwork: artworkImage)
+    popupPlayer.configurePresentation(sourcePlayer: glassContainer, sourceArtwork: artworkImage, sourceMiniPlayer: self)
     hostVC.present(popupPlayer, animated: true, completion: completion)
   }
 
@@ -955,7 +974,7 @@ class MiniPlayerView: UIView, UIGestureRecognizerDelegate {
     guard let hostVC = AppDelegate.mainWindowHostVC as? UIViewController,
           hostVC.presentedViewController == nil else { return }
     let popup = PopupPlayerVC()
-    popup.configurePresentation(sourcePlayer: glassContainer, sourceArtwork: artworkImage)
+    popup.configurePresentation(sourcePlayer: glassContainer, sourceArtwork: artworkImage, sourceMiniPlayer: self)
     let interaction = UIPercentDrivenInteractiveTransition()
     // Preserve each animation's curve; a global spring also makes the cover bounce.
     popup.surfaceTransition.presentationInteraction = interaction
@@ -1106,6 +1125,34 @@ class MiniPlayerView: UIView, UIGestureRecognizerDelegate {
     refreshMoreButton()
     refreshTrailingButtons()
   }
+
+  #if DEBUG && targetEnvironment(simulator)
+    func verifyMiniPlayMotion() async throws {
+      guard let button = playButton as? PlayerTransportButton else { return }
+      try await verifyPlayerTransportMotion(button, direction: 0,
+        name: "player-mini-play-frames") { self.playButtonPushed(button) }
+      playButtonPushed(button)
+      try await Task.sleep(for: .milliseconds(400))
+      for _ in 0..<6 {
+        button.isHighlighted = true
+        try await Task.sleep(for: .milliseconds(40))
+        button.isHighlighted = false
+        playButtonPushed(button)
+        try await Task.sleep(for: .milliseconds(35))
+      }
+      try await Task.sleep(for: .milliseconds(400))
+      guard player.isPlaying, button.isRenderedSymbolSettled else {
+        throw NSError(domain: "PlayerTransportSmoke", code: 2,
+          userInfo: [NSLocalizedDescriptionKey: "Mini rapid play/pause left a stale glyph or playback state"])
+      }
+    }
+
+    func verifyMiniNextMotion() async throws {
+      guard let button = nextButton as? PlayerTransportButton else { return }
+      try await verifyPlayerTransportMotion(button, direction: 1,
+        name: "player-mini-next-frames") { self.nextButtonPushed(button) }
+    }
+  #endif
 
   required init?(coder: NSCoder) {
     fatalError("init(coder:) has not been implemented")

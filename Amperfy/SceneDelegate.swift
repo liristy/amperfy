@@ -152,6 +152,12 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
   func replaceMainRootViewController(vc: UIViewController) {
     window?.rootViewController = vc
     #if DEBUG && targetEnvironment(simulator)
+      if ProcessInfo.processInfo.arguments.contains("--smoke-lyrics-gesture"),
+         vc is MainSceneHostingViewController {
+        Task { @MainActor in await self.stageLyricsGestureCheck(on: vc) }
+        return
+      }
+      #if !LYRICS_GESTURE_CHECK
       if ProcessInfo.processInfo.arguments.contains("--smoke-resource-profile"),
          vc is MainSceneHostingViewController {
         Task { @MainActor in await self.runPlayerResourceProfile(on: vc) }
@@ -209,6 +215,7 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
                 return
               }
               smokeLog("Inactive lyrics blur and active-line clarity passed after cell replacement")
+              try LyricsView.verifyMillisecondSelections()
               smokeLog("Player smoke: preparing playback")
               let library = self.appDelegate.storage.main.library
               let account = library.getAccount(info: activeAccount)
@@ -236,6 +243,21 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
                 smokeLog("Mini player content or progress escaped its capsule")
                 return
               }
+              try await miniPlayer.verifyMiniPlayMotion()
+              smokeLog("Mini play/pause uses the shared glyph animation and rapid taps settle correctly")
+              self.appDelegate.player.setAutoplayEnabled(false)
+              self.appDelegate.player.play(context: PlayContext(name: "Mini single song", playables: [nextSong]))
+              try await Task.sleep(for: .milliseconds(500))
+              try await miniPlayer.verifyMiniNextMotion()
+              guard !self.appDelegate.player.isPlaying,
+                    self.appDelegate.player.currentlyPlaying == nextSong,
+                    self.appDelegate.player.prevQueueCount == 0 else {
+                smokeLog("Mini single-song Next did not pause in place"); return
+              }
+              smokeLog("Mini next uses the shared flight and single-song Next pauses in place")
+              self.appDelegate.player.play(context: PlayContext(name: "Gapless smoke", playables: [song, nextSong]))
+              try await Task.sleep(for: .seconds(1))
+              try await compositorScreenshot("player-mini-transport.png")
               miniPlayer.beginTrackDrag()
               miniPlayer.updateTrackDrag(translation: -120)
               guard self.appDelegate.player.currentlyPlaying == song,
@@ -387,7 +409,9 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
                 tabHost.updatePlayerDockForScroll(delta: -40, atTop: false)
                 try await Task.sleep(for: .milliseconds(650))
                 let compactFrame = miniPlayer.glassContainer.frame
-                guard dock.isCollapsed, tabHost.isTabBarHidden, abs(compactFrame.height - 48) < 0.5,
+                guard dock.isCollapsed, !tabHost.isTabBarHidden, tabHost.tabBar.alpha == 0,
+                      !tabHost.tabBar.isUserInteractionEnabled, tabHost.tabBar.accessibilityElementsHidden,
+                      abs(compactFrame.height - 48) < 0.5,
                       abs(compactFrame.midY - dock.navigationSlot.frame.midY) < 0.5,
                       abs(compactFrame.minX - dock.navigationSlot.frame.maxX - 12) < 0.5,
                       abs(dock.searchSlot.frame.minX - compactFrame.maxX - 12) < 0.5,
@@ -409,6 +433,7 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
                   return
                 }
                 smokeLog("Custom dock: 56pt player, 12pt external gap, 48pt sinking, reversal and gap hit testing passed")
+                try await verifyHomeDockScrollRestoration(tabHost)
               }
               func descendants(of view: UIView) -> [UIView] {
                 view.subviews + view.subviews.flatMap { descendants(of: $0) }
@@ -496,7 +521,7 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
                 let complete = URL.documentsDirectory.appendingPathComponent("player-screenshot-complete")
                 try? FileManager.default.removeItem(at: complete)
                 try name.write(to: request, atomically: true, encoding: .utf8)
-                for _ in 0..<150 {
+                for _ in 0..<300 {
                   if FileManager.default.fileExists(atPath: complete.path) { return }
                   try await Task.sleep(for: .milliseconds(100))
                 }
@@ -504,6 +529,8 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
                   userInfo: [NSLocalizedDescriptionKey: "Simulator screenshot timed out: \(name)"])
               }
               try await compositorScreenshot("player-opening-refreshed.png")
+              try verifyPlayerFlightShadow(pausedPopup)
+              smokeLog("Paused opening carried a scaled shadow with the shared cover")
               miniPlayer.endPlayerExpansion(translation: pausedDistance * 0.85, velocity: 850)
               try await Task.sleep(for: .seconds(1))
               guard hiddenCover.mask == nil, miniPlayer.artworkImage.mask == nil,
@@ -595,6 +622,8 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
                 smokeLog("Held opening gesture did not move and enlarge the mini-player cover: \(coverFrame)")
                 return
               }
+              try verifyPlayerFlightShadow(openingPopup)
+              smokeLog("Playing opening carried a synchronized shadow before completion")
               smokeLog("Shared album cover moved from \(miniCoverFrame) to held frame \(coverFrame)")
               // The compositor captures native glass without asking UIKit to redraw
               // a paused transition into a separate graphics context.
@@ -607,6 +636,7 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
               var sampledContentRebound = false
               var largestOpeningHeight: CGFloat = 0
               var largestContentScale: CGFloat = 1
+              var finalCoverDestination = destinationCoverFrame
               var previousCoverWidth = coverFrame.width
               var lastSample = "no transition surface"
               for _ in 0..<60 {
@@ -631,18 +661,20 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
                 if animatedFrame.height > destinationHeight + 0.5 { sampledSpringOvershoot = true }
                 if let cover = flyingCover() {
                   let frame = (cover.layer.presentation() ?? cover.layer).frame
+                  let liveDestination = popup.surfaceTransition.artworkMotion?.endFrame ?? finalCoverDestination
+                  finalCoverDestination = liveDestination
                   let pageProgress = min(1, max(0, (animatedFrame.height - sourceSurface.height) /
                     (destinationHeight - sourceSurface.height)))
                   let coverProgress = (frame.width - miniCoverFrame.width) /
-                    (destinationCoverFrame.width - miniCoverFrame.width)
+                    (liveDestination.width - miniCoverFrame.width)
                   if pageProgress - coverProgress > 0.025 {
                     smokeLog("Artwork lagged behind the expanding surface: page \(pageProgress), cover \(coverProgress)")
                     playerPolishChecksPassed = false
                   }
                   if frame.width < previousCoverWidth - 0.5 ||
-                        frame.width > destinationCoverFrame.width + 0.5 ||
-                        frame.minY < destinationCoverFrame.minY - 0.5 {
-                    smokeLog("Opening artwork bounced instead of travelling smoothly: \(frame), target \(destinationCoverFrame)")
+                        frame.width > liveDestination.width + 0.5 ||
+                        frame.minY < liveDestination.minY - 0.5 {
+                    smokeLog("Opening artwork bounced instead of travelling smoothly: \(frame), target \(liveDestination)")
                     playerPolishChecksPassed = false
                   }
                   previousCoverWidth = frame.width
@@ -679,10 +711,21 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
                     popup.transitionArtwork?.isHidden == false,
                     popup.transitionArtwork?.layer.opacity == 1, popup.transitionArtwork?.mask == nil,
                     flyingCover() == nil else { return }
+              if let realCover = popup.transitionArtwork, let host = popup.view.superview {
+                let landed = realCover.convert(realCover.bounds, to: host)
+                guard abs(landed.minX - finalCoverDestination.minX) < 0.5,
+                      abs(landed.minY - finalCoverDestination.minY) < 0.5,
+                      abs(landed.width - finalCoverDestination.width) < 0.5 else {
+                  smokeLog("Cover handoff changed geometry: \(finalCoverDestination) to \(landed)")
+                  return
+                }
+                smokeLog("Shared cover landed on the exact final artwork layout")
+              }
               popup.beginInteractiveDismissal()
               try await Task.sleep(for: .milliseconds(80))
               popup.updateInteractiveDismissal(translation: 70)
               try await Task.sleep(for: .milliseconds(80))
+              try verifyPlayerFlightShadow(popup)
               popup.endInteractiveDismissal(translation: 70, velocity: -150, cancelled: true)
               try await Task.sleep(for: .seconds(1))
               guard vc.presentedViewController === popup, popup.view.transform == .identity,
@@ -692,7 +735,10 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
                 smokeLog("Cancelled player dismissal did not restore the player")
                 return
               }
-              smokeLog("Cancelled dismissal restored the player")
+              guard popup.view.superview?.subviews.contains(where: {
+                $0.accessibilityIdentifier == "player-surface-transition-shadow"
+              }) == false else { return }
+              smokeLog("Cancelled dismissal restored the player and removed the flying shadow")
               guard let fullPlayer = popup.largeCurrentlyPlayingView,
                     abs(fullPlayer.titleLabel.font.pointSize - 20) < 0.5,
                     abs(fullPlayer.artistLabel.font.pointSize - 20) < 0.5 else {
@@ -734,7 +780,8 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
                   nativeVolume.insertSubview(nativeSliderProbe, at: 0)
                   layoutProbe.setNeedsLayout()
                   layoutProbe.layoutIfNeeded()
-                  for nativeY in [CGFloat(-12), 6, 0, 18, -8] {
+                  let nativeOffsets: [CGFloat] = [-12, 6, 0, 18, -8]
+                  for nativeY in nativeOffsets {
                     try await Task.sleep(for: .milliseconds(50))
                     nativeSliderProbe.frame.origin.y = nativeY
                     let nativeFrame = nativeSliderProbe.frame
@@ -902,9 +949,63 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
                 return
               }
               smokeLog("Pause/resume artwork scale and single top options menu passed")
+              guard let progressSlider = controls.timeSlider as? SeekableTimeSlider else { return }
+              try await verifyPlayerTrackRestoration(progressSlider) {
+                controls.didElapsedTimeChange()
+                controls.refreshPlayer()
+              }
+              smokeLog("Track restoration rendered intermediate thicknesses without snapping; duplicate releases, quick reversal and detached-clock cleanup passed")
+              try await verifyPlayerTouchDragging(progressSlider)
+              smokeLog("Actual touchscreen dragging, held progress, release outside and native rendered thickness passed")
+              guard !controls.isSmoothProgressRunning, !popup.isAmbientMotionRunning else {
+                smokeLog("Progress cancellation or paused animation cleanup failed"); return
+              }
+              self.appDelegate.player.play()
+              try await Task.sleep(for: .milliseconds(500))
+              guard controls.isSmoothProgressRunning else {
+                smokeLog("Visible playback did not start the smooth progress clock"); return
+              }
+              var progressValues = [Float]()
+              for _ in 0..<10 {
+                try await Task.sleep(for: .milliseconds(50))
+                progressValues.append(progressSlider.value)
+              }
+              guard Set(progressValues).count > 3,
+                    progressValues.last! > progressValues.first!,
+                    abs(Double(progressSlider.value) - self.appDelegate.player.elapsedTime) < 0.25 else {
+                smokeLog("Progress still advanced once per second or drifted from the audio engine: \(progressValues)"); return
+              }
+              let shouldAnimateAmbient = !UIAccessibility.isReduceMotionEnabled &&
+                !ProcessInfo.processInfo.isLowPowerModeEnabled
+              guard popup.isAmbientMotionRunning == shouldAnimateAmbient else {
+                smokeLog("Ambient motion did not follow visible playback/accessibility state"); return
+              }
+              if shouldAnimateAmbient {
+                try await verifyPlayerAmbientFlow(popup, screenshot: compositorScreenshot)
+                smokeLog("Artwork mesh moved across real frames, preserved palette-refresh geometry and froze without a jump")
+              }
+              popup.setPlayerPresentationVisible(false)
+              guard !controls.isSmoothProgressRunning, !popup.isAmbientMotionRunning else {
+                smokeLog("Hidden player kept its progress clock or background motion running"); return
+              }
+              popup.setPlayerPresentationVisible(true)
+              self.appDelegate.player.pause()
+              guard !controls.isSmoothProgressRunning, !popup.isAmbientMotionRunning else {
+                smokeLog("Paused player kept smooth progress or background motion running"); return
+              }
+              try await Task.sleep(for: .milliseconds(100))
+              let pausedProgressValue = progressSlider.value
+              try await Task.sleep(for: .milliseconds(150))
+              guard abs(progressSlider.value - pausedProgressValue) < 0.02 else {
+                smokeLog("Progress continued advancing while paused"); return
+              }
+              smokeLog("Progress restored its thin track after all release/cancel paths; sub-second engine samples, pause and hidden-player animation cleanup passed")
               guard self.appDelegate.player.elapsedTime >= 41 else { return }
               // Exercise real transport actions and the server-empty local fallback.
-              controls.previousButtonPushed(controls.previousButton as Any)
+              if let button = controls.previousButton as? PlayerTransportButton {
+                try await verifyPlayerTransportMotion(button, direction: -1,
+                  name: "player-previous-frames") { controls.previousButtonPushed(button) }
+              }
               try await Task.sleep(for: .milliseconds(70))
               try await compositorScreenshot("player-transport-previous-transition.png")
               self.appDelegate.player.setAutoplayEnabled(false)
@@ -912,7 +1013,10 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
               self.appDelegate.player.play(context: PlayContext(name: "Single song", playables: [nextSong]))
               try await Task.sleep(for: .milliseconds(700))
               self.appDelegate.player.seek(toSecond: 42)
-              controls.nextButtonPushed(controls.nextButton as Any)
+              if let button = controls.nextButton as? PlayerTransportButton {
+                try await verifyPlayerTransportMotion(button, direction: 1,
+                  name: "player-next-frames") { controls.nextButtonPushed(button) }
+              }
               try await Task.sleep(for: .milliseconds(70))
               try await compositorScreenshot("player-transport-next-transition.png")
               try await Task.sleep(for: .milliseconds(500))
@@ -922,6 +1026,7 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
                 smokeLog("Single-song Next reset the queue or did not pause")
                 return
               }
+              smokeLog("Full and mini skip animations keep configured glyphs, survive rapid taps and preserve single-song pause")
               self.appDelegate.player.setAutoplayEnabled(true)
               for _ in 0..<60 {
                 if !self.appDelegate.player.autoplayQueue.isEmpty { break }
@@ -974,6 +1079,7 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
               popup.largeCurrentlyPlayingView?.refreshLyricsTime(time: CMTime(seconds: 42, preferredTimescale: 1000))
               guard activeLyricIsVisible() else { smokeLog("Immersive lyrics lost their highlight"); return }
               try await compositorScreenshot("player-lyrics-immersive.png")
+              try await lyricsTable.verifyActualLyricsTouches(in: popup)
               popup.restoreLyricsControls()
               try await Task.sleep(for: .seconds(1))
               guard !popup.areLyricsControlsHidden,
@@ -1613,6 +1719,7 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
           try? "ready".write(to: marker, atomically: true, encoding: .utf8)
         }
       }
+      #endif
     #endif
   }
 
@@ -1756,6 +1863,105 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
 }
 
 #if DEBUG && targetEnvironment(simulator)
+  @MainActor
+  private func verifyPlayerTrackRestoration(_ slider: SeekableTimeSlider, refresh: () -> Void) async throws {
+    func check(_ passed: Bool, _ message: String) throws {
+      guard passed else {
+        throw NSError(domain: "PlayerTrackSmoke", code: 1,
+          userInfo: [NSLocalizedDescriptionKey: message])
+      }
+    }
+    let resting = slider.trackRect(forBounds: slider.bounds)
+    let originalFrame = slider.frame
+    let animated = !UIAccessibility.isReduceMotionEnabled
+    var frames = [UIImage]()
+    var frameTimes = [CFTimeInterval]()
+    let events: [UIControl.Event] = [.touchUpInside, .touchUpOutside, .touchCancel]
+    for (index, event) in events.enumerated() {
+      slider.setTrackExpandedForSmoke(true)
+      refresh()
+      try await Task.sleep(for: .milliseconds(240))
+      try check(abs(slider.trackRect(forBounds: slider.bounds).height - slider.activeTrackHeight) < 0.1,
+        "Progress did not finish expanding or a playback refresh reset its gesture")
+      slider.sendActions(for: event)
+      let started = CACurrentMediaTime()
+      var heights = [CGFloat]()
+      for _ in 0..<8 {
+        let track = slider.trackRect(forBounds: slider.bounds)
+        heights.append(track.height)
+        try check(abs(track.midY - resting.midY) < 0.1 && slider.frame == originalFrame,
+          "Restoring track thickness changed its center or touch coordinates")
+        if index == 0 {
+          frameTimes.append(CACurrentMediaTime() - started)
+          frames.append(UIGraphicsImageRenderer(bounds: slider.bounds).image { _ in
+            slider.drawHierarchy(in: slider.bounds, afterScreenUpdates: false)
+          })
+        }
+        try await Task.sleep(for: .milliseconds(50))
+      }
+      if animated {
+        try check(abs(heights[0] - slider.activeTrackHeight) < 0.1,
+          "Release instantly snapped the expanded track back to its resting size")
+        try check(heights.contains { $0 > resting.height + 0.1 && $0 < slider.activeTrackHeight - 0.1 },
+          "Release had no rendered intermediate track thickness")
+        for (previous, current) in zip(heights, heights.dropFirst()) {
+          try check(current <= previous + 0.01, "Restoring track thickness bounced or restarted")
+        }
+      }
+      try check(abs(slider.trackRect(forBounds: slider.bounds).height - resting.height) < 0.1 &&
+        !slider.isTrackHeightAnimatingForSmoke, "Restoring the thin track left its animation clock running")
+    }
+    let valueBeforeReversal = slider.value
+    slider.setTrackExpandedForSmoke(true)
+    try await Task.sleep(for: .milliseconds(80))
+    let beforeRelease = slider.trackRect(forBounds: slider.bounds).height
+    slider.sendActions(for: .touchUpInside)
+    slider.sendActions(for: .touchCancel)
+    if animated {
+      try check(abs(slider.trackRect(forBounds: slider.bounds).height - beforeRelease) < 0.01,
+        "Duplicate release events snapped or restarted the visible track")
+    }
+    try await Task.sleep(for: .milliseconds(60))
+    let beforeReverse = slider.trackRect(forBounds: slider.bounds).height
+    slider.setTrackExpandedForSmoke(true)
+    if animated {
+      try check(abs(slider.trackRect(forBounds: slider.bounds).height - beforeReverse) < 0.01,
+        "Repressing during restoration jumped to an endpoint")
+    }
+    try await Task.sleep(for: .milliseconds(240))
+    slider.cancelTracking(with: nil)
+    try await Task.sleep(for: .milliseconds(360))
+    try check(abs(slider.trackRect(forBounds: slider.bounds).height - resting.height) < 0.1 &&
+      !slider.isTrackHeightAnimatingForSmoke && abs(slider.value - valueBeforeReversal) < 0.01,
+      "Cancellation changed progress or left the track enlarged or animating")
+    let detachedProbe = PlayerTrackSlider(frame: slider.bounds)
+    detachedProbe.alpha = 0
+    slider.superview?.addSubview(detachedProbe)
+    detachedProbe.setTrackExpandedForSmoke(true)
+    detachedProbe.removeFromSuperview()
+    try check(!detachedProbe.isTrackHeightAnimatingForSmoke &&
+      abs(detachedProbe.trackRect(forBounds: detachedProbe.bounds).height - detachedProbe.restingTrackHeight) < 0.1,
+      "Removing the slider kept its thickness clock or expanded state")
+    let rowHeight = slider.bounds.height + 14
+    let gridSize = CGSize(width: slider.bounds.width + 48, height: rowHeight * CGFloat(frames.count))
+    let grid = UIGraphicsImageRenderer(size: gridSize).image { context in
+      UIColor.darkGray.setFill()
+      context.fill(CGRect(origin: .zero, size: gridSize))
+      for (index, frame) in frames.enumerated() {
+        let y = CGFloat(index) * rowHeight
+        frame.draw(at: CGPoint(x: 48, y: y))
+        let label = String(format: "%.2fs", frameTimes[index])
+        label.draw(at: CGPoint(x: 2, y: y + slider.bounds.height / 2 - 6), withAttributes: [
+          .font: UIFont.monospacedDigitSystemFont(ofSize: 10, weight: .regular),
+          .foregroundColor: UIColor.white,
+        ])
+      }
+    }
+    try grid.pngData()?.write(to: URL.documentsDirectory.appendingPathComponent("player-track-restoration-frames.png"))
+  }
+#endif
+
+#if DEBUG && targetEnvironment(simulator)
   extension SceneDelegate {
     // Test-only UI staging. Sampling runs outside the app so it does not add
     // an in-app polling timer or prevent a paused app from being suspended.
@@ -1866,6 +2072,99 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
       } catch {
         try? write(["error": String(describing: error), "phase": resourceProfilePhase], name: "player-resource-failed.json")
       }
+    }
+  }
+#endif
+
+#if DEBUG && targetEnvironment(simulator)
+  extension SceneDelegate {
+    @MainActor private func stageLyricsGestureCheck(on host: UIViewController) async {
+      do {
+        try await Task.sleep(for: .seconds(2))
+        guard let active = appDelegate.storage.settings.accounts.active else { return }
+        let library = appDelegate.storage.main.library
+        let account = library.getAccount(info: active)
+        let syncer = appDelegate.getMeta(active).librarySyncer
+        guard let album = library.getAlbum(for: account, id: "album-1", isDetailFaultResolution: false) else { return }
+        try await syncer.sync(album: album)
+        guard let song = library.getSong(for: account, id: "song-1"),
+              let next = library.getSong(for: account, id: "song-2") else { return }
+        try await syncer.sync(song: song)
+        try await syncer.sync(song: next)
+        appDelegate.storage.settings.user.playerDisplayStyle = .large
+        appDelegate.storage.settings.user.isPlayerLyricsDisplayed = false
+        appDelegate.storage.settings.user.isPlayerVisualizerDisplayed = false
+        appDelegate.player.setAutoplayEnabled(false)
+        appDelegate.player.setRepeatMode(.off)
+        appDelegate.player.play(context: PlayContext(name: "Lyrics gesture check", playables: [song, next]))
+        try await Task.sleep(for: .seconds(1))
+        host.dismiss(animated: false)
+        try await Task.sleep(for: .milliseconds(200))
+        guard let mini = (host as? MainSceneHostingViewController)?.miniPlayer else { return }
+        mini.openPlayerView()
+        try await Task.sleep(for: .seconds(1))
+        guard let popup = host.presentedViewController as? PopupPlayerVC,
+              let large = popup.largeCurrentlyPlayingView else { return }
+        var artworkRegion = CGRect.null
+        var previousRegion = CGRect.null
+        var stableLayouts = 0
+        for _ in 0..<40 {
+          popup.view.layoutIfNeeded()
+          large.layoutIfNeeded()
+          let current = large.artworkImage.convert(large.artworkImage.bounds, to: nil)
+          if popup.transitionCoordinator == nil, popup.view.mask == nil,
+             !popup.isBeingPresented, current == previousRegion {
+            stableLayouts += 1
+            if stableLayouts >= 3 { artworkRegion = current; break }
+          } else { stableLayouts = 0 }
+          previousRegion = current
+          try await Task.sleep(for: .milliseconds(100))
+        }
+        guard !artworkRegion.isNull else { return }
+        appDelegate.storage.settings.user.isPlayerLyricsDisplayed = true
+        large.display(element: .lyrics, animated: false)
+        popup.prepareLyricsGestureCheck()
+        try await Task.sleep(for: .milliseconds(300))
+        popup.view.layoutIfNeeded()
+        let region = artworkRegion.intersection(large.lyricsGestureBounds)
+        guard !region.isNull, region.width > 100, region.height > 100 else { return }
+        let probe = LyricsGestureCheckProbe(frame: CGRect(x: 12,
+          y: popup.view.safeAreaInsets.top + 4, width: 200, height: 24))
+        probe.accessibilityIdentifier = "player.lyricsGestureProbe"
+        probe.isAccessibilityElement = true
+        probe.accessibilityTraits = .staticText
+        probe.isUserInteractionEnabled = false
+        probe.text = "Lyrics gesture check"
+        probe.textColor = .white
+        probe.font = .systemFont(ofSize: 12)
+        probe.readState = { [weak popup, weak large] in
+          guard let popup, let large else { return "{}" }
+          var state = large.lyricsGestureProbeState
+          state["song"] = popup.player.currentlyPlaying?.id ?? ""
+          state["elapsed"] = popup.player.elapsedTime
+          state["region"] = [region.minX, region.minY, region.width, region.height]
+          if let hit = popup.view.window?.hitTest(CGPoint(x: region.midX, y: region.midY), with: nil) {
+            var ancestors = [String]()
+            var current: UIView? = hit
+            while let view = current {
+              ancestors.append(String(describing: type(of: view)))
+              current = view.superview
+            }
+            state["hitPath"] = ancestors
+          }
+          let data = try? JSONSerialization.data(withJSONObject: state, options: [.sortedKeys])
+          return data.flatMap { String(data: $0, encoding: .utf8) } ?? "{}"
+        }
+        popup.view.addSubview(probe)
+      } catch { NSLog("LyricsGestureCheck staging failed: %@", String(describing: error)) }
+    }
+  }
+
+  private final class LyricsGestureCheckProbe: UILabel {
+    var readState: (() -> String)?
+    override var accessibilityValue: String? {
+      get { readState?() }
+      set {}
     }
   }
 #endif

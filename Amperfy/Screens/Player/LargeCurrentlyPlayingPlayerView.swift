@@ -140,6 +140,10 @@ class LargeCurrentlyPlayingPlayerView: UIView {
   private var displayAnimator: UIViewPropertyAnimator?
   private var artworkIsPlaying: Bool?
   var isDisplayingLyrics: Bool { displayElement == .lyrics }
+  #if DEBUG && targetEnvironment(simulator)
+    var lyricsGestureProbeState: [String: Any] { lyricsView?.gestureProbeState ?? [:] }
+    var lyricsGestureBounds: CGRect { lyricsView?.convert(lyricsView!.bounds, to: nil) ?? .zero }
+  #endif
   var transitionArtwork: UIImageView { lyricsHeader.isHidden ? artworkImage : lyricsArtwork }
   var transitionArtworkShadow: UIView? { lyricsHeader.isHidden ? artworkShadowView : nil }
   var compactHeader: UIView { lyricsHeader }
@@ -253,7 +257,6 @@ class LargeCurrentlyPlayingPlayerView: UIView {
     optionsButton.accessibilityLabel = "Song options".localized
 
     lyricsView = LyricsView()
-    rootView?.registerLyricsScrollView(lyricsView!)
     lyricsView!.frame = upperContainerView.bounds
     lyricsView!.onLyricSelected = { [weak self] lyric in
       self?.appDelegate.player.seek(toSecond: lyric.startTime.seconds)
@@ -481,7 +484,7 @@ class LargeCurrentlyPlayingPlayerView: UIView {
       scrollAnimation: appDelegate.storage.settings.user.isLyricsSmoothScrolling
     )
     lyricsView?.isHidden = false
-    lyricsView?.scroll(toTime: CMTime(seconds: appDelegate.player.elapsedTime, preferredTimescale: 1000))
+    lyricsView?.scroll(toTime: StructuredLyrics.playbackTime(seconds: appDelegate.player.elapsedTime))
   }
 
   func refresh() {

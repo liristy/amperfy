@@ -74,22 +74,27 @@ final class PlayerArtworkMotion: NSObject {
   private let handle: UIView?
   private let handleTransform: CGAffineTransform
   private let cover: UIImageView?
+  private let coverShadow: UIView?
+  private weak var fullArtwork: UIImageView?
+  private weak var fullArtworkShadow: UIView?
   let smallFrame: CGRect
   private let fullFrame: CGRect
   private let presenting: Bool
-  let startFrame: CGRect
-  let endFrame: CGRect
+  private(set) var startFrame: CGRect
+  private(set) var endFrame: CGRect
   private let startRadius: CGFloat
   private let endRadius: CGFloat
   private let miniPlayer: UIView?
   private let miniTransform: CGAffineTransform
   private let miniAlpha: CGFloat
   private var progress: CGFloat = 0
+  private var lastTransition: CGFloat = 0
   private var destination: CGFloat?
   private var displayLink: CADisplayLink?
 
   init(player: UIView, surface: UIView, progressView: UIView, smallFrame: CGRect, fullFrame: CGRect,
-       presenting: Bool, cover: UIImageView?, endFrame: CGRect, endRadius: CGFloat,
+       presenting: Bool, cover: UIImageView?, coverShadow: UIView?, fullArtwork: UIImageView?,
+       fullArtworkShadow: UIView?, endFrame: CGRect, endRadius: CGFloat,
        foreground: [UIView], handle: UIView?, miniPlayer: UIView?) {
     self.player = player
     self.surface = surface
@@ -101,6 +106,9 @@ final class PlayerArtworkMotion: NSObject {
     self.fullFrame = fullFrame
     self.presenting = presenting
     self.cover = cover
+    self.coverShadow = coverShadow
+    self.fullArtwork = fullArtwork
+    self.fullArtworkShadow = fullArtworkShadow
     self.startFrame = cover?.frame ?? .zero
     self.endFrame = endFrame
     self.startRadius = cover?.layer.cornerRadius ?? 0
@@ -125,11 +133,14 @@ final class PlayerArtworkMotion: NSObject {
   private func sample() {
     // Read only the timing probe. Applying the page AND cover below in one
     // transaction avoids the extra frame caused by following the rendered page.
-    guard let timing = progressView.layer.presentation() else { return }
-    render(transition: timing.transform.m41)
+    // UIKit may remove the timing probe's presentation layer while an
+    // interactive transition is held. Keep its last time, but still follow
+    // artwork layout/metadata changes and update the accompanying shadow.
+    render(transition: progressView.layer.presentation()?.transform.m41 ?? lastTransition)
   }
 
   private func render(transition: CGFloat) {
+    lastTransition = transition
     let expansion = presenting ? transition : 1 - transition
     let current = min(1, max(0, transition))
     if let destination {
@@ -147,6 +158,15 @@ final class PlayerArtworkMotion: NSObject {
     CATransaction.begin()
     CATransaction.setDisableActions(true)
     UIView.performWithoutAnimation {
+      // Appearance/metadata layout can refine the cover size after UIKit starts
+      // presenting. Measure its resting destination, without our own foreground
+      // displacement, so the replica and shadow hand off to that exact geometry.
+      for content in foreground { content.view.transform = content.transform }
+      if let fullArtwork {
+        let rect = fullArtwork.convert(fullArtwork.bounds, to: player)
+          .offsetBy(dx: fullFrame.minX, dy: fullFrame.minY)
+        if presenting { endFrame = rect } else { startFrame = rect }
+      }
       // The live glass capsule and its title/buttons emerge on the same clock
       // as the collapsing surface. Reversing a drag reverses this handoff too.
       let handoff = min(1, max(0, expansion / 0.22))
@@ -171,9 +191,27 @@ final class PlayerArtworkMotion: NSObject {
           y: startFrame.minY + (endFrame.minY - startFrame.minY) * p,
           width: startFrame.width + (endFrame.width - startFrame.width) * p,
           height: startFrame.height + (endFrame.height - startFrame.height) * p)
-        cover.layer.cornerRadius = startRadius + (endRadius - startRadius) * p
-        let fullArtwork = presenting ? endFrame : startFrame
-        let projectedArtworkBottom = player.frame.minY + (fullArtwork.maxY - fullFrame.minY) * scale
+        let fullArtworkFrame = presenting ? endFrame : startFrame
+        let fullScale = fullArtworkFrame.width / max(fullArtwork?.bounds.width ?? fullArtworkFrame.width, 1)
+        let fullRadius = (fullArtwork?.layer.cornerRadius ?? 8) * fullScale
+        let fromRadius = presenting ? startRadius : fullRadius
+        let toRadius = presenting ? fullRadius : endRadius
+        cover.layer.cornerRadius = fromRadius + (toRadius - fromRadius) * p
+        if let coverShadow, let fullArtworkShadow {
+          // The clipped image cannot cast a shadow. Carry a separate shadow on
+          // the same clock, including interactive reversal and cancellation.
+          let expansion = presenting ? p : 1 - p
+          let shadowScale = cover.bounds.width / max(fullArtwork?.bounds.width ?? fullArtworkFrame.width, 1)
+          coverShadow.frame = cover.frame
+          coverShadow.layer.shadowPath = UIBezierPath(
+            roundedRect: coverShadow.bounds, cornerRadius: cover.layer.cornerRadius).cgPath
+          coverShadow.layer.shadowOpacity = fullArtworkShadow.layer.shadowOpacity * Float(expansion)
+          coverShadow.layer.shadowRadius = fullArtworkShadow.layer.shadowRadius * shadowScale
+          coverShadow.layer.shadowOffset = CGSize(
+            width: fullArtworkShadow.layer.shadowOffset.width * shadowScale,
+            height: fullArtworkShadow.layer.shadowOffset.height * shadowScale)
+        }
+        let projectedArtworkBottom = player.frame.minY + (fullArtworkFrame.maxY - fullFrame.minY) * scale
         let offset = (cover.frame.maxY - projectedArtworkBottom) / scale
         // Preserve the final gap below the flying cover. The controls follow
         // the metadata, rather than appearing behind the cover halfway through.
@@ -305,6 +343,7 @@ final class PlayerSurfaceAnimator: NSObject, UIViewControllerAnimatedTransitioni
       }
     }
     var flyingArtwork: UIImageView?
+    var flyingShadow: UIView?
     if !reducedMotion, let sourceArtwork, let targetArtwork,
        let smallArtworkFrame, let largeArtworkFrame,
        let image = artworkImage {
@@ -315,6 +354,19 @@ final class PlayerSurfaceAnimator: NSObject, UIViewControllerAnimatedTransitioni
       cover.layer.cornerCurve = .continuous
       cover.frame = isPresenting ? smallArtworkFrame : largeArtworkFrame
       cover.layer.cornerRadius = isPresenting ? sourceArtwork.layer.cornerRadius : targetArtwork.layer.cornerRadius
+      if let artworkShadow, !artworkShadow.isHidden {
+        let shadow = UIView(frame: cover.frame)
+        shadow.accessibilityIdentifier = "player-surface-transition-shadow"
+        shadow.isUserInteractionEnabled = false
+        let scale = largeArtworkFrame.width / max(targetArtwork.bounds.width, 1)
+        shadow.layer.shadowColor = artworkShadow.layer.shadowColor
+        shadow.layer.shadowOpacity = artworkShadow.layer.shadowOpacity
+        shadow.layer.shadowRadius = artworkShadow.layer.shadowRadius * scale
+        shadow.layer.shadowOffset = CGSize(width: artworkShadow.layer.shadowOffset.width * scale,
+                                          height: artworkShadow.layer.shadowOffset.height * scale)
+        container.addSubview(shadow)
+        flyingShadow = shadow
+      }
       container.addSubview(cover)
       flyingArtwork = cover
       for artwork in [sourceArtwork, targetArtwork, artworkShadow].compactMap({ $0 }) {
@@ -324,7 +376,8 @@ final class PlayerSurfaceAnimator: NSObject, UIViewControllerAnimatedTransitioni
     if !reducedMotion {
       let motion = PlayerArtworkMotion(player: playerView, surface: surface, progressView: progressView,
         smallFrame: smallFrame, fullFrame: fullFrame, presenting: isPresenting,
-        cover: flyingArtwork,
+        cover: flyingArtwork, coverShadow: flyingShadow, fullArtwork: targetArtwork,
+        fullArtworkShadow: artworkShadow,
         endFrame: (isPresenting ? largeArtworkFrame : smallArtworkFrame) ?? .zero,
         endRadius: (isPresenting ? targetArtwork?.layer.cornerRadius : sourceArtwork?.layer.cornerRadius) ?? 0,
         foreground: [popup.largePlayerPlaceholderView, popup.tableView, popup.controlPlaceholderView,
@@ -362,7 +415,7 @@ final class PlayerSurfaceAnimator: NSObject, UIViewControllerAnimatedTransitioni
     }
     animator.scrubsLinearly = true
     let presenting = isPresenting
-    animator.addCompletion { [weak self, maskedViews, flyingArtwork] _ in
+    animator.addCompletion { [weak self, maskedViews, flyingArtwork, flyingShadow] _ in
       let completed = !context.transitionWasCancelled
       // Restore nested artwork masks before their ancestor content masks.
       for entry in maskedViews.reversed() { entry.view.mask = entry.original }
@@ -371,6 +424,7 @@ final class PlayerSurfaceAnimator: NSObject, UIViewControllerAnimatedTransitioni
       playerView.transform = originalTransform
       if presenting != completed { playerView.removeFromSuperview() }
       flyingArtwork?.removeFromSuperview()
+      flyingShadow?.removeFromSuperview()
       progressView.removeFromSuperview()
       popup.surfaceTransition.artworkMotion?.stop()
       popup.surfaceTransition.artworkMotion = nil
@@ -513,3 +567,37 @@ extension PopupPlayerVC {
     })
   }
 }
+
+#if DEBUG
+@MainActor
+func verifyPlayerFlightShadow(_ popup: PopupPlayerVC) throws {
+  func fail(_ message: String) -> NSError {
+    NSError(domain: "PlayerShadowSmoke", code: 1,
+            userInfo: [NSLocalizedDescriptionKey: message])
+  }
+  guard let host = popup.view.superview,
+        let cover = host.subviews.first(where: { $0.accessibilityIdentifier == "player-surface-transition-artwork" }),
+        let shadow = host.subviews.first(where: { $0.accessibilityIdentifier == "player-surface-transition-shadow" }),
+        let realCover = popup.transitionArtwork,
+        let realShadow = popup.largeCurrentlyPlayingView?.transitionArtworkShadow,
+        let motion = popup.surfaceTransition.artworkMotion else {
+    throw fail("Moving album cover has no accompanying shadow")
+  }
+  let layer = shadow.layer.presentation() ?? shadow.layer
+  let coverLayer = cover.layer.presentation() ?? cover.layer
+  let smallWidth = min(motion.startFrame.width, motion.endFrame.width)
+  let fullWidth = max(motion.startFrame.width, motion.endFrame.width)
+  let expansion = min(1, max(0, (coverLayer.bounds.width - smallWidth) / max(1, fullWidth - smallWidth)))
+  let scale = coverLayer.bounds.width / max(realCover.bounds.width, 1)
+  guard !shadow.clipsToBounds, layer.shadowPath != nil,
+        abs(layer.frame.minX - coverLayer.frame.minX) < 0.5,
+        abs(layer.frame.minY - coverLayer.frame.minY) < 0.5,
+        abs(layer.bounds.width - coverLayer.bounds.width) < 0.5,
+        abs(layer.shadowOpacity - realShadow.layer.shadowOpacity * Float(expansion)) < 0.005,
+        layer.shadowOpacity > 0.005,
+        abs(layer.shadowRadius - realShadow.layer.shadowRadius * scale) < 0.5,
+        abs(layer.shadowOffset.height - realShadow.layer.shadowOffset.height * scale) < 0.5 else {
+    throw fail("Shadow mismatch: frame \(layer.frame) vs cover \(coverLayer.frame), bounds \(layer.bounds) vs \(coverLayer.bounds), path \(layer.shadowPath != nil), clipped \(shadow.clipsToBounds), opacity \(layer.shadowOpacity) vs \(realShadow.layer.shadowOpacity * Float(expansion)), radius \(layer.shadowRadius) vs \(realShadow.layer.shadowRadius * scale), offset \(layer.shadowOffset) vs height \(realShadow.layer.shadowOffset.height * scale), endpoints \(motion.startFrame) -> \(motion.endFrame), real bounds \(realCover.bounds)")
+  }
+}
+#endif

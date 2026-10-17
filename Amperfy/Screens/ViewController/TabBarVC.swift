@@ -51,6 +51,7 @@ class TabBarVC: UITabBarController {
   private var dockKeyboardVisible = false
   private var dockSelectionIdentifier: String?
   private var dockNavigationTop: CGFloat?
+  private var dockNavigationCollapsed: Bool?
   private lazy var dockScrollPan: UIPanGestureRecognizer = {
     let pan = UIPanGestureRecognizer(target: self, action: #selector(handleDockScroll(_:)))
     pan.cancelsTouchesInView = false
@@ -196,6 +197,7 @@ class TabBarVC: UITabBarController {
       container.removeFromSuperview()
       dock.removeFromSuperview()
       playerDock = nil
+      dockNavigationCollapsed = nil
       miniPlayer.setCompactPresentation(nil)
       updateDockContentInset(visible: false)
     }
@@ -314,13 +316,23 @@ class TabBarVC: UITabBarController {
     let top = (selectedViewController as? UINavigationController)?.topViewController
     // The native search field moves into the tab bar above the keyboard.
     // Hiding that bar would detach its first responder and dismiss the keyboard.
-    let hidden = dock.isCollapsed || top?.hidesBottomBarWhenPushed == true
+    // Keep the native bar in layout during sinking. Removing it changes the
+    // home collection's safe area and invalidates its compositional layout
+    // mid-scroll, even when an extra bottom inset tries to compensate.
+    let hidden = top?.hidesBottomBarWhenPushed == true
     if isTabBarHidden != hidden { setTabBarHidden(hidden, animated: animated) }
-    // The real system tab bar owns the glass lens, touch tracking and tab
-    // selection. The player dock must never cover it with a replica.
-    tabBar.alpha = 1
-    tabBar.isUserInteractionEnabled = true
-    tabBar.accessibilityElementsHidden = false
+    let collapsed = dock.isCollapsed
+    tabBar.isUserInteractionEnabled = !collapsed
+    tabBar.accessibilityElementsHidden = collapsed
+    guard dockNavigationCollapsed != collapsed else { return }
+    dockNavigationCollapsed = collapsed
+    let changes = { self.tabBar.alpha = collapsed ? 0 : 1 }
+    if animated && !UIAccessibility.isReduceMotionEnabled {
+      UIView.animate(withDuration: 0.44, delay: 0, usingSpringWithDamping: 0.86,
+        initialSpringVelocity: 0, options: [.beginFromCurrentState, .allowUserInteraction], animations: changes)
+    } else {
+      UIView.performWithoutAnimation(changes)
+    }
   }
 
   private func updateDockSelection() {
@@ -630,3 +642,88 @@ extension TabBarVC: MainSceneHostingViewController {
     0.0
   }
 }
+
+#if DEBUG && targetEnvironment(simulator)
+  @MainActor
+  func verifyHomeDockScrollRestoration(_ host: TabBarVC) async throws {
+    func require(_ condition: Bool, _ detail: String) throws {
+      if !condition {
+        throw NSError(domain: "HomeDockScrollSmoke", code: 1,
+          userInfo: [NSLocalizedDescriptionKey: detail])
+      }
+    }
+    guard let home = (host.selectedViewController as? UINavigationController)?.topViewController as? HomeVC,
+          let scroll = home.collectionView, let dock = host.playerDock else {
+      try require(false, "Home collection and floating dock are unavailable"); return
+    }
+    let originalOffset = scroll.contentOffset
+    defer {
+      dock.setCollapsed(false, animated: false)
+      scroll.setContentOffset(originalOffset, animated: false)
+    }
+    let top = -scroll.adjustedContentInset.top
+    let bottom = max(top, scroll.contentSize.height + scroll.adjustedContentInset.bottom - scroll.bounds.height)
+    scroll.setContentOffset(CGPoint(x: originalOffset.x, y: min(top + 120, bottom)), animated: false)
+    host.view.layoutIfNeeded()
+    try await Task.sleep(for: .milliseconds(650))
+    let size = scroll.bounds.size
+    let offset = scroll.contentOffset
+    let inset = scroll.adjustedContentInset
+    let safeBottom = scroll.safeAreaInsets.bottom
+    let dockFrame = dock.frame
+    var samples = 0
+    var maxViewportDrift: CGFloat = 0
+    var playerHeights: [CGFloat] = []
+    func sample() throws {
+      let drift = max(abs(scroll.bounds.height - size.height),
+        abs(scroll.adjustedContentInset.bottom - inset.bottom),
+        abs(scroll.safeAreaInsets.bottom - safeBottom), abs(scroll.contentOffset.y - offset.y))
+      maxViewportDrift = max(maxViewportDrift, drift)
+      try require(drift < 0.5 && abs(scroll.bounds.width - size.width) < 0.5 &&
+        abs(scroll.adjustedContentInset.top - inset.top) < 0.5 && dock.frame == dockFrame,
+        "Dock changed the scrolling viewport, safe area or content position: drift \(drift)")
+      try require(!host.isTabBarHidden && host.tabBar.isUserInteractionEnabled == !dock.isCollapsed &&
+        host.tabBar.accessibilityElementsHidden == dock.isCollapsed,
+        "Native navigation layout or touch/accessibility ownership is incorrect")
+      // Native glass presents its effect layer in local coordinates. Its
+      // rendered bounds reliably expose resizing; placement is checked above
+      // and by the compact/expanded endpoint checks in the player smoke.
+      if let layer = dock.miniPlayer.glassContainer.layer.presentation() {
+        playerHeights.append(layer.bounds.height)
+      }
+      samples += 1
+    }
+    // Sample the actual home collection throughout both springs, including
+    // restoring from the compact state and reversing before either settles.
+    for delta in [CGFloat(-40), 25] {
+      host.updatePlayerDockForScroll(delta: delta, atTop: false)
+      for _ in 0..<26 {
+        try await Task.sleep(for: .milliseconds(25))
+        try sample()
+      }
+    }
+    for delta in [CGFloat(-40), 25, -40, 25] {
+      host.updatePlayerDockForScroll(delta: delta, atTop: false)
+      for _ in 0..<3 {
+        try await Task.sleep(for: .milliseconds(25))
+        try sample()
+      }
+    }
+    host.updatePlayerDockForScroll(delta: 0, atTop: true)
+    for _ in 0..<26 {
+      try await Task.sleep(for: .milliseconds(25))
+      try sample()
+    }
+    let heightChange = (playerHeights.max() ?? 0) - (playerHeights.min() ?? 0)
+    NSLog("HomeDockScrollSmoke: viewport drift %.3f pt, rendered height change %.3f pt, native alpha %.3f",
+      Double(maxViewportDrift), Double(heightChange), Double(host.tabBar.alpha))
+    try require(!dock.isCollapsed && host.tabBar.alpha > 0.99,
+      "Dock did not restore native navigation: alpha \(host.tabBar.alpha), compact \(dock.isCollapsed)")
+    try require(heightChange > 6 && playerHeights.contains(where: { $0 > 49 && $0 < 55 }),
+      "Dock resizing did not render intermediate frames: \(playerHeights)")
+    NSLog("HomeDockScrollSmoke: %d presentation samples kept home viewport/insets/offset stable; maximum drift %.3f pt",
+      samples, Double(maxViewportDrift))
+    scroll.setContentOffset(originalOffset, animated: false)
+    try await Task.sleep(for: .milliseconds(350))
+  }
+#endif
