@@ -50,6 +50,8 @@ jobs:
         run: |
           python3 -m unittest discover -s BuildTools -p test_build_cache_mtimes.py
           python3 BuildTools/build-cache-mtimes.py restore build/validation/DerivedData/source-mtimes.json
+      - name: Verify actual decoded audio after FLAC seeks
+        run: bash BuildTools/test-audio-seeking.sh
       - name: Validate iPhone UI and affected library tests
         env:
           BASE_SHA: ${{ github.event.before }}
