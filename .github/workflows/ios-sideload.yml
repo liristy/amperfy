@@ -99,7 +99,7 @@ jobs:
           persist-credentials: false
           fetch-depth: 3
 
-      - name: Check lyric-area gestures when explicitly requested or their test changes
+      - name: Check lyric-area gestures when explicitly requested or the touch test changes
         env:
           FOCUSED_LYRICS_CHECK: ${{ inputs.lyrics_gesture_check }}
           CHECK_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
@@ -107,7 +107,7 @@ jobs:
         run: |
           requested="$FOCUSED_LYRICS_CHECK"
           if [[ "$CHECK_EVENT" == pull_request ]]; then
-            git diff --name-only "$CHECK_SHA^" "$CHECK_SHA" -- BuildTools/PlayerTouchTests.swift BuildTools/test-lyrics-gesture.sh > "$RUNNER_TEMP/lyrics-gesture-changes"
+            git diff --name-only "$CHECK_SHA^" "$CHECK_SHA" -- BuildTools/PlayerTouchTests.swift > "$RUNNER_TEMP/lyrics-gesture-changes"
             if [[ -s "$RUNNER_TEMP/lyrics-gesture-changes" ]]; then requested=true; fi
           fi
           if [[ "$requested" == true ]]; then bash BuildTools/test-lyrics-gesture.sh; fi

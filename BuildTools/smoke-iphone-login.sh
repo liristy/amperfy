@@ -106,6 +106,7 @@ while (( SECONDS < player_smoke_deadline )); do
   if [[ -f "$container/Documents/player-touch-ready" && -z "${touch_test_pid:-}" ]]; then
     xcodebuild test-without-building \
       -project BuildTools/PlayerTouchTests.xcodeproj -scheme PlayerTouchTests \
+      -only-testing:PlayerTouchTests/PlayerTouchTests/testActualFingerDragging \
       -destination "platform=iOS Simulator,id=$device_id" \
       -derivedDataPath build/validation/TouchDerivedData \
       -resultBundlePath build/validation/PlayerTouchTests.xcresult \

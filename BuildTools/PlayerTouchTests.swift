@@ -76,6 +76,8 @@ extension PlayerTouchTests {
         return try XCTUnwrap(JSONSerialization.jsonObject(with: Data(value.utf8)) as? [String: Any])
       }
       let before = try snapshot()
+      XCTAssertTrue((before["hitPath"] as? [String])?.contains("LyricsView") == true,
+        "The staged artwork-region coordinates hit controls instead of lyrics: \(before)")
       let region = try XCTUnwrap(before["region"] as? [Double])
       let origin = app.coordinate(withNormalizedOffset: .zero)
       func point(_ x: Double, _ y: Double) -> XCUICoordinate {

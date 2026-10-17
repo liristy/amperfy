@@ -78,7 +78,7 @@ python BuildTools/verify_ipa.py --require-signature path/to/signed.ipa
 
 默认仅使用一个 macOS 打包任务。需要完整回归时，在 **Run workflow** 勾选 `full_validation`；资源测量还需同时勾选 `profile_player_resources`。PR 正文不会触发重测试。完整回归仅上传诊断日志并保留 3 天，不再自动上传模拟器构建缓存、截图、录像或大型测试结果包；FLAC 检查只测试当前解码器。
 
-歌词区域手势可单独勾选 `lyrics_gesture_check` 检查：只模拟该区域的左右滑动、接续滚动及点击歌词。更新这项触摸测试或其脚本的 PR 提交也会执行一次该检查；普通界面改动不会自动运行。它与打包共用一个 macOS 任务，不启动完整播放器回归，仅保留文本日志。
+歌词区域手势可单独勾选 `lyrics_gesture_check` 检查：只模拟该区域的左右滑动、接续滚动及点击歌词。更新触摸测试代码的 PR 提交也会执行一次该检查；普通界面改动、测试脚本的日志或时限调整不会自动运行。定向检查单独编译测试入口，单项触摸测试最多 3 分钟。它与打包共用一个 macOS 任务，不启动完整播放器回归，仅保留文本日志。
 
 1. 更新 App 版本号、README、安装说明及 `docs/releases/<标签>.md`。
 2. 将 `.github/release-version` 更新为目标标签（例如 `v3.0.0-beta.2`），随版本改动合入 `master`；该文件的主线变更会触发发布工作流。也可以在改动已进入 `master` 后直接推送 `v*` 标签。

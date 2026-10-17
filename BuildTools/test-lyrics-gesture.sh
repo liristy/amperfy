@@ -15,12 +15,14 @@ xcrun simctl boot "$device_id" 2>/dev/null || true
 xcodebuild build -project Amperfy.xcodeproj -scheme Amperfy -configuration Debug \
   -destination "platform=iOS Simulator,id=$device_id" -derivedDataPath "$output/DerivedData" \
   -onlyUsePackageVersionsFromResolvedFile -skipPackageUpdates \
+  'SWIFT_ACTIVE_COMPILATION_CONDITIONS=DEBUG LYRICS_GESTURE_CHECK' \
   ONLY_ACTIVE_ARCH=YES COMPILER_INDEX_STORE_ENABLE=NO CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO \
-  > "$output/build.log" 2>&1
+  2>&1 | tee "$output/build.log"
 xcrun simctl bootstatus "$device_id" -b
 xcrun simctl install "$device_id" "$output/DerivedData/Build/Products/Debug-iphonesimulator/Amperfy.app"
 xcodebuild test -project BuildTools/PlayerTouchTests.xcodeproj -scheme PlayerTouchTests \
   -only-testing:PlayerTouchTests/PlayerTouchTests/testLyricsArtworkRegionHorizontalDrags \
+  -test-timeouts-enabled YES -maximum-test-execution-time-allowance 180 \
   -destination "platform=iOS Simulator,id=$device_id" -derivedDataPath "$output/TouchDerivedData" \
   -parallel-testing-enabled NO CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO \
   2>&1 | tee "$output/touch.log"

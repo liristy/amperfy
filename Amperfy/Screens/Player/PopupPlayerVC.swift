@@ -64,6 +64,13 @@ class PopupPlayerVC: UIViewController, UIScrollViewDelegate, UIGestureRecognizer
   private lazy var lyricsControlsSwipe = UISwipeGestureRecognizer(target: self, action: #selector(restoreLyricsControls))
   private lazy var dismissPan = UIPanGestureRecognizer(target: self, action: #selector(dragToDismiss(_:)))
   private weak var sourceMiniPlayer: MiniPlayerView?
+  #if DEBUG && targetEnvironment(simulator)
+    func prepareLyricsGestureCheck() {
+      lyricsControlsTask?.cancel()
+      setLyricsControlsHidden(false, animated: false)
+      view.layoutIfNeeded()
+    }
+  #endif
   override var preferredStatusBarStyle: UIStatusBarStyle { .lightContent }
 
   lazy var tableViewKeyCommandsController = TableViewKeyCommandsController(

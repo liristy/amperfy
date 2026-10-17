@@ -157,6 +157,7 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
         Task { @MainActor in await self.stageLyricsGestureCheck(on: vc) }
         return
       }
+      #if !LYRICS_GESTURE_CHECK
       if ProcessInfo.processInfo.arguments.contains("--smoke-resource-profile"),
          vc is MainSceneHostingViewController {
         Task { @MainActor in await self.runPlayerResourceProfile(on: vc) }
@@ -1718,6 +1719,7 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
           try? "ready".write(to: marker, atomically: true, encoding: .utf8)
         }
       }
+      #endif
     #endif
   }
 
@@ -2103,11 +2105,26 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
         try await Task.sleep(for: .seconds(1))
         guard let popup = host.presentedViewController as? PopupPlayerVC,
               let large = popup.largeCurrentlyPlayingView else { return }
-        popup.view.layoutIfNeeded()
-        let artworkRegion = large.artworkImage.convert(large.artworkImage.bounds, to: nil)
+        var artworkRegion = CGRect.null
+        var previousRegion = CGRect.null
+        var stableLayouts = 0
+        for _ in 0..<40 {
+          popup.view.layoutIfNeeded()
+          large.layoutIfNeeded()
+          let current = large.artworkImage.convert(large.artworkImage.bounds, to: nil)
+          if popup.transitionCoordinator == nil, popup.view.mask == nil,
+             !popup.isBeingPresented, current == previousRegion {
+            stableLayouts += 1
+            if stableLayouts >= 3 { artworkRegion = current; break }
+          } else { stableLayouts = 0 }
+          previousRegion = current
+          try await Task.sleep(for: .milliseconds(100))
+        }
+        guard !artworkRegion.isNull else { return }
         appDelegate.storage.settings.user.isPlayerLyricsDisplayed = true
-        large.display(element: .lyrics)
-        try await Task.sleep(for: .seconds(1))
+        large.display(element: .lyrics, animated: false)
+        popup.prepareLyricsGestureCheck()
+        try await Task.sleep(for: .milliseconds(300))
         popup.view.layoutIfNeeded()
         let region = artworkRegion.intersection(large.lyricsGestureBounds)
         guard !region.isNull, region.width > 100, region.height > 100 else { return }
