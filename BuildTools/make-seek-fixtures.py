@@ -32,6 +32,13 @@ def generate(destination):
     else:
         subprocess.run(['afconvert', '-f', 'flac', '-d', 'flac', str(destination / 'markers.wav'),
                         str(destination / 'markers.flac')], check=True)
+    original = bytearray((destination / 'markers.flac').read_bytes())
+    assert original[:4] == b'fLaC' and original[4] & 0x7F == 0
+    end = 8 + int.from_bytes(original[5:8], 'big')
+    last = original[4] & 0x80
+    original[4] &= 0x7F
+    padding = bytes([last | 1]) + (200000).to_bytes(3, 'big') + bytes(200000)
+    (destination / 'markers-metadata.flac').write_bytes(original[:end] + padding + original[end:])
 
 
 if __name__ == '__main__':

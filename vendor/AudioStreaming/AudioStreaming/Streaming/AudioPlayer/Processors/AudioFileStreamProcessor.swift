@@ -128,7 +128,10 @@ final class AudioFileStreamProcessor {
         }
         
         guard let stream = audioFileStream else { return 0 }
-        if playerContext.audioReadingEntry?.audioStreamFormat.mFormatID == kAudioFormatFLAC || data.prefix(4) == Data("fLaC".utf8) {
+        let formatID = playerContext.audioReadingEntry?.audioStreamFormat.mFormatID ?? 0
+        // Count every chunk before the format is known, including large artwork
+        // metadata; otherwise later frame offsets would exclude those bytes.
+        if formatID == 0 || formatID == kAudioFormatFLAC {
             flacIndex.scan(data)
         }
         let flags: AudioFileStreamParseFlags = discontinuous ? .discontinuity : .init()

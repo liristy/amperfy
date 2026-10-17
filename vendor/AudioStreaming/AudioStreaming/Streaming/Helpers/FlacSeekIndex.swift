@@ -16,12 +16,17 @@ final class FlacSeekIndex {
     }
 
     func scan(_ data: Data) {
-        if nextOffset == 0, data.count >= 12, data.prefix(4) == Data("fLaC".utf8) {
-            // STREAMINFO's maximum block size remains valid for a shorter final frame.
-            nominalBlockSize = UInt32(data[10]) << 8 | UInt32(data[11])
-        }
         let bytes = tail + data
         let base = nextOffset - tail.count
+        // STREAMINFO can span network chunks or follow an ID3 tag. Its maximum
+        // block size remains valid when the final fixed-size frame is shorter.
+        if nominalBlockSize == 0, let magic = bytes.range(of: Data("fLaC".utf8)) {
+            let start = magic.lowerBound
+            if bytes.count - start >= 12, bytes[start + 4] & 0x7F == 0,
+               bytes[start + 5] == 0, bytes[start + 6] == 0, bytes[start + 7] == 34 {
+                nominalBlockSize = UInt32(bytes[start + 10]) << 8 | UInt32(bytes[start + 11])
+            }
+        }
         bytes.withUnsafeBytes { raw in
             guard raw.count >= 6 else { return }
             for index in 0 ..< raw.count - 5 where raw[index] == 0xFF {

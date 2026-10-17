@@ -6,9 +6,17 @@ final class PreciseFlacSeekTests: XCTestCase {
     /// Exercises the production AudioFileStream + AudioConverter pipeline. Expected samples
     /// come from independently reading the original PCM file, not from the reported clock.
     func testDecodedSamplesMatchRequestedTimeAfterForwardBackwardAndRepeatedSeeks() throws {
+        try verifyDecodedSeeks(fileName: "markers.flac", fragmented: false)
+    }
+
+    func testFragmentedHeaderAndLargeMetadataPreserveSeekOffsets() throws {
+        try verifyDecodedSeeks(fileName: "markers-metadata.flac", fragmented: true)
+    }
+
+    private func verifyDecodedSeeks(fileName: String, fragmented: Bool) throws {
         let directory = try XCTUnwrap(ProcessInfo.processInfo.environment["AUDIO_SEEK_FIXTURES"])
         let reference = try AVAudioFile(forReading: URL(fileURLWithPath: directory + "/markers.wav"))
-        let compressed = try Data(contentsOf: URL(fileURLWithPath: directory + "/markers.flac"))
+        let compressed = try Data(contentsOf: URL(fileURLWithPath: directory + "/" + fileName))
         let format = try XCTUnwrap(AVAudioFormat(commonFormat: .pcmFormatFloat32, sampleRate: 44100,
                                                 channels: 2, interleaved: true))
         let context = AudioPlayerContext()
@@ -28,15 +36,19 @@ final class PreciseFlacSeekTests: XCTestCase {
             if case let .raiseError(error) = effect { errors.append(String(describing: error)) }
         }
         XCTAssertEqual(processor.openFileStream(with: kAudioFileFLACType), noErr)
-        func feed() throws {
-            let end = min(source.position + 65536, compressed.count)
+        func feed(maximumBytes: Int = 65536) throws {
+            let end = min(source.position + maximumBytes, compressed.count)
             guard end > source.position else { return }
             let bytes = compressed.subdata(in: source.position ..< end)
             source.position = end
             XCTAssertEqual(processor.parseFileStreamBytes(data: bytes), noErr)
             XCTAssertTrue(errors.isEmpty, errors.joined(separator: ", "))
         }
-        try feed()
+        if fragmented {
+            try feed(maximumBytes: 2)
+            try feed(maximumBytes: 17)
+        }
+        repeat { try feed() } while renderer.bufferContext.frameUsedCount < 1024 && source.position < compressed.count
         XCTAssertEqual(entry.audioStreamFormat.mFormatID, kAudioFormatFLAC)
         for time in [61.001, 3.002, 80.005, 22.25, 95.9, 0, 40.123, 40.123] {
             processor.processSeek(to: time)
