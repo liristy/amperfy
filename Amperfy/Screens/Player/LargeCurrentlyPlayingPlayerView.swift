@@ -253,7 +253,6 @@ class LargeCurrentlyPlayingPlayerView: UIView {
     optionsButton.accessibilityLabel = "Song options".localized
 
     lyricsView = LyricsView()
-    rootView?.registerLyricsScrollView(lyricsView!)
     lyricsView!.frame = upperContainerView.bounds
     lyricsView!.onLyricSelected = { [weak self] lyric in
       self?.appDelegate.player.seek(toSecond: lyric.startTime.seconds)

@@ -58,6 +58,8 @@ class LyricsView: UITableView, UITableViewDataSource, UITableViewDelegate {
     separatorStyle = .none
     backgroundColor = .clear
     showsVerticalScrollIndicator = false
+    alwaysBounceHorizontal = false
+    isDirectionalLockEnabled = true
     contentInsetAdjustmentBehavior = .never
     dataSource = self
     delegate = self
@@ -83,7 +85,9 @@ class LyricsView: UITableView, UITableViewDataSource, UITableViewDelegate {
     // height every frame; rebuilding all cells there interrupts highlighting.
     if widthChanged { reloadData() }
     lastScrolledIndex = nil
-    if lastIndex == nil { setContentOffset(CGPoint(x: 0, y: -contentInset.top), animated: false) }
+    if lastIndex == nil, isFollowingPlayback, !isTracking, !isDecelerating {
+      setContentOffset(CGPoint(x: 0, y: -contentInset.top), animated: false)
+    }
   }
 
   public func display(lyrics: StructuredLyrics, scrollAnimation: Bool) {
@@ -162,16 +166,6 @@ class LyricsView: UITableView, UITableViewDataSource, UITableViewDelegate {
     suppressAutoScrollUntil = Date().addingTimeInterval(5)
   }
 
-  override func gestureRecognizerShouldBegin(_ gestureRecognizer: UIGestureRecognizer) -> Bool {
-    if gestureRecognizer === panGestureRecognizer {
-      let velocity = panGestureRecognizer.velocity(in: self)
-      // Lyrics scrolling only owns vertical drags. Horizontal movement must
-      // neither start a lyric drag nor invoke a track-changing gesture.
-      guard abs(velocity.y) > abs(velocity.x) else { return false }
-    }
-    return super.gestureRecognizerShouldBegin(gestureRecognizer)
-  }
-
   func handleDrag(velocity: CGPoint) {
     guard abs(velocity.y) > abs(velocity.x) else { return }
     if velocity.y < 0 { onUpwardDrag?() }
@@ -194,7 +188,7 @@ class LyricsView: UITableView, UITableViewDataSource, UITableViewDelegate {
       if let index { lyricModels[index].isActiveLine = true }
       lastIndex = index
     }
-    guard forceFollow || (!isDragging && !isDecelerating &&
+    guard forceFollow || (!isTracking && !isDragging && !isDecelerating &&
             (suppressAutoScrollUntil.map { Date() >= $0 } ?? true)) else { return }
     isFollowingPlayback = true
     suppressAutoScrollUntil = nil

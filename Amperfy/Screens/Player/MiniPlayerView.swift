@@ -33,6 +33,7 @@ class MiniPlayerView: UIView, UIGestureRecognizerDelegate {
   private var hoverOverlayView: UIView?
   private var trackPan: UIPanGestureRecognizer?
   private var expandPan: UIPanGestureRecognizer?
+  private var isTrackSwipingSuspended = false
   private weak var expandingPlayer: PopupPlayerVC?
   private var trackViewport: UIView?
   private var trackContent: UIView?
@@ -798,8 +799,18 @@ class MiniPlayerView: UIView, UIGestureRecognizerDelegate {
 
   private var canSwipeTracks: Bool {
     // The dock remains in the hierarchy behind the full-screen player.
-    // Block its gestures throughout presentation, lyrics and dismissal.
-    (AppDelegate.mainWindowHostVC as? UIViewController)?.presentedViewController == nil
+    // Require the actual host; an unavailable host must not enable a gesture.
+    guard !isTrackSwipingSuspended,
+          let host = AppDelegate.mainWindowHostVC as? UIViewController,
+          let window, host.presentedViewController == nil,
+          window.rootViewController?.presentedViewController == nil else { return false }
+    return true
+  }
+
+  func setTrackSwipingSuspended(_ suspended: Bool) {
+    isTrackSwipingSuspended = suspended
+    trackPan?.isEnabled = !suspended
+    if suspended { resetTrackDrag() }
   }
 
   func beginTrackDrag() {
@@ -942,7 +953,7 @@ class MiniPlayerView: UIView, UIGestureRecognizerDelegate {
     guard let hostVC = AppDelegate.mainWindowHostVC as? UIViewController,
           hostVC.presentedViewController == nil else { return }
     let popupPlayer = PopupPlayerVC()
-    popupPlayer.configurePresentation(sourcePlayer: glassContainer, sourceArtwork: artworkImage)
+    popupPlayer.configurePresentation(sourcePlayer: glassContainer, sourceArtwork: artworkImage, sourceMiniPlayer: self)
     hostVC.present(popupPlayer, animated: true, completion: completion)
   }
 
@@ -963,7 +974,7 @@ class MiniPlayerView: UIView, UIGestureRecognizerDelegate {
     guard let hostVC = AppDelegate.mainWindowHostVC as? UIViewController,
           hostVC.presentedViewController == nil else { return }
     let popup = PopupPlayerVC()
-    popup.configurePresentation(sourcePlayer: glassContainer, sourceArtwork: artworkImage)
+    popup.configurePresentation(sourcePlayer: glassContainer, sourceArtwork: artworkImage, sourceMiniPlayer: self)
     let interaction = UIPercentDrivenInteractiveTransition()
     // Preserve each animation's curve; a global spring also makes the cover bounce.
     popup.surfaceTransition.presentationInteraction = interaction
