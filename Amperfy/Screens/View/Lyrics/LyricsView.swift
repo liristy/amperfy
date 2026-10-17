@@ -246,7 +246,7 @@ class LyricsView: UITableView, UITableViewDataSource, UITableViewDelegate {
       }
       for _ in 0..<4 {
         let actual = popup.player.elapsedTime
-        scroll(toTime: CMTime(seconds: actual, preferredTimescale: 1000))
+        scroll(toTime: StructuredLyrics.playbackTime(seconds: actual))
         layoutIfNeeded()
         guard abs(actual - Double(start) / 1000) < 2,
               lastIndex == selectedIndex,
