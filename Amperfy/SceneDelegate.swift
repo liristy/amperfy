@@ -1474,9 +1474,9 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
 
               guard let lyricsView = descendants(of: popup.view).compactMap({ $0 as? LyricsView }).first else { return }
               popup.setLyricsControlsHidden(true, animated: false)
-              lyricsView.handleDrag(velocity: CGPoint(x: 0, y: -300))
-              guard !popup.areLyricsControlsHidden else { return }
               lyricsView.handleDrag(velocity: CGPoint(x: 0, y: 300))
+              guard !popup.areLyricsControlsHidden else { return }
+              lyricsView.handleDrag(velocity: CGPoint(x: 0, y: -300))
               try await Task.sleep(for: .milliseconds(500))
               guard popup.areLyricsControlsHidden else { return }
               try await compositorScreenshot("player-lyrics-upward.png")

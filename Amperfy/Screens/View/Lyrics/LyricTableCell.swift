@@ -160,3 +160,12 @@ class LyricTableCell: UITableViewCell {
     return true
   }
 }
+
+#if DEBUG && targetEnvironment(simulator)
+  extension LyricTableCell {
+    var isPlaybackEmphasisVisible: Bool {
+      (lyricLabel.layer.presentation()?.opacity ?? lyricLabel.layer.opacity) > 0.95 &&
+        (blurredLyrics.layer.presentation()?.opacity ?? blurredLyrics.layer.opacity) < 0.05
+    }
+  }
+#endif

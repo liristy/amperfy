@@ -41,12 +41,12 @@ final class PlayerTouchTests: XCTestCase {
     let low = lyrics.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.95))
     low.tap()
     expectControls("hidden")
-    low.press(forDuration: 0.05,
-      thenDragTo: lyrics.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)),
-      withVelocity: .slow, thenHoldForDuration: 0.1)
-    expectControls("shown")
     lyrics.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.4))
       .press(forDuration: 0.05, thenDragTo: lyrics.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.85)),
+        withVelocity: .slow, thenHoldForDuration: 0.1)
+    expectControls("shown")
+    lyrics.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.85))
+      .press(forDuration: 0.05, thenDragTo: lyrics.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.4)),
         withVelocity: .slow, thenHoldForDuration: 0.1)
     expectControls("hidden")
     let tableFrame = lyrics.frame
