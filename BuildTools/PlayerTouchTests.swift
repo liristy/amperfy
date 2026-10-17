@@ -50,10 +50,11 @@ final class PlayerTouchTests: XCTestCase {
         withVelocity: .slow, thenHoldForDuration: 0.1)
     expectControls("hidden")
     let tableFrame = lyrics.frame
-    let candidates = lyrics.cells.allElementsBoundByIndex.filter {
+    // Lyric cells expose the static-text trait to VoiceOver and XCTest.
+    let candidates = lyrics.staticTexts.allElementsBoundByIndex.filter {
       $0.isHittable && $0.frame.midY > tableFrame.minY + 80 && $0.frame.midY < tableFrame.maxY - 80
     }
-    XCTAssertFalse(candidates.isEmpty)
+    XCTAssertFalse(candidates.isEmpty, lyrics.debugDescription)
     candidates.first?.tap()
     expectControls("hidden")
     lyricsFinish.tap()
