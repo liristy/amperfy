@@ -8,8 +8,8 @@ export AUDIO_SEEK_FIXTURES="$PWD/build/validation/audio-seek"
 # Keep an untouched copy while demonstrating the failure in the pinned upstream
 # decoder. Only adapt its method signature to the snapshotted request argument.
 processor='vendor/AudioStreaming/AudioStreaming/Streaming/AudioPlayer/Processors/AudioFileStreamProcessor.swift'
-cp "$processor" build/validation/audio-seek/patched-processor.swift
-restore_processor() { cp build/validation/audio-seek/patched-processor.swift "$processor"; }
+cp -p "$processor" build/validation/audio-seek/patched-processor.swift
+restore_processor() { cp -p build/validation/audio-seek/patched-processor.swift "$processor"; }
 trap restore_processor EXIT
 python3 - "$processor" <<'PY'
 import hashlib
@@ -31,5 +31,7 @@ if ! grep -q 'Decoded audio is at a different time' build/validation/audio-seek-
   echo 'Baseline failed before the decoded-sample assertion; this is not a reproduced seek regression.' >&2
   exit 1
 fi
-restore_processor
+# Give SwiftPM a fresh timestamp for the changed decoder, then let the EXIT
+# trap restore the original stamp so the subsequent iOS build can reuse it.
+cp build/validation/audio-seek/patched-processor.swift "$processor"
 swift test --package-path vendor/AudioStreaming --filter PreciseFlacSeekTests 2>&1 | tee build/validation/audio-seek-fixed.log

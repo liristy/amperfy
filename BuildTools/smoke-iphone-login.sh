@@ -99,8 +99,10 @@ xcrun simctl launch \
   "$device_id" "$bundle_id" -AppleLanguages '(zh-Hans)' --smoke-login --smoke-player
 ready=false
 # The player suite also checks all statistics panels and native detail returns.
-# Bound polling between compositor captures; report an explicit failure immediately.
-for attempt in {1..150}; do
+# Captures and actual finger injection take variable time. Use an elapsed-time
+# budget for the whole suite and acknowledge compositor requests promptly.
+player_smoke_deadline=$((SECONDS + 900))
+while (( SECONDS < player_smoke_deadline )); do
   if [[ -f "$container/Documents/player-touch-ready" && -z "${touch_test_pid:-}" ]]; then
     xcodebuild test-without-building \
       -project BuildTools/PlayerTouchTests.xcodeproj -scheme PlayerTouchTests \
@@ -127,7 +129,7 @@ for attempt in {1..150}; do
     break
   fi
   [[ -f "$container/Documents/player-smoke-failed" ]] && break
-  sleep 2
+  sleep 0.2
 done
 kill -INT "$motion_pid" 2>/dev/null || true
 wait "$motion_pid" || true
