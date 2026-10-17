@@ -1057,12 +1057,14 @@ extension PlayerControlView: MusicPlayable {
     button.isHighlighted = false
     action()
     var offsets: [CGFloat] = []
+    var offsetTimes: [CFTimeInterval] = []
     for _ in 0..<14 {
       try await Task.sleep(for: .milliseconds(25))
       frames.append(frame())
       if let offset = button.skipPresentationOffsets?.first {
         try require(button.isSkipGlyphIntact, "skip split, duplicated or faded the configured glyph")
         offsets.append(offset)
+        offsetTimes.append(CACurrentMediaTime())
       }
     }
     try require(button.isRenderedSymbolSettled, "release left a stale, scaled or off-center glyph")
@@ -1073,8 +1075,13 @@ extension PlayerControlView: MusicPlayable {
       try require(distances.allSatisfy { $0 >= -0.1 && $0 <= 6.1 } &&
         (distances.last ?? 6) < 0.6,
         "skip overshot or did not return smoothly: \(offsets)")
-      try require(zip(offsets, offsets.dropFirst()).allSatisfy { abs($0.1 - $0.0) < 3 },
-        "skip jumped between presentation frames: \(offsets)")
+      // Rendering each captured frame also takes time. A delayed sample can
+      // legitimately travel farther than a nominal 25 ms sample. Bound the
+      // velocity of the 6 pt / 100 ms ease-out, retaining the normal 3 pt limit.
+      try require((1..<offsets.count).allSatisfy { index in
+        let interval = offsetTimes[index] - offsetTimes[index - 1]
+        return abs(offsets[index] - offsets[index - 1]) < max(3, CGFloat(interval) * 120)
+      }, "skip jumped between presentation frames: \(offsets), times: \(offsetTimes)")
       button.animateActivation(direction: direction)
       try await Task.sleep(for: .milliseconds(60))
       let before = button.skipPresentationOffsets?.first
