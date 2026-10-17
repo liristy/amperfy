@@ -18,7 +18,7 @@
 
 推荐从 [qMusic Releases](https://github.com/liristy/amperfy/releases) 下载对应版本的 IPA。3.0 Beta 2 的文件名为 `qMusic-3.0.0-beta.2.ipa`，App 内显示 3.0.0（2）。同页提供 `SHA256SUMS` 和 `build-info.txt`，用于核对文件完整性与源码版本。
 
-也可在 **Actions → qMusic Build & Release → Run workflow** 手动打包。等待测试与构建成功后，下载 **Amperfy-iPhone-unsigned-数字** artifact 并解压，找到 `Amperfy-unsigned.ipa`；不要把外层 ZIP 当作 IPA。
+也可在 **Actions → qMusic Build & Release → Run workflow** 手动打包。默认只做基础检查和一次真机打包，无需勾选完整回归。等待检查与构建成功后，下载 **Amperfy-iPhone-unsigned-数字** artifact 并解压，找到 `Amperfy-unsigned.ipa`；不要把外层 ZIP 当作 IPA。
 
 `v*` 标签或 `.github/release-version` 的主线变更会触发构建、测试和 Release 发布。工作流仅在公开仓库使用标准托管 runner，私有仓库会跳过。临时 artifacts 保留 7 天，Release 附件可从对应发布页下载。
 

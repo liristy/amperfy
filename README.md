@@ -60,23 +60,27 @@ open Amperfy.xcodeproj
 选择 `Amperfy` scheme 构建。工程和 bundle identifier 保留原有名称，安装显示名称为 qMusic，以便现有侧载用户覆盖更新。
 
 ```sh
-# iPhone 模拟器回归及界面检查（macOS）
+# 可选：完整 iPhone 模拟器回归及界面检查（macOS）
 bash BuildTools/test-iphone-changes.sh
+# 可选：FLAC 跳转后的实际解码采样验证（macOS）
+bash BuildTools/test-audio-seeking.sh
 # 生成待个人签名的真机 IPA（macOS）
 bash BuildTools/build-unsigned-ipa.sh
 # 检查重签名后的 IPA（Windows / macOS）
 python BuildTools/verify_ipa.py --require-signature path/to/signed.ipa
 ```
 
-播放器布局遵守[统一布局约定](docs/player-layout.md)。验证包括 184 项资料库与播放回归、iPhone 模拟器登录及完整界面检查，覆盖歌词、队列、原生玻璃、音量拖动、快速播放／暂停、自动续播、聆听统计、Scrobble 和快捷指令。模拟器验证不替代不同设备、服务器和个人签名环境的实际测试。
+播放器布局遵守[统一布局约定](docs/player-layout.md)。默认 CI 只运行构建工具的基础检查、一次真机打包及 IPA 完整性校验。完整资料库与播放器回归保留为手动选项，覆盖歌词、队列、音量、播放控制、自动续播、聆听统计、Scrobble 和快捷指令。模拟器验证不替代真机测试。
 
 ## 发布工作流
 
-工作流 **qMusic Build & Release** 支持手动构建、PR 验证和 `v*` 标签发布，也支持通过主线的版本声明发起发布。普通主线推送不重复构建。
+工作流 **qMusic Build & Release** 支持手动构建、PR 验证和 `v*` 标签发布，也支持通过主线的版本声明发起发布。普通主线推送、仅修改 Markdown 文档的 PR 不重复构建；同一分支的新提交会取消旧运行。
+
+默认仅使用一个 macOS 打包任务。需要完整回归时，在 **Run workflow** 勾选 `full_validation`；资源测量还需同时勾选 `profile_player_resources`。PR 正文不会触发重测试。完整回归仅上传诊断日志并保留 3 天，不再自动上传模拟器构建缓存、截图、录像或大型测试结果包；FLAC 检查只测试当前解码器。
 
 1. 更新 App 版本号、README、安装说明及 `docs/releases/<标签>.md`。
 2. 将 `.github/release-version` 更新为目标标签（例如 `v3.0.0-beta.2`），随版本改动合入 `master`；该文件的主线变更会触发发布工作流。也可以在改动已进入 `master` 后直接推送 `v*` 标签。
-3. 工作流重新完成全部测试、真机打包和完整性校验后，创建版本标签与 GitHub Release，附带 IPA、SHA-256、构建来源和安装说明。发布提交必须属于 `master`，已有标签不得移到其他提交；含预发行后缀的标签标记为 Pre-release。
+3. 工作流完成基础检查、真机打包和完整性校验后，创建版本标签与 GitHub Release，附带 IPA、SHA-256、构建来源和安装说明。完整回归可在发布前手动运行。发布提交必须属于 `master`，已有标签不得移到其他提交；含预发行后缀的标签标记为 Pre-release。
 
 临时 Actions artifacts 保留 7 天；已发布的文件可从对应 Release 下载。构建不需要上传 Apple ID、密码或个人签名证书。
 

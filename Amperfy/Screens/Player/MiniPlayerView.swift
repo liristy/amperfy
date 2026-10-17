@@ -767,6 +767,7 @@ class MiniPlayerView: UIView, UIGestureRecognizerDelegate {
 
   @objc
   private func handleTrackPan(_ gesture: UIPanGestureRecognizer) {
+    guard canSwipeTracks else { resetTrackDrag(); return }
     switch gesture.state {
     case .began: beginTrackDrag()
     case .changed: updateTrackDrag(translation: gesture.translation(in: self).x)
@@ -792,12 +793,18 @@ class MiniPlayerView: UIView, UIGestureRecognizerDelegate {
     }
     guard gestureRecognizer === trackPan, let pan = gestureRecognizer as? UIPanGestureRecognizer else { return true }
     let velocity = pan.velocity(in: self)
-    return player.currentlyPlaying != nil && trackDragAnimator == nil && abs(velocity.x) > abs(velocity.y)
+    return canSwipeTracks && player.currentlyPlaying != nil && trackDragAnimator == nil && abs(velocity.x) > abs(velocity.y)
+  }
+
+  private var canSwipeTracks: Bool {
+    // The dock remains in the hierarchy behind the full-screen player.
+    // Block its gestures throughout presentation, lyrics and dismissal.
+    (AppDelegate.mainWindowHostVC as? UIViewController)?.presentedViewController == nil
   }
 
   func beginTrackDrag() {
     resetTrackDrag()
-    guard let song = player.currentlyPlaying,
+    guard canSwipeTracks, let song = player.currentlyPlaying,
           let overlay = trackViewport, let content = trackContent else { return }
     layoutIfNeeded()
     // Move the live content inside its viewport. Snapshot substitutes do not
@@ -883,14 +890,14 @@ class MiniPlayerView: UIView, UIGestureRecognizerDelegate {
     let pullingBack = distance * velocity < 0 && abs(velocity) > 150
     let isNext = distance < 0
     let target = isNext ? trackDragNextSong : trackDragPreviousSong
-    let commit = !cancelled && !pullingBack && abs(distance) >= threshold && trackDragSong == player.currentlyPlaying && target != nil && target == adjacentPlayable(isNext: isNext)
+    let commit = canSwipeTracks && !cancelled && !pullingBack && abs(distance) >= threshold && trackDragSong == player.currentlyPlaying && target != nil && target == adjacentPlayable(isNext: isNext)
     let animator = UIViewPropertyAnimator(duration: UIAccessibility.isReduceMotionEnabled ? 0 : 0.18, curve: .easeOut) { [weak self] in
       self?.positionTrackPages(at: commit ? (isNext ? -overlay.bounds.width : overlay.bounds.width) : 0)
     }
     trackDragAnimator = animator
     animator.addCompletion { [weak self] position in
       guard let self else { return }
-      let shouldSwitch = position == .end && commit && self.trackDragSong == self.player.currentlyPlaying && target == self.adjacentPlayable(isNext: isNext)
+      let shouldSwitch = self.canSwipeTracks && position == .end && commit && self.trackDragSong == self.player.currentlyPlaying && target == self.adjacentPlayable(isNext: isNext)
       self.trackDragAnimator = nil
       if shouldSwitch {
         if isNext { self.player.playNext() } else { self.player.playPrevious() }

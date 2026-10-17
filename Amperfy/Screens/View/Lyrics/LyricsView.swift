@@ -31,7 +31,12 @@ class LyricsView: UITableView, UITableViewDataSource, UITableViewDelegate {
   private var lastScrolledIndex: Int?
   private var scrollAnimation = true
   private var suppressAutoScrollUntil: Date?
-  private var isFollowingPlayback = true
+  private var isFollowingPlayback = true {
+    didSet {
+      guard oldValue != isFollowingPlayback else { return }
+      lyricModels.forEach { $0.isManuallyReading = !isFollowingPlayback }
+    }
+  }
   private let edgeMask = CAGradientLayer()
   private var previousSize: CGSize = .zero
   public var onLyricSelected: ((LyricsLine) -> ())?
@@ -157,6 +162,16 @@ class LyricsView: UITableView, UITableViewDataSource, UITableViewDelegate {
     suppressAutoScrollUntil = Date().addingTimeInterval(5)
   }
 
+  override func gestureRecognizerShouldBegin(_ gestureRecognizer: UIGestureRecognizer) -> Bool {
+    if gestureRecognizer === panGestureRecognizer {
+      let velocity = panGestureRecognizer.velocity(in: self)
+      // Lyrics scrolling only owns vertical drags. Horizontal movement must
+      // neither start a lyric drag nor invoke a track-changing gesture.
+      guard abs(velocity.y) > abs(velocity.x) else { return false }
+    }
+    return super.gestureRecognizerShouldBegin(gestureRecognizer)
+  }
+
   func handleDrag(velocity: CGPoint) {
     guard abs(velocity.y) > abs(velocity.x) else { return }
     if velocity.y < 0 { onUpwardDrag?() }
@@ -179,11 +194,11 @@ class LyricsView: UITableView, UITableViewDataSource, UITableViewDelegate {
       if let index { lyricModels[index].isActiveLine = true }
       lastIndex = index
     }
-    guard let index, forceFollow || index != lastScrolledIndex,
-          forceFollow || (!isDragging && !isDecelerating &&
+    guard forceFollow || (!isDragging && !isDecelerating &&
             (suppressAutoScrollUntil.map { Date() >= $0 } ?? true)) else { return }
     isFollowingPlayback = true
     suppressAutoScrollUntil = nil
+    guard let index, forceFollow || index != lastScrolledIndex else { return }
     layoutIfNeeded()
     let row = rectForRow(at: IndexPath(row: index, section: 0))
     let target = max(-contentInset.top, row.minY - bounds.height * 0.26)
