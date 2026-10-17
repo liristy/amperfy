@@ -522,9 +522,9 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
                 throw NSError(domain: "PlayerSmoke", code: 1,
                   userInfo: [NSLocalizedDescriptionKey: "Simulator screenshot timed out: \(name)"])
               }
+              try await compositorScreenshot("player-opening-refreshed.png")
               try verifyPlayerFlightShadow(pausedPopup)
               smokeLog("Paused opening carried a scaled shadow with the shared cover")
-              try await compositorScreenshot("player-opening-refreshed.png")
               miniPlayer.endPlayerExpansion(translation: pausedDistance * 0.85, velocity: 850)
               try await Task.sleep(for: .seconds(1))
               guard hiddenCover.mask == nil, miniPlayer.artworkImage.mask == nil,

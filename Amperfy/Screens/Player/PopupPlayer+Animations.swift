@@ -88,6 +88,7 @@ final class PlayerArtworkMotion: NSObject {
   private let miniTransform: CGAffineTransform
   private let miniAlpha: CGFloat
   private var progress: CGFloat = 0
+  private var lastTransition: CGFloat = 0
   private var destination: CGFloat?
   private var displayLink: CADisplayLink?
 
@@ -132,11 +133,14 @@ final class PlayerArtworkMotion: NSObject {
   private func sample() {
     // Read only the timing probe. Applying the page AND cover below in one
     // transaction avoids the extra frame caused by following the rendered page.
-    guard let timing = progressView.layer.presentation() else { return }
-    render(transition: timing.transform.m41)
+    // UIKit may remove the timing probe's presentation layer while an
+    // interactive transition is held. Keep its last time, but still follow
+    // artwork layout/metadata changes and update the accompanying shadow.
+    render(transition: progressView.layer.presentation()?.transform.m41 ?? lastTransition)
   }
 
   private func render(transition: CGFloat) {
+    lastTransition = transition
     let expansion = presenting ? transition : 1 - transition
     let current = min(1, max(0, transition))
     if let destination {

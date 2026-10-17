@@ -215,9 +215,13 @@ class LyricsView: UITableView, UITableViewDataSource, UITableViewDelegate {
     func verifyActualLyricsTouches(in popup: PopupPlayerVC) async throws {
       var complete = false
       var selection: LyricsLine?
+      var selectedAt: CFTimeInterval?
+      var selectedRate: Double = 0
       let originalSelection = onLyricSelected
       onLyricSelected = { line in
         selection = line
+        selectedAt = CACurrentMediaTime()
+        selectedRate = popup.player.isPlaying ? popup.player.playbackRate.asDouble : 0
         originalSelection?(line)
       }
       let finish = UIButton(type: .system)
@@ -237,7 +241,7 @@ class LyricsView: UITableView, UITableViewDataSource, UITableViewDelegate {
         if finish.accessibilityValue != value { finish.accessibilityValue = value }
         try await Task.sleep(for: .milliseconds(25))
       }
-      guard complete, let selection, let start = selection.start, let lyrics,
+      guard complete, let selection, let selectedAt, let start = selection.start, let lyrics,
             let selectedIndex = lyrics.line.lastIndex(where: {
               $0.value == selection.value && $0.start.map { max(0, $0 - lyrics.offset) } == start
             }) else {
@@ -246,14 +250,16 @@ class LyricsView: UITableView, UITableViewDataSource, UITableViewDelegate {
       }
       for _ in 0..<4 {
         let actual = popup.player.elapsedTime
+        // Audio keeps playing while XCTest checks accessibility and taps Finish.
+        let expected = Double(start) / 1000 + (CACurrentMediaTime() - selectedAt) * selectedRate
         scroll(toTime: StructuredLyrics.playbackTime(seconds: actual))
         layoutIfNeeded()
-        guard abs(actual - Double(start) / 1000) < 2,
+        guard abs(actual - expected) < 1,
               lastIndex == selectedIndex,
               lyricModels[selectedIndex].cell?.accessibilityTraits.contains(.selected) == true,
               popup.areLyricsControlsHidden else {
           throw NSError(domain: "LyricsTouchSmoke", code: 2,
-            userInfo: [NSLocalizedDescriptionKey: "Audio/visible lyric mismatch: target \(start) ms, actual \(actual), row \(String(describing: lastIndex))"])
+            userInfo: [NSLocalizedDescriptionKey: "Audio/visible lyric mismatch: target \(start) ms, expected \(expected), actual \(actual), row \(String(describing: lastIndex))"])
         }
         try await Task.sleep(for: .milliseconds(100))
       }
