@@ -60,3 +60,61 @@ final class PlayerTouchTests: XCTestCase {
     lyricsFinish.tap()
   }
 }
+
+extension PlayerTouchTests {
+  func testLyricsArtworkRegionHorizontalDrags() throws {
+    continueAfterFailure = false
+    let app = XCUIApplication(bundleIdentifier: "de.familie-zimba.amperfy-music")
+    for baseline in [true, false] {
+      app.launchArguments = ["--smoke-login", "--smoke-lyrics-gesture", "-AppleLanguages", "(zh-Hans)"] +
+        (baseline ? ["--lyrics-gesture-baseline"] : [])
+      app.launch()
+      let probe = app.descendants(matching: .any)["player.lyricsGestureProbe"]
+      XCTAssertTrue(probe.waitForExistence(timeout: 70))
+      func snapshot() throws -> [String: Any] {
+        let value = try XCTUnwrap(probe.value as? String)
+        return try XCTUnwrap(JSONSerialization.jsonObject(with: Data(value.utf8)) as? [String: Any])
+      }
+      let before = try snapshot()
+      let region = try XCTUnwrap(before["region"] as? [Double])
+      let origin = app.coordinate(withNormalizedOffset: .zero)
+      func point(_ x: Double, _ y: Double) -> XCUICoordinate {
+        origin.withOffset(CGVector(dx: region[0] + region[2] * x, dy: region[1] + region[3] * y))
+      }
+      let started = Date()
+      // These coordinates come from the actual large artwork before entering
+      // lyrics, intersected with the visible lyric table. Never swipe the dock.
+      for y in [0.25, 0.65] {
+        point(0.15, y).press(forDuration: 0.02, thenDragTo: point(0.85, y), withVelocity: .fast, thenHoldForDuration: 0)
+        point(0.85, y).press(forDuration: 0.02, thenDragTo: point(0.15, y), withVelocity: .slow, thenHoldForDuration: 0)
+      }
+      let after = try snapshot()
+      print("LYRICS_GESTURE \(baseline ? "baseline" : "fixed") before=\(before) after=\(after)")
+      if !baseline {
+        XCTAssertEqual(after["song"] as? String, before["song"] as? String)
+        XCTAssertEqual(after["selections"] as? Int, before["selections"] as? Int, "Horizontal drag selected a lyric")
+        XCTAssertGreaterThan(try XCTUnwrap(after["blocked"] as? Int), 0)
+        let elapsed = try XCTUnwrap(after["elapsed"] as? Double) - XCTUnwrap(before["elapsed"] as? Double)
+        XCTAssertEqual(elapsed, Date().timeIntervalSince(started), accuracy: 3, "Horizontal drag sought through the song")
+        XCTAssertEqual(try XCTUnwrap(after["offsetX"] as? Double), 0, accuracy: 0.5)
+        let drags = try XCTUnwrap(after["drags"] as? Int)
+        point(0.5, 0.85).press(forDuration: 0.02, thenDragTo: point(0.5, 0.2), withVelocity: .fast, thenHoldForDuration: 0)
+        point(0.5, 0.85).press(forDuration: 0.02, thenDragTo: point(0.5, 0.2), withVelocity: .fast, thenHoldForDuration: 0)
+        let scrolled = try snapshot()
+        XCTAssertGreaterThanOrEqual(try XCTUnwrap(scrolled["drags"] as? Int), drags + 2, "Second flick did not begin")
+        XCTAssertGreaterThan(try XCTUnwrap(scrolled["offsetY"] as? Double), try XCTUnwrap(after["offsetY"] as? Double) + 30)
+        let lyrics = app.tables["player.lyricsTable"]
+        let frame = lyrics.frame
+        let row = lyrics.staticTexts.allElementsBoundByIndex.first {
+          $0.isHittable && $0.frame.midY > frame.minY + 40 && $0.frame.midY < frame.maxY - 40
+        }
+        XCTAssertNotNil(row)
+        let count = try XCTUnwrap(scrolled["selections"] as? Int)
+        row?.tap()
+        XCTAssertEqual(try XCTUnwrap(try snapshot()["selections"] as? Int), count + 1, "Deliberate lyric tap stopped working")
+        print("LYRICS_GESTURE repeated-scroll=\(scrolled) tapped=\(try snapshot())")
+      }
+      app.terminate()
+    }
+  }
+}

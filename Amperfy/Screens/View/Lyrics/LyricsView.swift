@@ -39,6 +39,11 @@ class LyricsView: UITableView, UITableViewDataSource, UITableViewDelegate {
   }
   private let edgeMask = CAGradientLayer()
   private var previousSize: CGSize = .zero
+  private let horizontalDragBlocker = LyricsHorizontalDragRecognizer(target: nil, action: nil)
+  #if DEBUG && targetEnvironment(simulator)
+    private var gestureProbeSelections = 0
+    private var gestureProbeDrags = 0
+  #endif
   public var onLyricSelected: ((LyricsLine) -> ())?
   public var onUpwardDrag: (() -> ())?
   public var onDownwardDrag: (() -> ())?
@@ -63,6 +68,17 @@ class LyricsView: UITableView, UITableViewDataSource, UITableViewDelegate {
     contentInsetAdjustmentBehavior = .never
     dataSource = self
     delegate = self
+    // Claim horizontal drags on the lyrics themselves. Merely rejecting the
+    // scroll pan can leave the row touch or an ancestor gesture unclaimed.
+    horizontalDragBlocker.name = "player.lyrics.horizontalDragBlocker"
+    horizontalDragBlocker.cancelsTouchesInView = true
+    horizontalDragBlocker.delaysTouchesBegan = false
+    horizontalDragBlocker.delaysTouchesEnded = false
+    addGestureRecognizer(horizontalDragBlocker)
+    panGestureRecognizer.require(toFail: horizontalDragBlocker)
+    #if DEBUG && targetEnvironment(simulator)
+      horizontalDragBlocker.isEnabled = !ProcessInfo.processInfo.arguments.contains("--lyrics-gesture-baseline")
+    #endif
     accessibilityIdentifier = "player.lyricsTable"
     edgeMask.colors = [UIColor.clear.cgColor, UIColor.white.cgColor,
                        UIColor.white.cgColor, UIColor.clear.cgColor]
@@ -146,6 +162,9 @@ class LyricsView: UITableView, UITableViewDataSource, UITableViewDelegate {
     guard let lyrics, lyrics.synced, var lyric = lyricModels[indexPath.row].lyric,
           let start = lyric.start else { return }
     tableView.deselectRow(at: indexPath, animated: false)
+    #if DEBUG && targetEnvironment(simulator)
+      gestureProbeSelections += 1
+    #endif
     // OpenSubsonic's positive offset means the line appears earlier.
     lyric.start = max(0, start - lyrics.offset)
     // Stop an older automatic scroll at its rendered position before centering
@@ -160,6 +179,9 @@ class LyricsView: UITableView, UITableViewDataSource, UITableViewDelegate {
   }
 
   public func scrollViewWillBeginDragging(_ scrollView: UIScrollView) {
+    #if DEBUG && targetEnvironment(simulator)
+      gestureProbeDrags += 1
+    #endif
     isFollowingPlayback = false
     handleDrag(velocity: scrollView.panGestureRecognizer.velocity(in: scrollView))
     lastScrolledIndex = nil
@@ -202,8 +224,55 @@ class LyricsView: UITableView, UITableViewDataSource, UITableViewDelegate {
   }
 }
 
+// This recognizer only consumes deliberate sideways drags. A vertical movement
+// fails immediately, leaving UIKit's native scrolling and repeated flicks alone.
+private final class LyricsHorizontalDragRecognizer: UIGestureRecognizer {
+  private var origin: CGPoint?
+  #if DEBUG && targetEnvironment(simulator)
+    private(set) var recognizedDragCount = 0
+  #endif
+
+  override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent) {
+    guard origin == nil, touches.count == 1, let touch = touches.first else {
+      state = state == .began || state == .changed ? .cancelled : .failed
+      return
+    }
+    origin = touch.location(in: view?.window)
+  }
+
+  override func touchesMoved(_ touches: Set<UITouch>, with event: UIEvent) {
+    guard let origin, let touch = touches.first else { return }
+    let point = touch.location(in: view?.window)
+    let dx = abs(point.x - origin.x)
+    let dy = abs(point.y - origin.y)
+    if state == .possible {
+      if dy >= 8, dy >= dx { state = .failed }
+      else if dx >= 10, dx > dy * 1.5 {
+        state = .began
+        #if DEBUG && targetEnvironment(simulator)
+          recognizedDragCount += 1
+        #endif
+      }
+    } else if state == .began || state == .changed { state = .changed }
+  }
+
+  override func touchesEnded(_ touches: Set<UITouch>, with event: UIEvent) {
+    state = state == .began || state == .changed ? .ended : .failed
+  }
+
+  override func touchesCancelled(_ touches: Set<UITouch>, with event: UIEvent) {
+    state = state == .began || state == .changed ? .cancelled : .failed
+  }
+  override func reset() { super.reset(); origin = nil }
+}
+
 #if DEBUG && targetEnvironment(simulator)
   extension LyricsView {
+    var gestureProbeState: [String: Any] {
+      ["offsetX": contentOffset.x, "offsetY": contentOffset.y,
+       "selections": gestureProbeSelections, "drags": gestureProbeDrags,
+       "blocked": horizontalDragBlocker.recognizedDragCount]
+    }
     static func verifyMillisecondSelections() throws {
       for offset in [-100, 0, 100] {
         var lyrics = StructuredLyrics()

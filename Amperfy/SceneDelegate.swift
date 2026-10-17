@@ -152,6 +152,11 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
   func replaceMainRootViewController(vc: UIViewController) {
     window?.rootViewController = vc
     #if DEBUG && targetEnvironment(simulator)
+      if ProcessInfo.processInfo.arguments.contains("--smoke-lyrics-gesture"),
+         vc is MainSceneHostingViewController {
+        Task { @MainActor in await self.stageLyricsGestureCheck(on: vc) }
+        return
+      }
       if ProcessInfo.processInfo.arguments.contains("--smoke-resource-profile"),
          vc is MainSceneHostingViewController {
         Task { @MainActor in await self.runPlayerResourceProfile(on: vc) }
@@ -2065,6 +2070,84 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
       } catch {
         try? write(["error": String(describing: error), "phase": resourceProfilePhase], name: "player-resource-failed.json")
       }
+    }
+  }
+#endif
+
+#if DEBUG && targetEnvironment(simulator)
+  extension SceneDelegate {
+    @MainActor private func stageLyricsGestureCheck(on host: UIViewController) async {
+      do {
+        try await Task.sleep(for: .seconds(2))
+        guard let active = appDelegate.storage.settings.accounts.active else { return }
+        let library = appDelegate.storage.main.library
+        let account = library.getAccount(info: active)
+        let syncer = appDelegate.getMeta(active).librarySyncer
+        guard let album = library.getAlbum(for: account, id: "album-1", isDetailFaultResolution: false) else { return }
+        try await syncer.sync(album: album)
+        guard let song = library.getSong(for: account, id: "song-1"),
+              let next = library.getSong(for: account, id: "song-2") else { return }
+        try await syncer.sync(song: song)
+        try await syncer.sync(song: next)
+        appDelegate.storage.settings.user.playerDisplayStyle = .large
+        appDelegate.storage.settings.user.isPlayerLyricsDisplayed = false
+        appDelegate.storage.settings.user.isPlayerVisualizerDisplayed = false
+        appDelegate.player.setAutoplayEnabled(false)
+        appDelegate.player.setRepeatMode(.off)
+        appDelegate.player.play(context: PlayContext(name: "Lyrics gesture check", playables: [song, next]))
+        try await Task.sleep(for: .seconds(1))
+        host.dismiss(animated: false)
+        try await Task.sleep(for: .milliseconds(200))
+        guard let mini = (host as? MainSceneHostingViewController)?.miniPlayer else { return }
+        mini.openPlayerView()
+        try await Task.sleep(for: .seconds(1))
+        guard let popup = host.presentedViewController as? PopupPlayerVC,
+              let large = popup.largeCurrentlyPlayingView else { return }
+        popup.view.layoutIfNeeded()
+        let artworkRegion = large.artworkImage.convert(large.artworkImage.bounds, to: nil)
+        appDelegate.storage.settings.user.isPlayerLyricsDisplayed = true
+        large.display(element: .lyrics)
+        try await Task.sleep(for: .seconds(1))
+        popup.view.layoutIfNeeded()
+        let region = artworkRegion.intersection(large.lyricsGestureBounds)
+        guard !region.isNull, region.width > 100, region.height > 100 else { return }
+        let probe = LyricsGestureCheckProbe(frame: CGRect(x: 12,
+          y: popup.view.safeAreaInsets.top + 4, width: 200, height: 24))
+        probe.accessibilityIdentifier = "player.lyricsGestureProbe"
+        probe.isAccessibilityElement = true
+        probe.accessibilityTraits = .staticText
+        probe.isUserInteractionEnabled = false
+        probe.text = "Lyrics gesture check"
+        probe.textColor = .white
+        probe.font = .systemFont(ofSize: 12)
+        probe.readState = { [weak popup, weak large] in
+          guard let popup, let large else { return "{}" }
+          var state = large.lyricsGestureProbeState
+          state["song"] = popup.player.currentlyPlaying?.id ?? ""
+          state["elapsed"] = popup.player.elapsedTime
+          state["region"] = [region.minX, region.minY, region.width, region.height]
+          if let hit = popup.view.window?.hitTest(CGPoint(x: region.midX, y: region.midY), with: nil) {
+            var ancestors = [String]()
+            var current: UIView? = hit
+            while let view = current {
+              ancestors.append(String(describing: type(of: view)))
+              current = view.superview
+            }
+            state["hitPath"] = ancestors
+          }
+          let data = try? JSONSerialization.data(withJSONObject: state, options: [.sortedKeys])
+          return data.flatMap { String(data: $0, encoding: .utf8) } ?? "{}"
+        }
+        popup.view.addSubview(probe)
+      } catch { NSLog("LyricsGestureCheck staging failed: %@", String(describing: error)) }
+    }
+  }
+
+  private final class LyricsGestureCheckProbe: UILabel {
+    var readState: (() -> String)?
+    override var accessibilityValue: String? {
+      get { readState?() }
+      set {}
     }
   }
 #endif
