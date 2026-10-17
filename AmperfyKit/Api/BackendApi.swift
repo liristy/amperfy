@@ -120,10 +120,12 @@ public struct StructuredLyrics {
 
   public func activeLineIndex(at time: CMTime) -> Int? {
     guard synced, time.seconds.isFinite else { return nil }
-    let milliseconds = time.seconds * 1_000 + Double(offset)
+    // Compare rational media times. Converting 1.001 seconds back to floating
+    // milliseconds can produce 1000.9999999999999 and select the previous line.
+    let adjustedTime = CMTimeAdd(time, CMTime(value: Int64(offset), timescale: 1_000))
     return line.lastIndex { lyric in
       guard let start = lyric.start else { return false }
-      return Double(start) <= milliseconds
+      return CMTimeCompare(CMTime(value: Int64(start), timescale: 1_000), adjustedTime) <= 0
     }
   }
 }

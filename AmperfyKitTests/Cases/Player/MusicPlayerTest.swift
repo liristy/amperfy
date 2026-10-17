@@ -2217,6 +2217,25 @@ class MusicPlayerTest: XCTestCase {
     XCTAssertEqual(elapsedTime, 3.0)
   }
 
+  func testPausedSeekPublishesExactLyricsTimeImmediately() {
+    testPlayer.play(context: PlayContext(name: "Lyrics seek", playables: [songCached]))
+    backendPlayer.didStartPlaying(url: library.getFileURL(forPlayable: songCached)!.absoluteString)
+    testPlayer.pause()
+    mockMusicPlayable.lyricsTimes.removeAll()
+    for (index, milliseconds) in [1001, 5005, 2002].enumerated() {
+      testPlayer.seek(toSecond: Double(milliseconds) / 1000)
+      XCTAssertFalse(testPlayer.isPlaying)
+      XCTAssertEqual(mockMusicPlayable.lyricsTimes.count, index + 1)
+      guard let notification = mockMusicPlayable.lyricsTimes.last else { XCTFail("Missing seek time"); return }
+      XCTAssertEqual(CMTimeCompare(notification, CMTime(value: Int64(milliseconds), timescale: 1000)), 0)
+    }
+    backendPlayer.setVisualUpdatesEnabled(false)
+    let count = mockMusicPlayable.lyricsTimes.count
+    testPlayer.seek(toSecond: 3.003)
+    XCTAssertEqual(mockMusicPlayable.lyricsTimes.count, count, "Background seeks must not restart lyrics UI updates")
+    backendPlayer.setVisualUpdatesEnabled(true)
+  }
+
   func testPlayPreviousOrReplay_EmptyPlaylist() {
     testPlayer.playPreviousOrReplay()
     XCTAssertEqual(testPlayer.currentlyPlaying, nil)

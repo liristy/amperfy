@@ -27,5 +27,35 @@ final class PlayerTouchTests: XCTestCase {
     // Holding alone must expand without moving the playback position.
     middle.press(forDuration: 0.5)
     finish.tap()
+
+    // Continue the same real-touch session when the player reaches immersive lyrics.
+    let lyricsFinish = app.buttons["player.finishLyricsTouchTest"]
+    XCTAssertTrue(lyricsFinish.waitForExistence(timeout: 120))
+    let lyrics = app.tables["player.lyricsTable"]
+    XCTAssertTrue(lyrics.exists)
+    func expectControls(_ value: String) {
+      let ready = XCTNSPredicateExpectation(predicate: NSPredicate(format: "value == %@", value), object: lyricsFinish)
+      XCTAssertEqual(XCTWaiter.wait(for: [ready], timeout: 5), .completed)
+    }
+    expectControls("hidden")
+    let low = lyrics.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.95))
+    low.tap()
+    expectControls("hidden")
+    low.press(forDuration: 0.05,
+      thenDragTo: lyrics.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)),
+      withVelocity: .slow, thenHoldForDuration: 0.1)
+    expectControls("shown")
+    lyrics.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.4))
+      .press(forDuration: 0.05, thenDragTo: lyrics.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.85)),
+        withVelocity: .slow, thenHoldForDuration: 0.1)
+    expectControls("hidden")
+    let tableFrame = lyrics.frame
+    let candidates = lyrics.cells.allElementsBoundByIndex.filter {
+      $0.isHittable && $0.frame.midY > tableFrame.minY + 80 && $0.frame.midY < tableFrame.maxY - 80
+    }
+    XCTAssertFalse(candidates.isEmpty)
+    candidates.first?.tap()
+    expectControls("hidden")
+    lyricsFinish.tap()
   }
 }

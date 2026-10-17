@@ -209,6 +209,7 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
                 return
               }
               smokeLog("Inactive lyrics blur and active-line clarity passed after cell replacement")
+              try LyricsView.verifyMillisecondSelections()
               smokeLog("Player smoke: preparing playback")
               let library = self.appDelegate.storage.main.library
               let account = library.getAccount(info: activeAccount)
@@ -1072,6 +1073,7 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
               popup.largeCurrentlyPlayingView?.refreshLyricsTime(time: CMTime(seconds: 42, preferredTimescale: 1000))
               guard activeLyricIsVisible() else { smokeLog("Immersive lyrics lost their highlight"); return }
               try await compositorScreenshot("player-lyrics-immersive.png")
+              try await lyricsTable.verifyActualLyricsTouches(in: popup)
               popup.restoreLyricsControls()
               try await Task.sleep(for: .seconds(1))
               guard !popup.areLyricsControlsHidden,
@@ -1472,9 +1474,9 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
 
               guard let lyricsView = descendants(of: popup.view).compactMap({ $0 as? LyricsView }).first else { return }
               popup.setLyricsControlsHidden(true, animated: false)
-              lyricsView.handleDrag(velocity: CGPoint(x: 0, y: 300))
-              guard !popup.areLyricsControlsHidden else { return }
               lyricsView.handleDrag(velocity: CGPoint(x: 0, y: -300))
+              guard !popup.areLyricsControlsHidden else { return }
+              lyricsView.handleDrag(velocity: CGPoint(x: 0, y: 300))
               try await Task.sleep(for: .milliseconds(500))
               guard popup.areLyricsControlsHidden else { return }
               try await compositorScreenshot("player-lyrics-upward.png")

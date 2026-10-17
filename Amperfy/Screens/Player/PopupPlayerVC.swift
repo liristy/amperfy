@@ -61,6 +61,7 @@ class PopupPlayerVC: UIViewController, UIScrollViewDelegate, UIGestureRecognizer
   private var lyricsControlsTask: Task<Void, Never>?
   private(set) var areLyricsControlsHidden = false
   let surfaceTransition = PlayerSurfaceTransitionDelegate()
+  private lazy var lyricsControlsSwipe = UISwipeGestureRecognizer(target: self, action: #selector(restoreLyricsControls))
   private lazy var dismissPan = UIPanGestureRecognizer(target: self, action: #selector(dragToDismiss(_:)))
   override var preferredStatusBarStyle: UIStatusBarStyle { .lightContent }
 
@@ -158,9 +159,9 @@ class PopupPlayerVC: UIViewController, UIScrollViewDelegate, UIGestureRecognizer
       controlPlaceholderView.addSubview(createdPlayerControlView)
     }
     controlPlaceholderView.clipsToBounds = true
-    let restoreControls = UITapGestureRecognizer(target: self, action: #selector(restoreLyricsControls))
-    restoreControls.delegate = self
-    view.addGestureRecognizer(restoreControls)
+    lyricsControlsSwipe.direction = .up
+    lyricsControlsSwipe.delegate = self
+    view.addGestureRecognizer(lyricsControlsSwipe)
     dismissPan.delegate = self
     dismissPan.maximumNumberOfTouches = 1
     view.addGestureRecognizer(dismissPan)
@@ -361,7 +362,8 @@ class PopupPlayerVC: UIViewController, UIScrollViewDelegate, UIGestureRecognizer
 
   func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer, shouldReceive touch: UITouch) -> Bool {
     let isDismissPan = gestureRecognizer === dismissPan
-    guard isDismissPan || areLyricsControlsHidden else { return false }
+    guard isDismissPan || (gestureRecognizer === lyricsControlsSwipe && areLyricsControlsHidden &&
+      touch.location(in: view).y >= view.bounds.maxY - max(160, view.safeAreaInsets.bottom + 120)) else { return false }
     var touchedView = touch.view
     while let current = touchedView {
       #if !targetEnvironment(macCatalyst)
@@ -369,7 +371,9 @@ class PopupPlayerVC: UIViewController, UIScrollViewDelegate, UIGestureRecognizer
       #endif
       if isDismissPan, current is MPVolumeView { return false }
       if isDismissPan ? (current is UISlider || current is PlayerTrackSlider) : (current is UIControl) { return false }
-      if !isDismissPan, current === largeCurrentlyPlayingView?.transitionArtwork { return false }
+      // The lyrics table handles its own upward pan without stealing row taps
+      // or competing with its scrolling gesture. This swipe covers the footer.
+      if !isDismissPan, current is LyricsView || current === largeCurrentlyPlayingView?.transitionArtwork { return false }
       touchedView = current.superview
     }
     return true
@@ -382,7 +386,7 @@ class PopupPlayerVC: UIViewController, UIScrollViewDelegate, UIGestureRecognizer
           presentedViewController == nil else { return false }
     var touchedView = view.hitTest(dismissPan.location(in: view), with: nil)
     while let current = touchedView {
-      // Lyrics own both directions: down reveals transport controls, up hides
+      // Lyrics own both directions: up reveals transport controls, down hides
       // them. Dismissal remains available from the fixed header/handle.
       if current is LyricsView { return false }
       // Keep downward scrolling available when reading earlier lyrics or queue items.

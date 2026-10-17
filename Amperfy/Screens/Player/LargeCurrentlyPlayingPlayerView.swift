@@ -259,10 +259,10 @@ class LargeCurrentlyPlayingPlayerView: UIView {
       self?.appDelegate.player.seek(toSecond: lyric.startTime.seconds)
     }
     lyricsView!.onUpwardDrag = { [weak self] in
-      self?.rootView?.setLyricsControlsHidden(true)
+      self?.rootView?.restoreLyricsControls()
     }
     lyricsView!.onDownwardDrag = { [weak self] in
-      self?.rootView?.restoreLyricsControls()
+      self?.rootView?.setLyricsControlsHidden(true)
     }
     addSubview(lyricsView!)
     lyricsArtwork.contentMode = .scaleAspectFit
