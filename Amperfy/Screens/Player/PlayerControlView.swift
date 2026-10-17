@@ -235,6 +235,18 @@ final class PlayerTransportButton: UIButton {
   }
 
   #if DEBUG && targetEnvironment(simulator)
+    func preservesMotionDuringRapidActivations(direction: CGFloat) -> Bool {
+      if skipAnimator == nil { animateActivation(direction: direction) }
+      guard let overlay = skipOverlay, let animator = skipAnimator else { return false }
+      let animationID = skipAnimationID
+      let fraction = animator.fractionComplete
+      animateActivation(direction: direction)
+      animateActivation(direction: direction)
+      return skipOverlay === overlay && skipAnimationID == animationID &&
+        skipAnimator === animator && animator.fractionComplete >= fraction - 0.001 &&
+        pendingSkipDirection == direction && isSkipGlyphIntact
+    }
+
     var skipPresentationOffsets: [CGFloat]? {
       skipOverlay?.subviews.compactMap { view in
         view.layer.presentation().map { $0.transform.m41 + $0.position.x - view.center.x }
@@ -1084,15 +1096,11 @@ extension PlayerControlView: MusicPlayable {
       }, "skip jumped between presentation frames: \(offsets), times: \(offsetTimes)")
       button.animateActivation(direction: direction)
       try await Task.sleep(for: .milliseconds(60))
-      let before = button.skipPresentationOffsets?.first
-      button.animateActivation(direction: direction)
-      button.animateActivation(direction: direction)
-      try await Task.sleep(for: .milliseconds(30))
-      if let before, let after = button.skipPresentationOffsets?.first {
-        try require((after - before) * direction >= -0.1, "rapid taps restarted the visible flight")
-      } else {
-        try require(false, "rapid taps removed the visible flight")
-      }
+      // A sleep is a minimum delay, so the first flight may already be returning
+      // when the task resumes. Check continuity synchronously at the actual taps,
+      // rather than requiring motion to still be outward after another await.
+      try require(button.preservesMotionDuringRapidActivations(direction: direction),
+        "rapid taps replaced, restarted or split the visible flight")
       try await Task.sleep(for: .milliseconds(650))
       try require(button.isRenderedSymbolSettled, "rapid skips left an overlay or hidden original")
       guard let original = button.image(for: .normal) else {
