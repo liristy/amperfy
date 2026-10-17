@@ -30,7 +30,7 @@ def generate(destination):
         subprocess.run(['ffmpeg', '-y', '-loglevel', 'error', '-i', str(destination / 'markers.wav'),
                         '-c:a', 'flac', str(destination / 'markers.flac')], check=True)
     else:
-        subprocess.run(['afconvert', '-f', 'flac', '-d', 'LEI16', str(destination / 'markers.wav'),
+        subprocess.run(['afconvert', '-f', 'flac', '-d', 'flac', str(destination / 'markers.wav'),
                         str(destination / 'markers.flac')], check=True)
 
 

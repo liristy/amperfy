@@ -719,11 +719,10 @@ final class AudioFileStreamProcessor {
             let sample = frame.sample
             let count = frame.count
             if sample + UInt64(count) <= target { continue }
-            // A verified anchor must never be after the requested sample.
-            guard sample <= target else {
-                fileStreamCallback?(.raiseError(.codecError))
-                return
-            }
+            // The parser may finish a buffered packet from before a backward seek.
+            // A verified anchor itself is at/before the target; never publish a
+            // stale packet from a later position while waiting for that anchor.
+            guard sample <= target else { continue }
             flacFramesToDiscard = UInt32((Double(target - sample) * outputAudioFormat.mSampleRate / entry.audioStreamFormat.mSampleRate).rounded())
             entry.lock.withLock { entry.seekTime = Double(target) / entry.audioStreamFormat.mSampleRate }
             flacTargetSample = nil
