@@ -60,7 +60,7 @@ jobs:
       - name: Prepare current README screenshots
         run: |
           mkdir -p build/readme-screenshots
-          for pair in player-opening:qMusic-player player-lyrics-controls:qMusic-lyrics player-queue-resumed:qMusic-queue player-statistics-overview:qMusic-statistics; do
+          for pair in player-next-song:qMusic-player player-lyrics-controls:qMusic-lyrics player-queue-resumed:qMusic-queue player-statistics-detail:qMusic-statistics; do
             source="${pair%%:*}"
             name="${pair##*:}"
             sips -Z 1400 "build/validation/$source.png" --out "build/readme-screenshots/$name.png" >/dev/null
