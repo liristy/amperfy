@@ -51,6 +51,14 @@ class ReleaseAssetTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "version"):
             self.prepare()
 
+    def test_stable_release_keeps_ipa_and_records_build_version(self):
+        release.prepare(self.source, self.output, "v3.0.0", self.commit)
+        self.assertEqual((self.output / "qMusic-3.0.0.ipa").read_bytes(), self.ipa.read_bytes())
+        self.assertEqual((self.output / "SHA256SUMS").read_text(encoding="utf-8"),
+                         f"{self.digest}  qMusic-3.0.0.ipa\n")
+        self.assertIn("Release: v3.0.0\nApp version: 3.0.0 (1)\n",
+                      (self.output / "build-info.txt").read_text(encoding="utf-8"))
+
     def test_rejects_wrong_source_commit(self):
         self.commit = "b" * 40
         with self.assertRaisesRegex(ValueError, "source"):

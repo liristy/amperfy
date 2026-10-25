@@ -57,6 +57,24 @@ jobs:
       - name: Record source timestamps
         if: always()
         run: python3 BuildTools/build-cache-mtimes.py save build/validation/DerivedData/source-mtimes.json
+      - name: Prepare current README screenshots
+        run: |
+          mkdir -p build/readme-screenshots
+          for pair in player-opening:qMusic-player player-lyrics-controls:qMusic-lyrics player-queue-resumed:qMusic-queue player-statistics-overview:qMusic-statistics; do
+            source="${pair%%:*}"
+            name="${pair##*:}"
+            sips -Z 1400 "build/validation/$source.png" --out "build/readme-screenshots/$name.png" >/dev/null
+          done
+          printf 'Source commit: %s\nWorkflow: %s/%s/actions/runs/%s\n' \
+            "$GITHUB_SHA" "$GITHUB_SERVER_URL" "$GITHUB_REPOSITORY" "$GITHUB_RUN_ID" \
+            > build/readme-screenshots/source.txt
+      - name: Upload current README screenshots
+        uses: actions/upload-artifact@v4
+        with:
+          name: qMusic-readme-screenshots-${{ github.run_number }}
+          path: build/readme-screenshots/
+          if-no-files-found: error
+          retention-days: 7
       - name: Profile player resources on simulator (not battery power)
         if: inputs.profile_player_resources || contains(github.event.pull_request.body, '<!-- profile-player-resources -->')
         run: python3 BuildTools/profile-player-resources.py
@@ -210,6 +228,10 @@ jobs:
           notes="docs/releases/$RELEASE_TAG.md"
           title="$(head -n 1 "$notes" | sed 's/^# //')"
           flags=()
-          if [[ "$RELEASE_TAG" == *-* ]]; then flags+=(--prerelease); fi
+          if [[ "$RELEASE_TAG" == *-* ]]; then
+            flags+=(--prerelease --latest=false)
+          else
+            flags+=(--latest)
+          fi
           gh release create "$RELEASE_TAG" build/release/* \
             --verify-tag --title "$title" --notes-file "$notes" "${flags[@]}"
