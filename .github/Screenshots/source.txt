@@ -1,0 +1,10 @@
+Source commit: ed32a8c396a05cd67ac4c36dc585cccc86ea36eb
+Workflow: https://github.com/liristy/amperfy/actions/runs/40169022590
+
+qMusic-player.png: player-next-song.png
+qMusic-lyrics.png: player-lyrics-controls.png
+qMusic-queue.png: player-queue-resumed.png
+qMusic-statistics.png: player-statistics-detail.png
+
+Lyrics and queue resized by the workflow; player and statistics retain original simulator dimensions.
+All images use CI demo content.

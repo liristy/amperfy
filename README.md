@@ -2,9 +2,9 @@
 
 面向 iPhone 的自托管音乐播放器，连接 **Navidrome / Subsonic / Ampache** 音乐服务器。基于 [Amperfy](https://github.com/BLeeEZ/amperfy) 开发，采用接近 Apple Music 的播放器交互，支持简体中文与英语。
 
-**当前版本：3.0 Beta 2** · **iOS 26 或更新版本**
+**当前版本：3.0 正式版** · **iOS 26 或更新版本**
 
-[下载 3.0 Beta 2](https://github.com/liristy/amperfy/releases/tag/v3.0.0-beta.2) · [安装说明](docs/iphone-install-zh.md) · [更新记录](docs/releases/v3.0.0-beta.2.md)
+[下载 3.0 正式版](https://github.com/liristy/amperfy/releases/tag/v3.0.0) · [安装说明](docs/iphone-install-zh.md) · [更新记录](docs/releases/v3.0.0.md)
 
 ## 播放器
 
@@ -12,7 +12,7 @@
 <img src=".github/Screenshots/qMusic-lyrics.png" width="240" alt="qMusic 歌词" /> &nbsp;
 <img src=".github/Screenshots/qMusic-queue.png" width="240" alt="qMusic 播放队列" />
 
-以上为 iOS 模拟器演示截图，使用自动化验证的曲目与封面；具体界面以当前版本为准。
+以上为 3.0 正式版代码在 iOS 模拟器中的实际截图，使用自动化验证的演示曲目与封面。[截图构建来源](.github/Screenshots/source.txt)。
 
 - 全屏播放器支持封面缩放打开、下滑退出，以及非正方形封面的完整显示。
 - 歌词保留顶部曲目信息；播放队列中的历史、当前歌曲和播放模式随列表滚动，底部播放控制保持可用，避免标题与歌曲重叠。
@@ -34,15 +34,19 @@
 - 快捷指令动作：**定时停止播放**（0 分钟取消）和 **随机播放收藏**。
 - 已移除评分与转码设置。
 
+<img src=".github/Screenshots/qMusic-statistics.png" width="240" alt="qMusic Maloja 聆听统计艺人详情" />
+
+聆听统计使用 Maloja 演示数据；在 App 中连接自己的 Maloja 地址即可查看个人历史，详见[聆听统计说明](docs/listening-statistics-zh.md)。
+
 后台播放时暂停歌词和频谱的界面刷新，保留音频播放、锁屏信息和听歌记录更新。现有资源验证来自模拟器 CPU／内存采样，真机电池耗电量尚未测定。
 
 ## 安装
 
-1. 从 [Releases](https://github.com/liristy/amperfy/releases) 下载 `qMusic-3.0.0-beta.2.ipa`。
+1. 从 [Releases](https://github.com/liristy/amperfy/releases) 下载 `qMusic-3.0.0.ipa`。
 2. 在 Windows 爱思助手中使用自己的 Apple ID 签名，再安装到 iPhone；细节见[安装说明](docs/iphone-install-zh.md)。
 3. 打开 qMusic，登录自己的音乐服务器。
 
-Release 中的 IPA 尚未使用个人证书签名。包内预建 Apple ad-hoc 签名结构，以兼容重签名工具；安装前仍需个人签名。更新时保持原 Apple ID 和应用标识，覆盖安装即可。App 内版本显示为 **3.0.0（2）**。
+Release 中的 IPA 尚未使用个人证书签名。包内预建 Apple ad-hoc 签名结构，以兼容重签名工具；安装前仍需个人签名。更新时保持原 Apple ID 和应用标识，覆盖安装即可。App 内版本显示为 **3.0.0（3）**。
 
 本仓库发布的 qMusic 是独立修改版，不是上游 Amperfy 的 App Store 版本。当前发布包不包含 Siri / CarPlay 的专用签名授权；快捷指令 App Intents 与 Siri 媒体授权是不同功能。
 
@@ -74,8 +78,10 @@ python BuildTools/verify_ipa.py --require-signature path/to/signed.ipa
 工作流 **qMusic Build & Release** 支持手动构建、PR 验证和 `v*` 标签发布，也支持通过主线的版本声明发起发布。普通主线推送不重复构建。
 
 1. 更新 App 版本号、README、安装说明及 `docs/releases/<标签>.md`。
-2. 将 `.github/release-version` 更新为目标标签（例如 `v3.0.0-beta.2`），随版本改动合入 `master`；该文件的主线变更会触发发布工作流。也可以在改动已进入 `master` 后直接推送 `v*` 标签。
-3. 工作流重新完成全部测试、真机打包和完整性校验后，创建版本标签与 GitHub Release，附带 IPA、SHA-256、构建来源和安装说明。发布提交必须属于 `master`，已有标签不得移到其他提交；含预发行后缀的标签标记为 Pre-release。
+2. 将 `.github/release-version` 更新为目标标签（例如 `v3.0.0`），随版本改动合入 `master`；该文件的主线变更会触发发布工作流。也可以在改动已进入 `master` 后直接推送 `v*` 标签。
+3. 工作流重新完成全部测试、真机打包和完整性校验后，创建版本标签与 GitHub Release，附带 IPA、SHA-256、构建来源和安装说明。发布提交必须属于 `master`，已有标签不得移到其他提交；正式版设为 Latest，含预发行后缀的标签标记为 Pre-release 且不覆盖 Latest。
+
+验证成功后还会生成 `qMusic-readme-screenshots-数字` artifact，包含播放器、歌词、队列和聆听统计截图，以及记录源码提交和工作流链接的 `source.txt`。更新 README 截图时，将这组文件复制到 `.github/Screenshots/`。
 
 临时 Actions artifacts 保留 7 天；已发布的文件可从对应 Release 下载。构建不需要上传 Apple ID、密码或个人签名证书。
 
