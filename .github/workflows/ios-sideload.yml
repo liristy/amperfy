@@ -29,7 +29,7 @@ concurrency:
 jobs:
   tests:
     if: github.event.repository.private == false
-    runs-on: macos-26
+    runs-on: macos-26-intel
     timeout-minutes: 35
     env:
       DEVELOPER_DIR: /Applications/Xcode_26.3.app/Contents/Developer
@@ -123,7 +123,7 @@ jobs:
   build:
     # Standard hosted runners are free for public repositories only.
     if: github.event.repository.private == false
-    runs-on: macos-26
+    runs-on: macos-26-intel
     timeout-minutes: 45
     env:
       DEVELOPER_DIR: /Applications/Xcode_26.3.app/Contents/Developer
