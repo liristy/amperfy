@@ -24,12 +24,16 @@
 import AVFoundation
 import CoreData
 import MediaPlayer
+import os
 import XCTest
 import UIKit
 
 // MARK: - MOCK_AudioStreamingPlayer
 
 class MOCK_AudioStreamingPlayer: AudioStreamingPlayer {
+
+  let starts = OSAllocatedUnfairLock(initialState: [(url: URL, volume: Float)]())
+  let buffering = OSAllocatedUnfairLock(initialState: false)
 
   nonisolated(unsafe) private var _mockElapsedTime: Double = 0.0
   private let _mockElapsedTimeLock = NSLock()
@@ -65,6 +69,8 @@ class MOCK_AudioStreamingPlayer: AudioStreamingPlayer {
   }
 
   override func play(url: URL) {
+    let start = (url: url, volume: volume)
+    starts.withLock { $0.append(start) }
     mockElapsedTime = 0.0
     isPlaying = true
     isStopped = false
@@ -96,7 +102,9 @@ class MOCK_AudioStreamingPlayer: AudioStreamingPlayer {
   }
 
   override func getState() -> AudioStreaming.AudioPlayerState {
-    isStopped ? .stopped : (isPlaying ? .playing : .paused)
+    if isStopped { return .stopped }
+    if !isPlaying { return .paused }
+    return buffering.withLock { $0 } ? .bufferring : .playing
   }
 }
 
@@ -225,6 +233,7 @@ final class MOCK_DownloadManagerDelegate: DownloadManagerDelegate {
 // MARK: - MOCK_BackendApi
 
 final class MOCK_BackendApi: BackendApi {
+  @MainActor var resolveStream: @MainActor @Sendable () async -> URL = { Helper.testURL }
   let clientApiVersion: String = ""
   let serverApiVersion: String = ""
   let httpHeaders: [String: String] = [:]
@@ -245,7 +254,9 @@ final class MOCK_BackendApi: BackendApi {
     maxBitrate: StreamingMaxBitratePreference,
     formatPreference: StreamingFormatPreference
   ) async throws
-    -> URL { Helper.testURL }
+    -> URL {
+    await resolveStream()
+  }
 
   func generateUrl(forArtwork artwork: Artwork) async throws -> URL { Helper.testURL }
   func checkForErrorResponse(response: APIDataResponse) -> ResponseError? { nil }
@@ -784,6 +795,84 @@ class MusicPlayerTest: XCTestCase {
     testPlayer.play()
     XCTAssertEqual(testPlayer.elapsedTime, 87.25, accuracy: 0.01)
     XCTAssertEqual(songCached.playCount, count)
+  }
+
+  func testRapidManualSkipsReplaceOnlyTheLastSourceAtZeroVolume() async throws {
+    let songs = Array(playlistAllCached.playables.prefix(3))
+    for (index, song) in songs.enumerated() {
+      markAsCached(playable: song, cacheName: "skip-\(index)")
+    }
+    let urls = try songs.map { try XCTUnwrap(library.getFileURL(forPlayable: $0)) }
+    songs[0].replayGainTrackGain = -12
+    songs[2].replayGainTrackGain = 0
+    backendPlayer.updateEqualizerEnabled(isEnabled: false)
+    backendPlayer.updateReplayGainEnabled(isEnabled: true)
+    let replayGain = try XCTUnwrap(mockAudioStreamingPlayer.customAttachedNodes.compactMap { $0 as? AVAudioMixerNode }.first)
+    testPlayer.volume = 0.7
+    testPlayer.play(context: PlayContext(name: "Skips", playables: songs))
+    for _ in 0..<100 {
+      if mockAudioStreamingPlayer.volume >= 0.699 { break }
+      try await Task.sleep(for: .milliseconds(10))
+    }
+    XCTAssertEqual(mockAudioStreamingPlayer.volume, 0.7, accuracy: 0.001)
+    testPlayer.playNext()
+    testPlayer.playNext()
+    XCTAssertEqual(replayGain.outputVolume, 0.251, accuracy: 0.002, "Outgoing audio must keep its own gain")
+    testPlayer.volume = 0.4
+    for _ in 0..<200 {
+      if mockAudioStreamingPlayer.starts.withLock({ $0.last?.url }) == urls[2],
+         abs(mockAudioStreamingPlayer.volume - 0.4) < 0.001 { break }
+      try await Task.sleep(for: .milliseconds(10))
+    }
+    let starts = mockAudioStreamingPlayer.starts.withLock { $0 }
+    XCTAssertEqual(starts.map { $0.url }, [urls[0], urls[2]])
+    XCTAssertEqual(starts.last?.volume, 0)
+    XCTAssertEqual(replayGain.outputVolume, 1, accuracy: 0.001)
+    XCTAssertEqual(testPlayer.volume, 0.4, accuracy: 0.001)
+    XCTAssertEqual(mockAudioStreamingPlayer.volume, 0.4, accuracy: 0.001)
+  }
+
+  func testReplacementStaysMutedThroughBufferingAndPause() async throws {
+    try await startCachedSong(at: 10)
+    testPlayer.appendContextQueue(playables: [songToDownload])
+    mockAudioStreamingPlayer.buffering.withLock { $0 = true }
+    let prepared = expectation(description: "Stream prepared")
+    mockMusicPlayable.expectationDidStartPlaying = prepared
+    testPlayer.playNext()
+    await fulfillment(of: [prepared], timeout: 2)
+    mockMusicPlayable.expectationDidStartPlaying = nil
+    try await Task.sleep(for: .milliseconds(80))
+    XCTAssertEqual(mockAudioStreamingPlayer.volume, 0)
+
+    testPlayer.pause()
+    mockAudioStreamingPlayer.buffering.withLock { $0 = false }
+    backendPlayer.audioPlayerStateChanged(player: mockAudioStreamingPlayer, with: .playing, previous: .bufferring)
+    try await Task.sleep(for: .milliseconds(80))
+    XCTAssertFalse(testPlayer.isPlaying)
+    XCTAssertEqual(mockAudioStreamingPlayer.volume, 0)
+    testPlayer.play()
+    for _ in 0..<100 {
+      if mockAudioStreamingPlayer.volume >= 0.999 { break }
+      try await Task.sleep(for: .milliseconds(10))
+    }
+    XCTAssertEqual(mockAudioStreamingPlayer.volume, 1, accuracy: 0.001)
+  }
+
+  func testSlowStreamCannotReplaceALaterCachedSelection() async throws {
+    let resolving = expectation(description: "Resolving outgoing selection")
+    var reply: CheckedContinuation<URL, Never>?
+    backendApi.resolveStream = {
+      await withCheckedContinuation { reply = $0; resolving.fulfill() }
+    }
+    testPlayer.play(context: PlayContext(name: "Slow stream", playables: [songToDownload]))
+    await fulfillment(of: [resolving], timeout: 2)
+    testPlayer.play(context: PlayContext(name: "Cached selection", playables: [songCached]))
+    reply?.resume(returning: Helper.testURL)
+    try await Task.sleep(for: .milliseconds(100))
+    let cachedURL = try XCTUnwrap(library.getFileURL(forPlayable: songCached))
+    XCTAssertEqual(mockAudioStreamingPlayer.starts.withLock { $0.map { $0.url } }, [cachedURL])
+    XCTAssertEqual(testPlayer.playType, .cache)
+    XCTAssertEqual(testPlayer.currentlyPlaying, songCached)
   }
 
   func testEngineRestartResumesEarlyFractionalPositionWithResumeSettingDisabled() async throws {
@@ -1539,8 +1628,7 @@ class MusicPlayerTest: XCTestCase {
   }
 
   func testPlayMulitpleSongs_WaitingQueuePlaying() {
-    mockMusicPlayable.expectationDidStartPlaying = expectation(description: "download is triggered")
-    mockMusicPlayable.expectationDidStartPlaying!.expectedFulfillmentCount = 2
+    mockMusicPlayable.expectationDidStartPlaying = expectation(description: "Latest selection prepared")
     prepareWithCachedPlaylist()
     playerData.setCurrentIndex(1)
     guard let songId0 = library.getSong(
@@ -1573,8 +1661,7 @@ class MusicPlayerTest: XCTestCase {
   }
 
   func testPlayMulitpleSongs_WaitingQueuePlaying2() {
-    mockMusicPlayable.expectationDidStartPlaying = expectation(description: "download is triggered")
-    mockMusicPlayable.expectationDidStartPlaying!.expectedFulfillmentCount = 2
+    mockMusicPlayable.expectationDidStartPlaying = expectation(description: "Latest selection prepared")
     prepareWithCachedPlaylist()
     playerData.setCurrentIndex(1)
     guard let songId0 = library.getSong(
@@ -1658,8 +1745,7 @@ class MusicPlayerTest: XCTestCase {
   }
 
   func testPlaySong_WaitingQueuePlaying9() {
-    mockMusicPlayable.expectationDidStartPlaying = expectation(description: "download is triggered")
-    mockMusicPlayable.expectationDidStartPlaying?.expectedFulfillmentCount = 2
+    mockMusicPlayable.expectationDidStartPlaying = expectation(description: "Latest selection prepared")
     prepareWithCachedPlaylist()
     playerData.setCurrentIndex(1)
     guard let songId0 = library.getSong(
@@ -1746,8 +1832,7 @@ class MusicPlayerTest: XCTestCase {
   }
 
   func testPlayMulitpleSongs_WaitingQueuePlaying5() {
-    mockMusicPlayable.expectationDidStartPlaying = expectation(description: "download is triggered")
-    mockMusicPlayable.expectationDidStartPlaying!.expectedFulfillmentCount = 2
+    mockMusicPlayable.expectationDidStartPlaying = expectation(description: "Latest selection prepared")
     prepareWithCachedPlaylist()
     playerData.setCurrentIndex(1)
     guard let songId0 = library.getSong(
@@ -2267,8 +2352,7 @@ class MusicPlayerTest: XCTestCase {
   }
 
   func testPauseRadio() {
-    mockMusicPlayable.expectationDidStartPlaying = expectation(description: "DidStartPlaying")
-    mockMusicPlayable.expectationDidStartPlaying!.expectedFulfillmentCount = 2
+    mockMusicPlayable.expectationDidStartPlaying = expectation(description: "Selected station prepared")
 
     let radios = library.getRadios(for: account)
     XCTAssertEqual(radios.count, 4)
@@ -2557,11 +2641,12 @@ class MusicPlayerTest: XCTestCase {
   }
 
   func testPlayNext_StartPlayIfPaused() {
-    mockMusicPlayable.expectationDidStartPlaying = expectation(description: "download is triggered")
-    mockMusicPlayable.expectationDidStartPlaying!.expectedFulfillmentCount = 2
+    mockMusicPlayable.expectationDidStartPlaying = expectation(description: "First song prepared")
     prepareWithCachedPlaylist()
     testPlayer.play(playerIndex: PlayerIndex(queueType: .next, index: 3))
+    wait(for: [mockMusicPlayable.expectationDidStartPlaying!], timeout: 2)
     testMusicPlayer.pause()
+    mockMusicPlayable.expectationDidStartPlaying = expectation(description: "Next song prepared")
     testPlayer.playNext()
     XCTAssertFalse(testPlayer.isPlaying)
     wait(for: [mockMusicPlayable.expectationDidStartPlaying!], timeout: 3.0)
@@ -2569,12 +2654,13 @@ class MusicPlayerTest: XCTestCase {
   }
 
   func testPlayNext_IsPlayingStaysTrue() {
-    mockMusicPlayable.expectationDidStartPlaying = expectation(description: "download is triggered")
-    mockMusicPlayable.expectationDidStartPlaying!.expectedFulfillmentCount = 2
+    mockMusicPlayable.expectationDidStartPlaying = expectation(description: "First song prepared")
     prepareWithCachedPlaylist()
     testPlayer.play(playerIndex: PlayerIndex(queueType: .next, index: 3))
+    wait(for: [mockMusicPlayable.expectationDidStartPlaying!], timeout: 2)
+    mockMusicPlayable.expectationDidStartPlaying = expectation(description: "Next song prepared")
     testPlayer.playNext()
-    XCTAssertFalse(testPlayer.isPlaying)
+    XCTAssertTrue(testPlayer.isPlaying)
     wait(for: [mockMusicPlayable.expectationDidStartPlaying!], timeout: 2.0)
     XCTAssertTrue(testPlayer.isPlaying)
   }
