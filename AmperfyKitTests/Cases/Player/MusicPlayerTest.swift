@@ -32,7 +32,8 @@ import UIKit
 
 class MOCK_AudioStreamingPlayer: AudioStreamingPlayer {
 
-  let starts = OSAllocatedUnfairLock(initialState: [(url: URL, volume: Float)]())
+  let starts = OSAllocatedUnfairLock(initialState: [(url: URL, volume: Float, previousState: AudioStreaming.AudioPlayerState)]())
+  let pauseVolumes = OSAllocatedUnfairLock(initialState: [Float]())
   let buffering = OSAllocatedUnfairLock(initialState: false)
 
   nonisolated(unsafe) private var _mockElapsedTime: Double = 0.0
@@ -69,7 +70,7 @@ class MOCK_AudioStreamingPlayer: AudioStreamingPlayer {
   }
 
   override func play(url: URL) {
-    let start = (url: url, volume: volume)
+    let start = (url: url, volume: volume, previousState: getState())
     starts.withLock { $0.append(start) }
     mockElapsedTime = 0.0
     isPlaying = true
@@ -79,6 +80,8 @@ class MOCK_AudioStreamingPlayer: AudioStreamingPlayer {
   }
 
   override func pause() {
+    let level = volume
+    pauseVolumes.withLock { $0.append(level) }
     isPlaying = false
   }
 
@@ -827,6 +830,8 @@ class MusicPlayerTest: XCTestCase {
     let starts = mockAudioStreamingPlayer.starts.withLock { $0 }
     XCTAssertEqual(starts.map { $0.url }, [urls[0], urls[2]])
     XCTAssertEqual(starts.last?.volume, 0)
+    XCTAssertEqual(starts.last?.previousState, .paused, "Decoder replacement must run with the outgoing hardware paused")
+    XCTAssertEqual(mockAudioStreamingPlayer.pauseVolumes.withLock { $0 }, [0], "Only the winning skip should pause, at silence")
     XCTAssertEqual(replayGain.outputVolume, 1, accuracy: 0.001)
     XCTAssertEqual(testPlayer.volume, 0.4, accuracy: 0.001)
     XCTAssertEqual(mockAudioStreamingPlayer.volume, 0.4, accuracy: 0.001)
@@ -894,6 +899,69 @@ class MusicPlayerTest: XCTestCase {
       let largestJump = zip(samples, samples.dropFirst()).map { abs($0.0 - $0.1) }.max() ?? 1
       XCTAssertLessThan(largestJump, abs(peak) * 0.003, "Discontinuity in rendered PCM on channel \(channel)")
     }
+  }
+
+  func testLiveDecoderHandoffBetweenAudibleFiles() async throws {
+    let engine = AudioStreamingPlayer()
+    let backend = BackendAudioPlayer(
+      createAudioStreamingPlayerCB: { engine }, audioSessionHandler: AudioSessionHandler(),
+      eventLogger: eventLogger, getBackendApiCB: { _ in self.backendApi }, networkMonitor: networkMonitor,
+      getPlayableDownloaderCB: { _ in self.songDownloader }, cacheProxy: library,
+      userStatistics: userStatistics, visualUpdatesEnabled: false
+    )
+    let songs = Array(playlistAllCached.playables.prefix(2))
+    var files = [URL]()
+    defer {
+      for file in files { try? CacheFileManager.shared.removeItem(at: file, accountInfo: account.info) }
+    }
+    // Constant, opposite-sign samples make a truncated tail or a leaked old
+    // buffer measurable. Exercise a decoder format change on the live player.
+    for (index, song) in songs.enumerated() {
+      let path = URL(string: "handoff-\(UUID().uuidString).wav")!
+      let url = try XCTUnwrap(CacheFileManager.shared.getAbsoluteAmperfyPath(relFilePath: path))
+      files.append(url)
+      let rate: Double = index == 0 ? 44100 : 48000
+      let format = try XCTUnwrap(AVAudioFormat(standardFormatWithSampleRate: rate, channels: 2))
+      let file = try AVAudioFile(forWriting: url, settings: [
+        AVFormatIDKey: kAudioFormatLinearPCM, AVSampleRateKey: rate, AVNumberOfChannelsKey: 2,
+        AVLinearPCMBitDepthKey: 16, AVLinearPCMIsFloatKey: false,
+      ])
+      let pcm = try XCTUnwrap(AVAudioPCMBuffer(pcmFormat: format, frameCapacity: AVAudioFrameCount(rate)))
+      pcm.frameLength = pcm.frameCapacity
+      let channels = try XCTUnwrap(pcm.floatChannelData)
+      for ch in 0..<2 {
+        for frame in 0..<Int(pcm.frameLength) { channels[ch][frame] = index == 0 ? 0.4 : -0.3 }
+      }
+      for _ in 0..<6 { try file.write(from: pcm) }
+      song.relFilePath = path
+    }
+    let samples = OSAllocatedUnfairLock(initialState: [Float]())
+    engine.mainMixerNode.installTap(onBus: 0, bufferSize: 1024, format: nil) { @Sendable buffer, _ in
+      guard let data = buffer.floatChannelData, buffer.frameLength > 0 else { return }
+      let chunk = (0..<Int(buffer.frameLength)).map { data[0][$0 * buffer.stride] }
+      samples.withLock { $0.append(contentsOf: chunk) }
+    }
+    defer {
+      backend.stop()
+      engine.mainMixerNode.removeTap(onBus: 0)
+    }
+    func playAndWait(for index: Int) async throws {
+      backend.requestToPlay(playable: songs[index], playbackRate: .one, autoStartPlayback: true)
+      for _ in 0..<400 {
+        if let last = samples.withLock({ $0.last }), index == 0 ? last > 0.2 : last < -0.15 { return }
+        try await Task.sleep(for: .milliseconds(20))
+      }
+      XCTFail("Live output never reached file \(index)")
+    }
+    try await playAndWait(for: 0)
+    let boundary = samples.withLock { $0.count - 1 }
+    try await playAndWait(for: 1)
+    let handoff = samples.withLock { Array($0.dropFirst(max(0, boundary))) }
+    XCTAssertGreaterThan(handoff.first ?? 0, 0.2)
+    XCTAssertLessThan(handoff.last ?? 0, -0.15)
+    XCTAssertTrue(handoff.contains(0), "No silence between decoded files")
+    let biggestJump = zip(handoff, handoff.dropFirst()).map { abs($0.0 - $0.1) }.max() ?? 1
+    XCTAssertLessThan(biggestJump, 0.02, "Abrupt step in live mixer output during a manual skip")
   }
 
   func testRapidResumeCancelsPendingHardwarePause() async throws {

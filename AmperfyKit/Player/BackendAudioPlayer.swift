@@ -746,18 +746,22 @@ class BackendAudioPlayer: NSObject {
     }
 
     @MainActor func replaceSource() {
-      // play(url:) replaces the decoder and its buffers. Pausing here would
-      // also reset the audio engine and stop the output hardware on every skip.
       pauseTask?.cancel()
       pauseTask = nil
       envelope?.resetToSilence()
       transitionGain = 0
+      // AudioStreaming resets the PCM ring and allocates/starts its output unit
+      // inside play(url:). Quiesce the old render callback while it is muted.
+      // Keep the active audio session and its Bluetooth route across this pause.
+      let state = player?.getState()
+      if state == .playing || state == .bufferring {
+        player?.pause()
+      } else {
+        audioSessionHandler.configureBackgroundPlayback()
+      }
       currentReplayGainValue = playable.replayGainTrackGain
       applyReplayGain()
       player?.rate = Float(userDefinedPlaybackRate.asDouble)
-      if player?.getState() != .playing {
-        audioSessionHandler.configureBackgroundPlayback()
-      }
       currentPreparedUrl = url.absoluteString
       if httpHeaders.isEmpty {
         player?.play(url: url)
