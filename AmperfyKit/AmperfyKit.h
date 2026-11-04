@@ -20,6 +20,7 @@
 //
 
 #import <Foundation/Foundation.h>
+#import <AmperfyKit/QMPlaybackEnvelope.h>
 
 //! Project version number for AmperfyKit.
 FOUNDATION_EXPORT double AmperfyKitVersionNumber;

@@ -366,13 +366,13 @@ public class AudioPlayer: NSObject, BackendAudioPlayerNotifiable {
     }
   }
 
-  func pause() {
+  func pause(immediately: Bool = false) {
     cancelAutoplayRequest()
     if let currentlyPlaying = currentlyPlaying,
        currentlyPlaying.isRadio {
-      stopButRemainIndex()
+      stopButRemainIndex(afterFade: !immediately)
     } else {
-      backendAudioPlayer.pause()
+      backendAudioPlayer.pause(immediately: immediately)
       notifyItemPaused()
     }
   }
@@ -385,9 +385,9 @@ public class AudioPlayer: NSObject, BackendAudioPlayerNotifiable {
     notifyPlayerStopped()
   }
 
-  func stopButRemainIndex() {
+  func stopButRemainIndex(afterFade: Bool = false) {
     cancelAutoplayRequest(clearQueue: true)
-    backendAudioPlayer.stop()
+    backendAudioPlayer.stop(afterFade: afterFade)
     notifyPlayerStopped()
   }
 

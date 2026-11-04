@@ -60,7 +60,7 @@ public class AudioSessionHandler {
       // Change state of UI, etc., to reflect non-playing state
       os_log(.info, "Audio Session: Audio interruption began")
       wasPlayingBeforeInterruption = musicPlayer?.isPlaying == true
-      musicPlayer?.pause()
+      musicPlayer?.pause(immediately: true)
     case AVAudioSession.InterruptionType.ended:
       // Make session active
       // Update user interface
@@ -105,7 +105,7 @@ public class AudioSessionHandler {
           output.portType == AVAudioSession.Port.bluetoothA2DP {
           os_log(.info, "Audio Session: headphones disconnected")
           Task { @MainActor in
-            self.musicPlayer?.pause()
+            self.musicPlayer?.pause(immediately: true)
           }
           break
         }

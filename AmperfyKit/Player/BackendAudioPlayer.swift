@@ -102,6 +102,8 @@ class BackendAudioPlayer: NSObject {
   private var sourceTask: Task<Void, Never>?
   private var preloadTask: Task<Void, Never>?
   private var volumeRampTask: Task<Void, Never>?
+  private var pauseTask: Task<Void, Never>?
+  private var envelope: QMPlaybackEnvelope?
   private var transitionGain: Float = 1 {
     didSet { player?.volume = volumePlayer * transitionGain }
   }
@@ -392,6 +394,8 @@ class BackendAudioPlayer: NSObject {
   }
 
   func continuePlay() {
+    pauseTask?.cancel()
+    pauseTask = nil
     isAutoStartPlayback = true
     isPlaying = true
     player?.resume()
@@ -401,26 +405,57 @@ class BackendAudioPlayer: NSObject {
     audioAnalyzer.play()
   }
 
-  func pause(preservingRecoveryPlayback: Bool = false) {
+  func pause(preservingRecoveryPlayback: Bool = false, immediately: Bool = false) {
     // A delayed engine-start callback must honor a pause requested while the
     // cached file or stream is still being prepared.
     isAutoStartPlayback = false
     if !preservingRecoveryPlayback { wasPlayingBeforeErrorOccurred = false }
     lastKnownPlaybackTime = resumePlaybackTime
     isPlaying = false
-    player?.pause()
     if !currentPlayUrl.isEmpty {
       volumeRampTask?.cancel()
       volumeRampTask = nil
     }
     stopTimers()
     audioAnalyzer.stop()
+    // A selection already fading out will arrive muted. Its start callback
+    // observes isAutoStartPlayback and pauses the newly prepared entry.
+    if !immediately, !preservingRecoveryPlayback, currentPlayUrl.isEmpty, volumeRampTask != nil { return }
+    finishPause(immediately: immediately || preservingRecoveryPlayback) { self.player?.pause() }
   }
 
-  func stop() {
+  func stop(afterFade: Bool = false) {
     isPlaying = false
-    clearPlayer()
-    audioAnalyzer.stop()
+    if afterFade {
+      // Radio resumes by reconnecting, including a resume during the fade.
+      cancelPendingSourceChange()
+      isAutoStartPlayback = false
+      currentPreparedUrl = ""
+      currentPlayUrl = ""
+      stopTimers()
+      audioAnalyzer.stop()
+      finishPause(immediately: false) { self.clearPlayer() }
+    } else {
+      clearPlayer()
+    }
+  }
+
+  private func finishPause(immediately: Bool, action: @escaping @MainActor () -> Void) {
+    if !immediately, pauseTask != nil { return }
+    if immediately || !mayHaveAudibleOutput {
+      pauseTask?.cancel()
+      pauseTask = nil
+      envelope?.resetToSilence()
+      transitionGain = 0
+      action()
+      return
+    }
+    pauseTask = Task { @MainActor in
+      do { try await drainOutput() } catch { return }
+      guard !Task.isCancelled else { return }
+      pauseTask = nil
+      action()
+    }
   }
 
   func setPlaybackRate(_ newValue: PlaybackRate) {
@@ -462,6 +497,7 @@ class BackendAudioPlayer: NSObject {
     player.delegate = self
 
     player.attach(nodes: [eq, replayGain])
+    envelope = QMPlaybackEnvelope(node: eq)
 
     audioAnalyzer.install(on: equalizer!)
 
@@ -712,6 +748,9 @@ class BackendAudioPlayer: NSObject {
     @MainActor func replaceSource() {
       // play(url:) replaces the decoder and its buffers. Pausing here would
       // also reset the audio engine and stop the output hardware on every skip.
+      pauseTask?.cancel()
+      pauseTask = nil
+      envelope?.resetToSilence()
       transitionGain = 0
       currentReplayGainValue = playable.replayGainTrackGain
       applyReplayGain()
@@ -727,16 +766,12 @@ class BackendAudioPlayer: NSObject {
       }
     }
 
-    guard player?.getState() == .playing, transitionGain > 0 else {
+    guard mayHaveAudibleOutput else {
       replaceSource()
       return
     }
     volumeRampTask = Task { @MainActor in
-      do {
-        try await rampOutput(to: 0)
-        // Let the output render the final muted buffer before changing track gain.
-        try await Task.sleep(for: .seconds(AVAudioSession.sharedInstance().ioBufferDuration))
-      } catch { return }
+      do { try await drainOutput() } catch { return }
       guard !Task.isCancelled else { return }
       volumeRampTask = nil
       replaceSource()
@@ -744,12 +779,40 @@ class BackendAudioPlayer: NSObject {
   }
 
   private func cancelPendingSourceChange() {
+    pauseTask?.cancel()
+    pauseTask = nil
     sourceTask?.cancel()
     sourceTask = nil
     preloadTask?.cancel()
     preloadTask = nil
     volumeRampTask?.cancel()
     volumeRampTask = nil
+  }
+
+  private var mayHaveAudibleOutput: Bool {
+    let state = player?.getState()
+    return transitionGain > 0 && (state == .playing || state == .bufferring)
+  }
+
+  private func drainOutput() async throws {
+    if let envelope {
+      envelope.isOpen = false
+      // An interrupted device can stop rendering before it acknowledges silence.
+      let deadline = ContinuousClock.now + .milliseconds(180)
+      while !envelope.hasRenderedSilence, ContinuousClock.now < deadline {
+        try await Task.sleep(for: .milliseconds(3))
+      }
+      try Task.checkCancellation()
+      transitionGain = 0
+    } else {
+      try await rampOutput(to: 0)
+    }
+    let session = AVAudioSession.sharedInstance()
+    let bluetooth = session.currentRoute.outputs.contains {
+      [.bluetoothA2DP, .bluetoothLE, .bluetoothHFP].contains($0.portType)
+    }
+    let latency = bluetooth ? session.outputLatency : 0
+    try await Task.sleep(for: .seconds(min(0.4, max(0, latency) + session.ioBufferDuration)))
   }
 
   private func rampOutput(to target: Float) async throws {
@@ -765,7 +828,13 @@ class BackendAudioPlayer: NSObject {
     // didStartPlaying identifies the entry, but can precede its first decoded
     // buffer. Wait for both the matching entry and actual rendering.
     guard isPlaying, !currentPlayUrl.isEmpty, player?.getState() == .playing,
-          transitionGain < 1, volumeRampTask == nil else { return }
+          volumeRampTask == nil else { return }
+    if let envelope {
+      transitionGain = 1
+      envelope.isOpen = true
+      return
+    }
+    guard transitionGain < 1 else { return }
     volumeRampTask = Task { @MainActor in
       do { try await rampOutput(to: 1) } catch { return }
       guard !Task.isCancelled else { return }
@@ -951,7 +1020,7 @@ extension BackendAudioPlayer: AudioStreaming.AudioPlayerDelegate {
     let identity = ObjectIdentifier(player)
     Task { @MainActor in
       guard self.player.map(ObjectIdentifier.init) == identity else { return }
-      if self.currentPlayUrl == entryID {
+      if self.currentPlayUrl == entryID, self.isPlaying {
         self.currentPlayUrl = ""
         self.itemFinishedPlaying()
       }

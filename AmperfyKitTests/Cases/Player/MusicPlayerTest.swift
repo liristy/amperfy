@@ -832,6 +832,86 @@ class MusicPlayerTest: XCTestCase {
     XCTAssertEqual(mockAudioStreamingPlayer.volume, 0.4, accuracy: 0.001)
   }
 
+  func testOfflineEngineRendersContinuousSamplesAtPauseAndSourceChange() throws {
+    let engine = AVAudioEngine()
+    let source = AVAudioPlayerNode()
+    let eq = AVAudioUnitEQ(numberOfBands: 1)
+    let format = try XCTUnwrap(AVAudioFormat(standardFormatWithSampleRate: 48000, channels: 2))
+    engine.attach(source)
+    engine.attach(eq)
+    engine.connect(source, to: eq, format: format)
+    engine.connect(eq, to: engine.mainMixerNode, format: format)
+    try engine.enableManualRenderingMode(.offline, format: format, maximumFrameCount: 1024)
+    let gate = try XCTUnwrap(QMPlaybackEnvelope(node: eq))
+    try engine.start()
+    defer { engine.stop() }
+
+    func playSignal(_ amplitude: Float) throws {
+      let buffer = try XCTUnwrap(AVAudioPCMBuffer(pcmFormat: format, frameCapacity: 4096))
+      buffer.frameLength = buffer.frameCapacity
+      for channel in 0..<2 {
+        let samples = try XCTUnwrap(buffer.floatChannelData)[channel]
+        for frame in 0..<Int(buffer.frameLength) { samples[frame] = channel == 0 ? amplitude : -amplitude }
+      }
+      source.scheduleBuffer(buffer, at: nil, options: .loops, completionHandler: nil)
+      source.play()
+    }
+    func render() throws -> [[Float]] {
+      var result = [[Float](), [Float]()]
+      for size: AVAudioFrameCount in [127, 512, 257, 1024, 1024] {
+        let buffer = try XCTUnwrap(AVAudioPCMBuffer(pcmFormat: format, frameCapacity: size))
+        let status = try engine.renderOffline(size, to: buffer)
+        XCTAssertEqual(status, .success)
+        XCTAssertEqual(buffer.frameLength, size)
+        for channel in 0..<2 {
+          result[channel].append(contentsOf: UnsafeBufferPointer(start: try XCTUnwrap(buffer.floatChannelData)[channel],
+                                                                  count: Int(buffer.frameLength)))
+        }
+      }
+      return result
+    }
+
+    try playSignal(0.75)
+    let muted = try render()
+    gate.isOpen = true
+    let fadeIn = try render()
+    gate.isOpen = false
+    let fadeOut = try render()
+    XCTAssertTrue(gate.hasRenderedSilence)
+    source.stop()
+    try playSignal(-0.75)
+    let handoff = try render()
+    gate.isOpen = true
+    let replacement = try render()
+    for channel in 0..<2 {
+      XCTAssertTrue(muted[channel].allSatisfy { $0 == 0 })
+      XCTAssertTrue(handoff[channel].allSatisfy { $0 == 0 })
+      let peak = try XCTUnwrap(fadeIn[channel].last)
+      XCTAssertGreaterThan(abs(peak), 0.2)
+      XCTAssertEqual(fadeOut[channel].last, 0)
+      XCTAssertEqual(try XCTUnwrap(replacement[channel].last), -peak, accuracy: 0.001)
+      let samples = muted[channel] + fadeIn[channel] + fadeOut[channel] + handoff[channel] + replacement[channel]
+      let largestJump = zip(samples, samples.dropFirst()).map { abs($0.0 - $0.1) }.max() ?? 1
+      XCTAssertLessThan(largestJump, abs(peak) * 0.003, "Discontinuity in rendered PCM on channel \(channel)")
+    }
+  }
+
+  func testRapidResumeCancelsPendingHardwarePause() async throws {
+    try await startCachedSong(at: 12)
+    for _ in 0..<100 {
+      if mockAudioStreamingPlayer.volume >= 0.999 { break }
+      try await Task.sleep(for: .milliseconds(10))
+    }
+    testPlayer.pause()
+    XCTAssertFalse(testPlayer.isPlaying)
+    XCTAssertTrue(mockAudioStreamingPlayer.isPlaying, "The renderer needs to deliver its fade before hardware pauses")
+    testPlayer.play()
+    try await Task.sleep(for: .milliseconds(650))
+    XCTAssertTrue(testPlayer.isPlaying)
+    XCTAssertTrue(mockAudioStreamingPlayer.isPlaying)
+    XCTAssertEqual(mockAudioStreamingPlayer.volume, 1, accuracy: 0.001)
+  }
+
   func testReplacementStaysMutedThroughBufferingAndPause() async throws {
     try await startCachedSong(at: 10)
     testPlayer.appendContextQueue(playables: [songToDownload])
@@ -841,7 +921,11 @@ class MusicPlayerTest: XCTestCase {
     testPlayer.playNext()
     await fulfillment(of: [prepared], timeout: 2)
     mockMusicPlayable.expectationDidStartPlaying = nil
-    try await Task.sleep(for: .milliseconds(80))
+    for _ in 0..<150 {
+      if mockAudioStreamingPlayer.starts.withLock({ $0.last?.url }) == Helper.testURL { break }
+      try await Task.sleep(for: .milliseconds(10))
+    }
+    XCTAssertEqual(mockAudioStreamingPlayer.starts.withLock { $0.last?.url }, Helper.testURL)
     XCTAssertEqual(mockAudioStreamingPlayer.volume, 0)
 
     testPlayer.pause()

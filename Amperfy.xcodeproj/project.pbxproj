@@ -303,6 +303,7 @@
 		50C9D60F284FA847007F18D0 /* AmperfyKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 50C9D605284FA847007F18D0 /* AmperfyKit.framework */; };
 		50C9D616284FA847007F18D0 /* AmpertyKitTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50C9D615284FA847007F18D0 /* AmpertyKitTests.swift */; };
 		50C9D617284FA847007F18D0 /* AmperfyKit.h in Headers */ = {isa = PBXBuildFile; fileRef = 50C9D607284FA847007F18D0 /* AmperfyKit.h */; settings = {ATTRIBUTES = (Public, ); }; };
+		FAB5172924DD42C1AA4B1001 /* QMPlaybackEnvelope.h in Headers */ = {isa = PBXBuildFile; fileRef = FAB5172924DD42C1AA4B1002 /* QMPlaybackEnvelope.h */; settings = {ATTRIBUTES = (Public, ); }; };
 		50C9D61A284FA847007F18D0 /* AmperfyKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 50C9D605284FA847007F18D0 /* AmperfyKit.framework */; };
 		50C9D61B284FA847007F18D0 /* AmperfyKit.framework in Embed Frameworks */ = {isa = PBXBuildFile; fileRef = 50C9D605284FA847007F18D0 /* AmperfyKit.framework */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
 		50C9D63E284FA9C7007F18D0 /* BackgroundLibrarySyncer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 509A7D8128059A0D009791D1 /* BackgroundLibrarySyncer.swift */; };
@@ -445,6 +446,7 @@
 		50C9D6DB284FAB88007F18D0 /* AudioSessionHandler.swift in Sources */ = {isa = PBXBuildFile; fileRef = 501171332756A73000B7C08D /* AudioSessionHandler.swift */; };
 		50C9D6DC284FAB88007F18D0 /* RemoteCommandCenterHandler.swift in Sources */ = {isa = PBXBuildFile; fileRef = 501171312756778300B7C08D /* RemoteCommandCenterHandler.swift */; };
 		50C9D6DD284FAB88007F18D0 /* BackendAudioPlayer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 508FDE4921F44E91005A0724 /* BackendAudioPlayer.swift */; };
+		FAB5172924DD42C1AA4B1003 /* QMPlaybackEnvelope.m in Sources */ = {isa = PBXBuildFile; fileRef = FAB5172924DD42C1AA4B1004 /* QMPlaybackEnvelope.m */; };
 		50C9D6DE284FAB88007F18D0 /* PlayQueueHandler.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5011712B2744FDD700B7C08D /* PlayQueueHandler.swift */; };
 		50C9D6E3284FAB96007F18D0 /* UIImageAssetsExtension.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50B053AC27BFADB200D9C1ED /* UIImageAssetsExtension.swift */; };
 		50C9D6E6284FABCB007F18D0 /* AudioPlayer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50C9D6E5284FABCB007F18D0 /* AudioPlayer.swift */; };
@@ -834,6 +836,8 @@
 		508FDE3521F1E130005A0724 /* NewPlaylistTableHeader.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NewPlaylistTableHeader.swift; sourceTree = "<group>"; };
 		508FDE3721F1E14F005A0724 /* NewPlaylistTableHeader.xib */ = {isa = PBXFileReference; lastKnownFileType = file.xib; path = NewPlaylistTableHeader.xib; sourceTree = "<group>"; };
 		508FDE4921F44E91005A0724 /* BackendAudioPlayer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BackendAudioPlayer.swift; sourceTree = "<group>"; };
+		FAB5172924DD42C1AA4B1002 /* QMPlaybackEnvelope.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = QMPlaybackEnvelope.h; sourceTree = "<group>"; };
+		FAB5172924DD42C1AA4B1004 /* QMPlaybackEnvelope.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = QMPlaybackEnvelope.m; sourceTree = "<group>"; };
 		508FDE4B21F58AFC005A0724 /* AppStoryboard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppStoryboard.swift; sourceTree = "<group>"; };
 		508FDE4F21F64ED6005A0724 /* TabBarVC.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TabBarVC.swift; sourceTree = "<group>"; };
 		509001B52716C7F600A8056D /* AppDelegateAlertExtensions.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppDelegateAlertExtensions.swift; sourceTree = "<group>"; };
@@ -2176,6 +2180,8 @@
 				5011712F27565B2A00B7C08D /* PlayerFacade.swift */,
 				50C9D6E5284FABCB007F18D0 /* AudioPlayer.swift */,
 				508FDE4921F44E91005A0724 /* BackendAudioPlayer.swift */,
+				FAB5172924DD42C1AA4B1002 /* QMPlaybackEnvelope.h */,
+				FAB5172924DD42C1AA4B1004 /* QMPlaybackEnvelope.m */,
 				501171292743F25300B7C08D /* PlayerUtil.swift */,
 				5011712B2744FDD700B7C08D /* PlayQueueHandler.swift */,
 				501171312756778300B7C08D /* RemoteCommandCenterHandler.swift */,
@@ -2197,6 +2203,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				50C9D617284FA847007F18D0 /* AmperfyKit.h in Headers */,
+				FAB5172924DD42C1AA4B1001 /* QMPlaybackEnvelope.h in Headers */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -2851,6 +2858,7 @@
 				50C9D669284FAA0B007F18D0 /* AmpacheXmlParser.swift in Sources */,
 				50C9D6A3284FAA77007F18D0 /* MigrationPolicyV4toV5.swift in Sources */,
 				50C9D6DD284FAB88007F18D0 /* BackendAudioPlayer.swift in Sources */,
+				FAB5172924DD42C1AA4B1003 /* QMPlaybackEnvelope.m in Sources */,
 				50C9D693284FAA6C007F18D0 /* DirectoryMO+CoreDataProperties.swift in Sources */,
 				50C9D6ED284FADB8007F18D0 /* PlayerDisplayStyleType.swift in Sources */,
 				50C9D6B4284FAA87007F18D0 /* AbstractPlayable.swift in Sources */,
