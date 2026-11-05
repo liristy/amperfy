@@ -818,6 +818,9 @@ class MusicPlayerTest: XCTestCase {
       try await Task.sleep(for: .milliseconds(10))
     }
     XCTAssertEqual(mockAudioStreamingPlayer.volume, 0.7, accuracy: 0.001)
+    // Starting a new context pauses the previous context even when it is empty.
+    // Count only hardware pauses caused by the two manual skips below.
+    mockAudioStreamingPlayer.pauseVolumes.withLock { $0.removeAll() }
     testPlayer.playNext()
     testPlayer.playNext()
     XCTAssertEqual(replayGain.outputVolume, 0.251, accuracy: 0.002, "Outgoing audio must keep its own gain")
@@ -938,14 +941,28 @@ class MusicPlayerTest: XCTestCase {
       song.relFilePath = path
     }
     let samples = OSAllocatedUnfairLock(initialState: [Float]())
-    engine.mainMixerNode.installTap(onBus: 0, bufferSize: 1024, format: nil) { @Sendable buffer, _ in
-      guard let data = buffer.floatChannelData, buffer.frameLength > 0 else { return }
-      let chunk = (0..<Int(buffer.frameLength)).map { data[0][$0 * buffer.stride] }
+    // Observe the exact buffers supplied to the output unit. An AVAudioNode tap
+    // batches samples asynchronously and loses its pending tail on engine.reset(),
+    // which can make a correctly rendered fade look like a discontinuity.
+    let output = engine.player.auAudioUnit
+    let render = try XCTUnwrap(output.outputProvider)
+    XCTAssertEqual(output.inputBusses[0].format.commonFormat, .pcmFormatFloat32)
+    output.outputProvider = { @Sendable flags, time, frames, bus, data in
+      let status = render(flags, time, frames, bus, data)
+      guard status == noErr, bus == 0, frames > 0 else { return status }
+      let buffer = data.pointee.mBuffers
+      guard let pointer = buffer.mData?.assumingMemoryBound(to: Float.self), buffer.mNumberChannels > 0,
+            Int(buffer.mDataByteSize) >= Int(frames * buffer.mNumberChannels) * MemoryLayout<Float>.size
+      else { return status }
+      let stride = Int(buffer.mNumberChannels)
+      let silent = flags.pointee.contains(.unitRenderAction_OutputIsSilence)
+      let chunk = (0..<Int(frames)).map { silent ? Float.zero : pointer[$0 * stride] }
       samples.withLock { $0.append(contentsOf: chunk) }
+      return status
     }
     defer {
       backend.stop()
-      engine.mainMixerNode.removeTap(onBus: 0)
+      output.outputProvider = render
     }
     func playAndWait(for index: Int) async throws {
       backend.requestToPlay(playable: songs[index], playbackRate: .one, autoStartPlayback: true)
@@ -962,8 +979,11 @@ class MusicPlayerTest: XCTestCase {
     XCTAssertGreaterThan(handoff.first ?? 0, 0.2)
     XCTAssertLessThan(handoff.last ?? 0, -0.15)
     XCTAssertTrue(handoff.contains(0), "No silence between decoded files")
-    let biggestJump = zip(handoff, handoff.dropFirst()).map { abs($0.0 - $0.1) }.max() ?? 1
-    XCTAssertLessThan(biggestJump, 0.02, "Abrupt step in live mixer output during a manual skip")
+    let jumps = zip(handoff, handoff.dropFirst()).map { abs($0.0 - $0.1) }
+    let worst = jumps.indices.max { jumps[$0] < jumps[$1] } ?? 0
+    let context = Array(handoff.dropFirst(max(0, worst - 4)).prefix(10))
+    XCTAssertLessThan(jumps.max() ?? 1, 0.02,
+                      "Abrupt step in hardware output at frame \(worst): \(context)")
   }
 
   func testRapidResumeCancelsPendingHardwarePause() async throws {
