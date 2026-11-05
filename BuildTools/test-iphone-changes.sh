@@ -34,6 +34,7 @@ test_arguments=(
   test
   -resultBundlePath build/validation/PlaylistTests.xcresult
   -parallel-testing-enabled NO
+  -test-timeouts-enabled YES
   -only-testing:AmperfyKitTests/SsPlaylistsParserTest
   -only-testing:AmperfyKitTests/SsPlaylistSongsParserTest
   -only-testing:AmperfyKitTests/PlaylistTest

@@ -902,6 +902,8 @@ class MusicPlayerTest: XCTestCase {
   }
 
   func testLiveDecoderHandoffBetweenAudibleFiles() async throws {
+    // Catch a blocked hardware/decoder handoff without exhausting the CI job.
+    executionTimeAllowance = 60
     let engine = AudioStreamingPlayer()
     let backend = BackendAudioPlayer(
       createAudioStreamingPlayerCB: { engine }, audioSessionHandler: AudioSessionHandler(),
