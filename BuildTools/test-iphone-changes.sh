@@ -5,6 +5,7 @@ cd "$(dirname "$0")/.."
 mkdir -p build/validation
 # Older caches were touched by the project's recursive formatting build phase.
 # Restore only dependency checkout files; keep compiled products for reuse.
+echo "Checking cached package sources"
 for package in build/validation/DerivedData/SourcePackages/checkouts/*; do
   if [[ -d "$package/.git" || -f "$package/.git" ]]; then
     if ! git -C "$package" diff --quiet; then
@@ -12,9 +13,12 @@ for package in build/validation/DerivedData/SourcePackages/checkouts/*; do
     fi
   fi
 done
-device_id=$(xcrun simctl list devices available -j | python3 -c '
-import json, sys
-devices = json.load(sys.stdin)["devices"]
+echo "Selecting an iOS 26 simulator"
+device_id=$(python3 -c '
+import json, subprocess, sys
+devices = json.loads(subprocess.check_output(
+    ["xcrun", "simctl", "list", "devices", "available", "-j"], timeout=120,
+))["devices"]
 for runtime, entries in devices.items():
     if "iOS-26" not in runtime:
         continue
