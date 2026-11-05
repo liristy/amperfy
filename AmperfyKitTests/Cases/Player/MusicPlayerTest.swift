@@ -945,7 +945,9 @@ class MusicPlayerTest: XCTestCase {
     // batches samples asynchronously and loses its pending tail on engine.reset(),
     // which can make a correctly rendered fade look like a discontinuity.
     let output = engine.player.auAudioUnit
-    let render = try XCTUnwrap(output.outputProvider)
+    // Core Audio already invokes this immutable provider on its render thread,
+    // but the imported block type does not declare Sendable.
+    nonisolated(unsafe) let render = try XCTUnwrap(output.outputProvider)
     XCTAssertEqual(output.inputBusses[0].format.commonFormat, .pcmFormatFloat32)
     output.outputProvider = { @Sendable flags, time, frames, bus, data in
       let status = render(flags, time, frames, bus, data)
