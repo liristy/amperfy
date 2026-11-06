@@ -826,8 +826,11 @@ class MusicPlayerTest: XCTestCase {
     defer { try? CacheFileManager.shared.removeItem(at: secondPath, accountInfo: account.info) }
     handler.didArtworkChange()
     handler.didStopPlaying()
-    _ = await LibraryEntityImage.loadPreparedImage(at: secondPath.path)
-    for _ in 0..<5 { await Task.yield() }
+    for _ in 0..<100 {
+      if LibraryEntityImage.preparedImage(at: secondPath.path) != nil { break }
+      try await Task.sleep(for: .milliseconds(20))
+    }
+    XCTAssertNotNil(LibraryEntityImage.preparedImage(at: secondPath.path))
     XCTAssertNil(center.nowPlayingInfo)
   }
 
