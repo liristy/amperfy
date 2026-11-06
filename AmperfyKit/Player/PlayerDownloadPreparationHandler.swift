@@ -79,7 +79,8 @@ public class PlayerDownloadPreparationHandler {
         getPlayableDownloaderCB(accountInfo).download(object: playable)
       }
       guard let song = playable.asSong, !song.id.isEmpty,
-            song.title.isEmpty || song.artist == nil || song.album == nil || song.artwork == nil,
+            song.playableManagedObject.title?.isEmpty != false ||
+              song.artist == nil || song.album == nil || song.artwork == nil,
             !preparedMetadata.contains(song.uniqueID), metadataTasks[song.uniqueID] == nil else { continue }
       let id = song.uniqueID
       let syncer = getLibrarySyncerCB(accountInfo)

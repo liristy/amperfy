@@ -725,11 +725,13 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
                 guard abs(seekSlider.trackRect(forBounds: seekSlider.bounds).height - 11) < 0.5 else {
                   smokeLog("Seek track did not expand while dragging"); return
                 }
+                try await compositorScreenshot("player-seek-dragging.png")
                 seekSlider.endTracking(nil, with: nil)
                 try await Task.sleep(for: .milliseconds(250))
                 guard abs(seekSlider.trackRect(forBounds: seekSlider.bounds).height - 7) < 0.5 else {
                   smokeLog("Seek track stayed thick after releasing a drag"); return
                 }
+                try await compositorScreenshot("player-seek-released.png")
                 seekSlider.beginTrackingForSmoke()
                 seekSlider.cancelTracking(with: nil)
                 try await Task.sleep(for: .milliseconds(250))

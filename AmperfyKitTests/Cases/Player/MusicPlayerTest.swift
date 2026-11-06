@@ -774,6 +774,29 @@ class MusicPlayerTest: XCTestCase {
     XCTAssertEqual(center.nowPlayingInfo?[MPMediaItemPropertyTitle] as? String, songToDownload.title)
   }
 
+  func testUpcomingMissingTitleIsFetchedDespiteDisplayFallback() async throws {
+    try await startAutoplayFixture()
+    let next = songToDownload!
+    XCTAssertNotNil(next.artist)
+    XCTAssertNotNil(next.album)
+    next.artwork = library.createArtwork(account: account)
+    next.playableManagedObject.title = nil
+    XCTAssertFalse(next.title.isEmpty) // The UI getter returns a localized fallback.
+    let audio = MOCK_SongDownloader(), covers = MOCK_SongDownloader(), syncer = MOCK_LibrarySyncer()
+    let preparation = makePreparationHandler(audio: audio, artwork: covers, syncer: syncer)
+    testPlayer.addNotifier(notifier: preparation)
+    defer { preparation.didStopPlaying() }
+    let synced = expectation(description: "missing stored title fetched")
+    syncer.onSyncSong = { song in
+      song.title = "Prepared next track"
+      synced.fulfill()
+    }
+    testPlayer.appendContextQueue(playables: [next])
+    await fulfillment(of: [synced], timeout: 2)
+    XCTAssertEqual(next.title, "Prepared next track")
+    XCTAssertEqual(testPlayer.currentlyPlaying, songCached)
+  }
+
   func testColdDiskCoverPublishesAtomicallyAndCancelledDecodeCannotResurrectInfo() async throws {
     try await startAutoplayFixture()
     storage.settings.accounts.updateSetting(account.info) { $0.artworkDisplayPreference = .serverArtworkOnly }
