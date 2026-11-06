@@ -727,18 +727,21 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
                 }
                 try await compositorScreenshot("player-seek-dragging.png")
                 seekSlider.endTracking(nil, with: nil)
-                try await Task.sleep(for: .milliseconds(250))
-                guard abs(seekSlider.trackRect(forBounds: seekSlider.bounds).height - 7) < 0.5 else {
-                  smokeLog("Seek track stayed thick after releasing a drag"); return
+                try await Task.sleep(for: .milliseconds(270))
+                guard abs(seekSlider.trackRect(forBounds: seekSlider.bounds).height - 7) < 0.5,
+                      (UIAccessibility.isReduceMotionEnabled || seekSlider.didRenderIntermediateTrackHeight) else {
+                  smokeLog("Seek track jumped or stayed thick after releasing a drag"); return
                 }
                 try await compositorScreenshot("player-seek-released.png")
                 seekSlider.beginTrackingForSmoke()
+                try await Task.sleep(for: .milliseconds(200))
                 seekSlider.cancelTracking(with: nil)
-                try await Task.sleep(for: .milliseconds(250))
-                guard abs(seekSlider.trackRect(forBounds: seekSlider.bounds).height - 7) < 0.5 else {
-                  smokeLog("Cancelled seek left the track expanded"); return
+                try await Task.sleep(for: .milliseconds(270))
+                guard abs(seekSlider.trackRect(forBounds: seekSlider.bounds).height - 7) < 0.5,
+                      (UIAccessibility.isReduceMotionEnabled || seekSlider.didRenderIntermediateTrackHeight) else {
+                  smokeLog("Cancelled seek jumped or left the track expanded"); return
                 }
-                smokeLog("Seek drag expanded the track; release and cancellation restored the resting height")
+                smokeLog("Seek drag expanded the track; release and cancellation smoothly restored the resting height")
                 #if !targetEnvironment(macCatalyst)
                   let invalidVolumeDrag = RelativeVolumeDrag(value: 0.4, minimum: 0, maximum: 1, width: 0)
                   guard let drag = RelativeVolumeDrag(value: 0.4, minimum: 0, maximum: 1, width: 200),
