@@ -156,7 +156,7 @@ final class MOCK_LibrarySyncer: LibrarySyncer {
   func sync(artist: Artist) async throws {}
   func sync(album: Album) async throws {}
   var syncedSongs = [String]()
-  var onSyncSong: ((Song) async throws -> Void)?
+  var onSyncSong: (@MainActor (Song) async throws -> Void)?
   func sync(song: Song) async throws {
     syncedSongs.append(song.uniqueID)
     try await onSyncSong?(song)
