@@ -291,12 +291,65 @@ class PlayerTrackSlider: UISlider {
   static let standardActiveTrackHeight: CGFloat = 11
   var restingTrackHeight: CGFloat = PlayerTrackSlider.standardRestingTrackHeight
   var activeTrackHeight: CGFloat = PlayerTrackSlider.standardActiveTrackHeight
+  private var isTrackExpanded = false
 
   override func trackRect(forBounds bounds: CGRect) -> CGRect {
     let track = super.trackRect(forBounds: bounds)
-    let height = min(bounds.height, isTracking ? activeTrackHeight : restingTrackHeight)
+    let height = min(bounds.height, isTrackExpanded ? activeTrackHeight : restingTrackHeight)
     return CGRect(x: track.minX, y: bounds.midY - height / 2, width: track.width, height: height)
   }
+
+  override func beginTracking(_ touch: UITouch, with event: UIEvent?) -> Bool {
+    let accepted = super.beginTracking(touch, with: event)
+    setTrackExpanded(accepted)
+    return accepted
+  }
+
+  override func endTracking(_ touch: UITouch?, with event: UIEvent?) {
+    super.endTracking(touch, with: event)
+    setTrackExpanded(false)
+  }
+
+  override func continueTracking(_ touch: UITouch, with event: UIEvent?) -> Bool {
+    let continuing = super.continueTracking(touch, with: event)
+    if !continuing { setTrackExpanded(false) }
+    return continuing
+  }
+
+  override func cancelTracking(with event: UIEvent?) {
+    super.cancelTracking(with: event)
+    setTrackExpanded(false)
+  }
+
+  override var isEnabled: Bool {
+    didSet { if !isEnabled { setTrackExpanded(false) } }
+  }
+
+  override func didMoveToWindow() {
+    super.didMoveToWindow()
+    if window == nil { setTrackExpanded(false) }
+  }
+
+  private func setTrackExpanded(_ expanded: Bool) {
+    // UIKit may clear isTracking only after endTracking returns, and does not
+    // necessarily lay out a custom track again. Own the visual state explicitly.
+    guard expanded != isTrackExpanded else { return }
+    layoutIfNeeded()
+    isTrackExpanded = expanded
+    setNeedsLayout()
+    guard window != nil, !UIAccessibility.isReduceMotionEnabled else {
+      layoutIfNeeded()
+      return
+    }
+    UIView.animate(withDuration: expanded ? 0.16 : 0.2, delay: 0,
+      options: [.beginFromCurrentState, .allowUserInteraction, .curveEaseInOut]) {
+      self.layoutIfNeeded()
+    }
+  }
+
+  #if DEBUG && targetEnvironment(simulator)
+    func beginTrackingForSmoke() { setTrackExpanded(true) }
+  #endif
 }
 
 class SeekableTimeSlider: PlayerTrackSlider {

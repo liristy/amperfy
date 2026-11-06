@@ -719,6 +719,24 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
                 return
               }
               if let controls = popup.controlView {
+                guard let seekSlider = controls.timeSlider as? PlayerTrackSlider else { return }
+                seekSlider.beginTrackingForSmoke()
+                try await Task.sleep(for: .milliseconds(200))
+                guard abs(seekSlider.trackRect(forBounds: seekSlider.bounds).height - 11) < 0.5 else {
+                  smokeLog("Seek track did not expand while dragging"); return
+                }
+                seekSlider.endTracking(nil, with: nil)
+                try await Task.sleep(for: .milliseconds(250))
+                guard abs(seekSlider.trackRect(forBounds: seekSlider.bounds).height - 7) < 0.5 else {
+                  smokeLog("Seek track stayed thick after releasing a drag"); return
+                }
+                seekSlider.beginTrackingForSmoke()
+                seekSlider.cancelTracking(with: nil)
+                try await Task.sleep(for: .milliseconds(250))
+                guard abs(seekSlider.trackRect(forBounds: seekSlider.bounds).height - 7) < 0.5 else {
+                  smokeLog("Cancelled seek left the track expanded"); return
+                }
+                smokeLog("Seek drag expanded the track; release and cancellation restored the resting height")
                 #if !targetEnvironment(macCatalyst)
                   let invalidVolumeDrag = RelativeVolumeDrag(value: 0.4, minimum: 0, maximum: 1, width: 0)
                   guard let drag = RelativeVolumeDrag(value: 0.4, minimum: 0, maximum: 1, width: 200),
