@@ -418,6 +418,11 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
                   descendants(of: window).first { $0.accessibilityIdentifier == "player-surface-transition-artwork" }
                 }
               }
+              func flyingShadow() -> UIView? {
+                miniPlayer.window.flatMap { window in
+                  descendants(of: window).first { $0.accessibilityIdentifier == "player-surface-transition-shadow" }
+                }
+              }
               func renderedSurface(_ popup: PopupPlayerVC) -> CGRect? {
                 guard let maskView = popup.view.mask else { return nil }
                 let page = popup.view.layer.presentation() ?? popup.view.layer
@@ -441,7 +446,7 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
               guard vc.presentedViewController !== cancelledPopup,
                     cancelledPopup.presentingViewController == nil, cancelledPopup.view.mask == nil,
                     miniPlayer.glassContainer.layer.opacity == 1,
-                    miniPlayer.artworkImage.layer.opacity == 1, flyingCover() == nil else {
+                    miniPlayer.artworkImage.layer.opacity == 1, flyingCover() == nil, flyingShadow() == nil else {
                 smokeLog("Cancelled upward expansion did not restore mini player")
                 return
               }
@@ -487,6 +492,18 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
                 smokeLog("A refresh exposed the real cover during paused opening")
                 return
               }
+              if let shadow = flyingShadow(), let cover = flyingCover(),
+                 let realShadow = pausedPopup.largeCurrentlyPlayingView?.transitionArtworkShadow {
+                let rendered = shadow.layer.presentation() ?? shadow.layer
+                if rendered.shadowOpacity <= 0.01 || rendered.shadowOpacity >= realShadow.layer.shadowOpacity ||
+                     abs(rendered.frame.width - cover.frame.width) > 0.5 || rendered.shadowPath == nil {
+                  smokeLog("Opening cover shadow did not fade and scale with the flying cover")
+                  playerPolishChecksPassed = false
+                }
+              } else {
+                smokeLog("Opening cover has no in-flight shadow")
+                playerPolishChecksPassed = false
+              }
               guard PlayerControlView.audioOutputSymbol(portType: .bluetoothA2DP, portName: "Renamed",
                                                         preferredSymbol: "airpods.gen3") == "airpods.gen3",
                     PlayerControlView.audioOutputSymbol(portType: .builtInSpeaker, portName: "iPhone",
@@ -507,7 +524,8 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
               miniPlayer.endPlayerExpansion(translation: pausedDistance * 0.85, velocity: 850)
               try await Task.sleep(for: .seconds(1))
               guard hiddenCover.mask == nil, miniPlayer.artworkImage.mask == nil,
-                    abs(hiddenCover.transform.a - 0.74) < 0.01, flyingCover() == nil else {
+                    abs(hiddenCover.transform.a - 0.74) < 0.01, flyingCover() == nil, flyingShadow() == nil,
+                    pausedPopup.largeCurrentlyPlayingView?.transitionArtworkShadow?.mask == nil else {
                 smokeLog("Paused opening did not hand off to the real scaled cover")
                 return
               }
@@ -538,7 +556,8 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
                     miniPlayer.glassContainer.alpha == 1, miniPlayer.glassContainer.transform == .identity,
                     pausedPopup.controlPlaceholderView.mask == nil,
                     hiddenCover.mask == nil, miniPlayer.artworkImage.mask == nil,
-                    flyingCover() == nil else {
+                    flyingCover() == nil, flyingShadow() == nil,
+                    pausedPopup.largeCurrentlyPlayingView?.transitionArtworkShadow?.mask == nil else {
                 smokeLog("Reversing the final closing phase did not restore all content masks")
                 return
               }

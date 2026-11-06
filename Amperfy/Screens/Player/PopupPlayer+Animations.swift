@@ -74,6 +74,8 @@ final class PlayerArtworkMotion: NSObject {
   private let handle: UIView?
   private let handleTransform: CGAffineTransform
   private let cover: UIImageView?
+  private let coverShadow: UIView?
+  private let fullArtworkShadow: UIView?
   let smallFrame: CGRect
   private let fullFrame: CGRect
   private let presenting: Bool
@@ -89,7 +91,8 @@ final class PlayerArtworkMotion: NSObject {
   private var displayLink: CADisplayLink?
 
   init(player: UIView, surface: UIView, progressView: UIView, smallFrame: CGRect, fullFrame: CGRect,
-       presenting: Bool, cover: UIImageView?, endFrame: CGRect, endRadius: CGFloat,
+       presenting: Bool, cover: UIImageView?, coverShadow: UIView?, fullArtworkShadow: UIView?,
+       endFrame: CGRect, endRadius: CGFloat,
        foreground: [UIView], handle: UIView?, miniPlayer: UIView?) {
     self.player = player
     self.surface = surface
@@ -101,6 +104,8 @@ final class PlayerArtworkMotion: NSObject {
     self.fullFrame = fullFrame
     self.presenting = presenting
     self.cover = cover
+    self.coverShadow = coverShadow
+    self.fullArtworkShadow = fullArtworkShadow
     self.startFrame = cover?.frame ?? .zero
     self.endFrame = endFrame
     self.startRadius = cover?.layer.cornerRadius ?? 0
@@ -172,6 +177,24 @@ final class PlayerArtworkMotion: NSObject {
           width: startFrame.width + (endFrame.width - startFrame.width) * p,
           height: startFrame.height + (endFrame.height - startFrame.height) * p)
         cover.layer.cornerRadius = startRadius + (endRadius - startRadius) * p
+        if let coverShadow, let fullArtworkShadow {
+          // The real shadow is masked with the real cover. Carry a matching
+          // shadow with the flying cover, including paused scaling and reversal.
+          let fullCoverFrame = presenting ? endFrame : startFrame
+          let fullScale = fullCoverFrame.width / max(1, fullArtworkShadow.bounds.width)
+          let coverScale = cover.bounds.width / max(1, fullCoverFrame.width)
+          let visibility = presenting ? p : 1 - p
+          let layer = fullArtworkShadow.layer.presentation() ?? fullArtworkShadow.layer
+          coverShadow.frame = cover.frame
+          coverShadow.layer.shadowColor = layer.shadowColor
+          coverShadow.layer.shadowOpacity = layer.shadowOpacity * Float(visibility)
+          coverShadow.layer.shadowRadius = layer.shadowRadius * fullScale * coverScale
+          coverShadow.layer.shadowOffset = CGSize(
+            width: layer.shadowOffset.width * fullScale * coverScale,
+            height: layer.shadowOffset.height * fullScale * coverScale)
+          var shadowTransform = CGAffineTransform(scaleX: fullScale * coverScale, y: fullScale * coverScale)
+          coverShadow.layer.shadowPath = layer.shadowPath?.copy(using: &shadowTransform)
+        }
         let fullArtwork = presenting ? endFrame : startFrame
         let projectedArtworkBottom = player.frame.minY + (fullArtwork.maxY - fullFrame.minY) * scale
         let offset = (cover.frame.maxY - projectedArtworkBottom) / scale
@@ -305,6 +328,7 @@ final class PlayerSurfaceAnimator: NSObject, UIViewControllerAnimatedTransitioni
       }
     }
     var flyingArtwork: UIImageView?
+    var flyingShadow: UIView?
     if !reducedMotion, let sourceArtwork, let targetArtwork,
        let smallArtworkFrame, let largeArtworkFrame,
        let image = artworkImage {
@@ -315,6 +339,13 @@ final class PlayerSurfaceAnimator: NSObject, UIViewControllerAnimatedTransitioni
       cover.layer.cornerCurve = .continuous
       cover.frame = isPresenting ? smallArtworkFrame : largeArtworkFrame
       cover.layer.cornerRadius = isPresenting ? sourceArtwork.layer.cornerRadius : targetArtwork.layer.cornerRadius
+      if let artworkShadow, !artworkShadow.isHidden {
+        let shadow = UIView(frame: cover.frame)
+        shadow.isUserInteractionEnabled = false
+        shadow.accessibilityIdentifier = "player-surface-transition-shadow"
+        container.addSubview(shadow)
+        flyingShadow = shadow
+      }
       container.addSubview(cover)
       flyingArtwork = cover
       for artwork in [sourceArtwork, targetArtwork, artworkShadow].compactMap({ $0 }) {
@@ -324,7 +355,7 @@ final class PlayerSurfaceAnimator: NSObject, UIViewControllerAnimatedTransitioni
     if !reducedMotion {
       let motion = PlayerArtworkMotion(player: playerView, surface: surface, progressView: progressView,
         smallFrame: smallFrame, fullFrame: fullFrame, presenting: isPresenting,
-        cover: flyingArtwork,
+        cover: flyingArtwork, coverShadow: flyingShadow, fullArtworkShadow: artworkShadow,
         endFrame: (isPresenting ? largeArtworkFrame : smallArtworkFrame) ?? .zero,
         endRadius: (isPresenting ? targetArtwork?.layer.cornerRadius : sourceArtwork?.layer.cornerRadius) ?? 0,
         foreground: [popup.largePlayerPlaceholderView, popup.tableView, popup.controlPlaceholderView,
@@ -362,7 +393,7 @@ final class PlayerSurfaceAnimator: NSObject, UIViewControllerAnimatedTransitioni
     }
     animator.scrubsLinearly = true
     let presenting = isPresenting
-    animator.addCompletion { [weak self, maskedViews, flyingArtwork] _ in
+    animator.addCompletion { [weak self, maskedViews, flyingArtwork, flyingShadow] _ in
       let completed = !context.transitionWasCancelled
       // Restore nested artwork masks before their ancestor content masks.
       for entry in maskedViews.reversed() { entry.view.mask = entry.original }
@@ -371,6 +402,7 @@ final class PlayerSurfaceAnimator: NSObject, UIViewControllerAnimatedTransitioni
       playerView.transform = originalTransform
       if presenting != completed { playerView.removeFromSuperview() }
       flyingArtwork?.removeFromSuperview()
+      flyingShadow?.removeFromSuperview()
       progressView.removeFromSuperview()
       popup.surfaceTransition.artworkMotion?.stop()
       popup.surfaceTransition.artworkMotion = nil
