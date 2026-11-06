@@ -33,6 +33,7 @@ public class NowPlayingInfoCenterHandler {
   private let getArtworkDownloaderCB: GetArtworkDownloadManagerCallback
   private var accountNotificationHandler: AccountNotificationHandler?
   private var currentPlayableID: String?
+  private var publishedPlayableID: String?
   private var artworkPath: String?
   private var artworkImage: UIImage?
   private var artworkTask: Task<Void, Never>?
@@ -76,9 +77,6 @@ public class NowPlayingInfoCenterHandler {
   }
 
   private func updateNowPlayingInfo(playable: AbstractPlayable) {
-    let albumTitle = playable.asSong?.album?.name ?? ""
-    let nowPlaying = displayNowPlayingInfo(for: playable)
-
     if currentPlayableID != playable.uniqueID {
       artworkTask?.cancel()
       artworkTask = nil
@@ -87,8 +85,20 @@ public class NowPlayingInfoCenterHandler {
       currentPlayableID = playable.uniqueID
     }
     if let accountInfo = playable.account?.info {
+      let preferences = storage.settings.accounts.getSetting(accountInfo).read
+      let path = playable.imagePath(setting: preferences.artworkDisplayPreference)
+      if let path, let image = LibraryEntityImage.preparedImage(at: path) {
+        artworkTask?.cancel()
+        artworkTask = nil
+        artworkPath = path
+        artworkImage = image
+      } else if let path, path != artworkPath || artworkTask != nil {
+        // A disk-cached cover is real artwork, not a missing cover. Decode it
+        // off the main thread, then publish the title and image together.
+        loadArtwork(for: playable, at: path)
+        return
+      }
       if artworkImage == nil {
-        let preferences = storage.settings.accounts.getSetting(accountInfo).read
         artworkImage = LibraryEntityImage.getImageToDisplayImmediately(
           libraryEntity: playable,
           themePreference: preferences.themePreference,
@@ -96,11 +106,17 @@ public class NowPlayingInfoCenterHandler {
           useCache: true
         )
       }
-      if let artwork = playable.artwork {
+      if !musicPlayer.isOfflineMode, preferences.artworkDisplayPreference != .id3TagOnly,
+         let artwork = playable.artwork, !artwork.isCached {
         getArtworkDownloaderCB(accountInfo).downloadWithPriority(object: artwork)
       }
     }
+    publishNowPlayingInfo(playable: playable)
+  }
 
+  private func publishNowPlayingInfo(playable: AbstractPlayable) {
+    let albumTitle = playable.asSong?.album?.name ?? ""
+    let nowPlaying = displayNowPlayingInfo(for: playable)
     let concurrentSafeArtworkImage = artworkImage ?? UIImage()
     nowPlayingInfoCenter.nowPlayingInfo = [
       MPNowPlayingInfoPropertyMediaType: NSNumber(value: MPNowPlayingInfoMediaType.audio.rawValue),
@@ -128,18 +144,14 @@ public class NowPlayingInfoCenterHandler {
         }
       ),
     ]
-    loadArtwork(for: playable)
+    publishedPlayableID = playable.uniqueID
   }
 
   // This handler lives independently of the player UI, including while locked.
-  private func loadArtwork(for playable: AbstractPlayable) {
-    guard let accountInfo = playable.account?.info else { return }
-    let preference = storage.settings.accounts.getSetting(accountInfo).read.artworkDisplayPreference
-    let path = playable.imagePath(setting: preference)
-    guard path != artworkPath else { return }
+  private func loadArtwork(for playable: AbstractPlayable, at path: String) {
+    guard path != artworkPath || artworkTask == nil else { return }
     artworkTask?.cancel()
     artworkPath = path
-    guard let path else { return }
     let playableID = playable.uniqueID
     artworkTask = Task { @MainActor [weak self] in
       let image = await LibraryEntityImage.loadPreparedImage(at: path)
@@ -148,21 +160,16 @@ public class NowPlayingInfoCenterHandler {
             self.musicPlayer.currentlyPlaying?.uniqueID == playableID,
             self.artworkPath == path else { return }
       self.artworkTask = nil
-      guard let image else {
-        self.artworkPath = nil
-        return
-      }
       self.artworkImage = image
-      // Merge just artwork so a late decode cannot reset the elapsed time or
-      // overwrite metadata belonging to a newly started song.
-      guard var info = self.nowPlayingInfoCenter.nowPlayingInfo else { return }
-      info[MPMediaItemPropertyArtwork] = MPMediaItemArtwork(boundsSize: image.size) { @Sendable _ in image }
-      self.nowPlayingInfoCenter.nowPlayingInfo = info
+      // Re-read metadata and timing after the await. Never reset the playhead
+      // or let a previous track's decode overwrite the current track.
+      self.updateNowPlayingInfo(playable: playable)
     }
   }
 
   private func updatePlaybackTiming() {
-    guard var info = nowPlayingInfoCenter.nowPlayingInfo else { return }
+    guard publishedPlayableID == currentPlayableID,
+          var info = nowPlayingInfoCenter.nowPlayingInfo else { return }
     info[MPMediaItemPropertyPlaybackDuration] = backendAudioPlayer.duration
     info[MPNowPlayingInfoPropertyElapsedPlaybackTime] = backendAudioPlayer.elapsedTime
     info[MPNowPlayingInfoPropertyPlaybackRate] = musicPlayer.isPlaying ? backendAudioPlayer.playbackRate.asDouble : 0
@@ -215,6 +222,7 @@ extension NowPlayingInfoCenterHandler: MusicPlayable {
     artworkPath = nil
     artworkImage = nil
     currentPlayableID = nil
+    publishedPlayableID = nil
     nowPlayingInfoCenter.nowPlayingInfo = nil
     nowPlayingInfoCenter.playbackState = .stopped
   }

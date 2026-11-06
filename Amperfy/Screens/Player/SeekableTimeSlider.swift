@@ -291,12 +291,111 @@ class PlayerTrackSlider: UISlider {
   static let standardActiveTrackHeight: CGFloat = 11
   var restingTrackHeight: CGFloat = PlayerTrackSlider.standardRestingTrackHeight
   var activeTrackHeight: CGFloat = PlayerTrackSlider.standardActiveTrackHeight
+  private var isTrackExpanded = false
+  private var displayedTrackHeight: CGFloat?
+  private var trackAnimation: CADisplayLink?
+  private var trackAnimationStart: CFTimeInterval = 0
+  private var trackAnimationDuration: CFTimeInterval = 0
+  private var trackAnimationFrom: CGFloat = 0
+  private var trackAnimationTo: CGFloat = 0
+  #if DEBUG && targetEnvironment(simulator)
+    private(set) var didRenderIntermediateTrackHeight = false
+  #endif
 
   override func trackRect(forBounds bounds: CGRect) -> CGRect {
     let track = super.trackRect(forBounds: bounds)
-    let height = min(bounds.height, isTracking ? activeTrackHeight : restingTrackHeight)
+    let height = min(bounds.height, displayedTrackHeight ??
+      (isTrackExpanded ? activeTrackHeight : restingTrackHeight))
     return CGRect(x: track.minX, y: bounds.midY - height / 2, width: track.width, height: height)
   }
+
+  override func beginTracking(_ touch: UITouch, with event: UIEvent?) -> Bool {
+    let accepted = super.beginTracking(touch, with: event)
+    setTrackExpanded(accepted)
+    return accepted
+  }
+
+  override func endTracking(_ touch: UITouch?, with event: UIEvent?) {
+    super.endTracking(touch, with: event)
+    setTrackExpanded(false)
+  }
+
+  override func continueTracking(_ touch: UITouch, with event: UIEvent?) -> Bool {
+    let continuing = super.continueTracking(touch, with: event)
+    if !continuing { setTrackExpanded(false) }
+    return continuing
+  }
+
+  override func cancelTracking(with event: UIEvent?) {
+    super.cancelTracking(with: event)
+    setTrackExpanded(false)
+  }
+
+  override var isEnabled: Bool {
+    didSet { if !isEnabled { setTrackExpanded(false) } }
+  }
+
+  override func didMoveToWindow() {
+    super.didMoveToWindow()
+    if window == nil { setTrackExpanded(false, animated: false) }
+  }
+
+  private func setTrackExpanded(_ expanded: Bool, animated: Bool = true) {
+    guard expanded != isTrackExpanded || !animated else { return }
+    let from = displayedTrackHeight ?? (isTrackExpanded ? activeTrackHeight : restingTrackHeight)
+    isTrackExpanded = expanded
+    let target = expanded ? activeTrackHeight : restingTrackHeight
+    trackAnimation?.invalidate()
+    trackAnimation = nil
+    guard animated, window != nil, !UIAccessibility.isReduceMotionEnabled,
+          abs(from - target) > 0.01 else {
+      displayedTrackHeight = nil
+      setNeedsLayout()
+      layoutIfNeeded()
+      return
+    }
+    // trackRect is a UIKit layout callback, not an animatable property. Drive
+    // its height on each display frame so the native track actually interpolates.
+    displayedTrackHeight = from
+    trackAnimationFrom = from
+    trackAnimationTo = target
+    #if DEBUG && targetEnvironment(simulator)
+      didRenderIntermediateTrackHeight = false
+    #endif
+    trackAnimationStart = CACurrentMediaTime()
+    trackAnimationDuration = expanded ? 0.16 : 0.24
+    let link = CADisplayLink(target: self, selector: #selector(updateTrackHeight(_:)))
+    link.preferredFrameRateRange = CAFrameRateRange(minimum: 60, maximum: 120, preferred: 120)
+    trackAnimation = link
+    link.add(to: .main, forMode: .common)
+  }
+
+  @objc private func updateTrackHeight(_ link: CADisplayLink) {
+    let progress = min(1, max(0, (CACurrentMediaTime() - trackAnimationStart) / trackAnimationDuration))
+    let eased = progress * progress * (3 - 2 * progress)
+    displayedTrackHeight = trackAnimationFrom + (trackAnimationTo - trackAnimationFrom) * CGFloat(eased)
+    setNeedsLayout()
+    CATransaction.begin()
+    CATransaction.setDisableActions(true)
+    layoutIfNeeded()
+    CATransaction.commit()
+    #if DEBUG && targetEnvironment(simulator)
+      if let displayedTrackHeight,
+         displayedTrackHeight > min(trackAnimationFrom, trackAnimationTo) + 0.5,
+         displayedTrackHeight < max(trackAnimationFrom, trackAnimationTo) - 0.5 {
+        didRenderIntermediateTrackHeight = true
+      }
+    #endif
+    if progress >= 1 {
+      link.invalidate()
+      trackAnimation = nil
+      displayedTrackHeight = nil
+    }
+  }
+
+  #if DEBUG && targetEnvironment(simulator)
+    func beginTrackingForSmoke() { setTrackExpanded(true) }
+  #endif
 }
 
 class SeekableTimeSlider: PlayerTrackSlider {

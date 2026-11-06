@@ -62,6 +62,10 @@ public class LibraryEntityImage: RoundedImage {
   private var imageLoadTask: Task<Void, Never>?
   private var requestedImagePath: String?
 
+  public static func preparedImage(at imagePath: String) -> UIImage? {
+    cache.object(forKey: imagePath as NSString)
+  }
+
   // Mini player, full player and visible cells share one disk read and decode.
   public static func loadPreparedImage(at imagePath: String) async -> UIImage? {
     if let image = cache.object(forKey: imagePath as NSString) { return image }

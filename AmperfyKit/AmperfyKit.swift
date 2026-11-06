@@ -192,9 +192,17 @@ public class AmperKit {
 
     playerDownloadPreparationHandler = PlayerDownloadPreparationHandler(
       playerStatus: playerData,
-      queueHandler: queueHandler,
+      musicPlayer: curPlayer,
+      storage: storage,
+      notificationHandler: notificationHandler,
       getPlayableDownloaderCB: { accountInfo in
         self.getMeta(accountInfo).playableDownloadManager
+      },
+      getArtworkDownloaderCB: { accountInfo in
+        self.getMeta(accountInfo).artworkDownloadManager
+      },
+      getLibrarySyncerCB: { accountInfo in
+        self.getMeta(accountInfo).librarySyncer
       }
     )
     curPlayer.addNotifier(notifier: playerDownloadPreparationHandler!)
