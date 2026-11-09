@@ -3,6 +3,11 @@ set -euo pipefail
 
 cd "$(dirname "$0")/.."
 mkdir -p build/validation
+# Hosted images can replace SDK headers without changing the Xcode version.
+# Cached Clang modules retain those headers' mtimes and cannot cross that update.
+rm -rf build/validation/DerivedData/ModuleCache.noindex \
+  build/validation/DerivedData/SDKStatCaches.noindex \
+  build/validation/DerivedData/Build/Intermediates.noindex/ExplicitPrecompiledModules
 # Older caches were touched by the project's recursive formatting build phase.
 # Restore only dependency checkout files; keep compiled products for reuse.
 for package in build/validation/DerivedData/SourcePackages/checkouts/*; do
