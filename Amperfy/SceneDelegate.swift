@@ -720,28 +720,122 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
               }
               if let controls = popup.controlView {
                 guard let seekSlider = controls.timeSlider as? PlayerTrackSlider else { return }
+                let seekBounds = seekSlider.bounds
+                @MainActor func checkSeekRelease(_ name: String) async throws -> Bool {
+                  var previous: CGFloat = 11
+                  var intermediate = false
+                  var heights = [CGFloat]()
+                  for _ in 0..<35 {
+                    try await Task.sleep(for: .milliseconds(10))
+                    let height = seekSlider.renderedTrackHeightForSmoke
+                    heights.append(height)
+                    guard height <= previous + 0.1, seekSlider.bounds == seekBounds,
+                          abs(seekSlider.trackRect(forBounds: seekBounds).height - 7) < 0.01 else {
+                      smokeLog("Seek \(name) changed native geometry or reversed its rendered motion"); return false
+                    }
+                    intermediate = intermediate || (height > 7.2 && height < 10.8)
+                    previous = height
+                  }
+                  guard abs(previous - 7) < 0.1,
+                        UIAccessibility.isReduceMotionEnabled || intermediate else {
+                    smokeLog("Seek \(name) did not render intermediate heights: \(heights)"); return false
+                  }
+                  smokeLog("Seek \(name) presentation heights: \(heights)")
+                  return true
+                }
                 seekSlider.beginTrackingForSmoke()
                 try await Task.sleep(for: .milliseconds(200))
-                guard abs(seekSlider.trackRect(forBounds: seekSlider.bounds).height - 11) < 0.5 else {
-                  smokeLog("Seek track did not expand while dragging"); return
+                guard abs(seekSlider.renderedTrackHeightForSmoke - 11) < 0.5,
+                      abs(seekSlider.trackRect(forBounds: seekBounds).height - 7) < 0.01 else {
+                  smokeLog("Seek track did not expand with fixed native geometry"); return
                 }
                 try await compositorScreenshot("player-seek-dragging.png")
                 seekSlider.endTracking(nil, with: nil)
-                try await Task.sleep(for: .milliseconds(270))
-                guard abs(seekSlider.trackRect(forBounds: seekSlider.bounds).height - 7) < 0.5,
-                      (UIAccessibility.isReduceMotionEnabled || seekSlider.didRenderIntermediateTrackHeight) else {
-                  smokeLog("Seek track jumped or stayed thick after releasing a drag"); return
-                }
+                guard try await checkSeekRelease("release") else { return }
                 try await compositorScreenshot("player-seek-released.png")
                 seekSlider.beginTrackingForSmoke()
                 try await Task.sleep(for: .milliseconds(200))
                 seekSlider.cancelTracking(with: nil)
-                try await Task.sleep(for: .milliseconds(270))
-                guard abs(seekSlider.trackRect(forBounds: seekSlider.bounds).height - 7) < 0.5,
-                      (UIAccessibility.isReduceMotionEnabled || seekSlider.didRenderIntermediateTrackHeight) else {
-                  smokeLog("Cancelled seek jumped or left the track expanded"); return
+                guard try await checkSeekRelease("cancel") else { return }
+                seekSlider.beginTrackingForSmoke()
+                try await Task.sleep(for: .milliseconds(45))
+                let reversalHeight = seekSlider.renderedTrackHeightForSmoke
+                seekSlider.cancelTracking(with: nil)
+                try await Task.sleep(for: .milliseconds(20))
+                guard seekSlider.renderedTrackHeightForSmoke <= reversalHeight + 0.2 else {
+                  smokeLog("Seek track jumped when reversing expansion"); return
                 }
-                smokeLog("Seek drag expanded the track; release and cancellation smoothly restored the resting height")
+                try await Task.sleep(for: .milliseconds(270))
+                guard abs(seekSlider.renderedTrackHeightForSmoke - 7) < 0.1 else {
+                  smokeLog("Seek motion failed to settle"); return
+                }
+                smokeLog("Seek compositor release, cancel and rapid reversal passed with fixed native geometry")
+                // A native slider on a flat plate makes compositor pixels measurable.
+                // Slow only this probe's layer clock so simctl can capture mid-release.
+                if !UIAccessibility.isReduceMotionEnabled, let probeWindow = seekSlider.window {
+                  let plate = UIView(frame: CGRect(x: 0, y: probeWindow.bounds.midY - 40,
+                    width: probeWindow.bounds.width, height: 80))
+                  plate.backgroundColor = .black
+                  plate.isUserInteractionEnabled = false
+                  let probe = PlayerTrackSlider(frame: CGRect(x: 40, y: 18,
+                    width: plate.bounds.width - 80, height: 44))
+                  probe.preferredBehavioralStyle = .pad
+                  probe.sliderStyle = .thumbless
+                  probe.minimumTrackTintColor = .green
+                  probe.maximumTrackTintColor = .green
+                  probe.value = 0.5
+                  plate.addSubview(probe)
+                  probeWindow.addSubview(plate)
+                  defer { plate.removeFromSuperview() }
+                  probe.layoutIfNeeded()
+                  @MainActor func greenTrackPixels(_ name: String) throws -> Int {
+                    guard let image = UIImage(contentsOfFile: URL.documentsDirectory
+                      .appendingPathComponent(name).path)?.cgImage else { return 0 }
+                    let width = image.width, height = image.height
+                    var pixels = [UInt8](repeating: 0, count: width * height * 4)
+                    let measured = pixels.withUnsafeMutableBytes { bytes -> Int in
+                      guard let context = CGContext(data: bytes.baseAddress, width: width, height: height,
+                        bitsPerComponent: 8, bytesPerRow: width * 4, space: CGColorSpaceCreateDeviceRGB(),
+                        bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue |
+                          CGBitmapInfo.byteOrder32Big.rawValue) else { return 0 }
+                      context.draw(image, in: CGRect(x: 0, y: 0, width: CGFloat(width), height: CGFloat(height)))
+                      let rgba = bytes.bindMemory(to: UInt8.self)
+                      let radius = Int(30 * CGFloat(height) / probeWindow.bounds.height)
+                      var longest = 0, run = 0
+                      for y in (height / 2 - radius)...(height / 2 + radius) {
+                        let offset = (y * width + width / 2) * 4
+                        if rgba[offset + 1] > 150, rgba[offset] < 100, rgba[offset + 2] < 100 {
+                          run += 1
+                          longest = max(longest, run)
+                        } else { run = 0 }
+                      }
+                      return longest
+                    }
+                    return measured
+                  }
+                  try await compositorScreenshot("player-seek-pixels-resting.png")
+                  let restingPixels = try greenTrackPixels("player-seek-pixels-resting.png")
+                  probe.beginTrackingForSmoke()
+                  try await Task.sleep(for: .milliseconds(300))
+                  try await compositorScreenshot("player-seek-pixels-active.png")
+                  let activePixels = try greenTrackPixels("player-seek-pixels-active.png")
+                  probe.layer.speed = 0.02
+                  probe.endTracking(nil, with: nil)
+                  try await Task.sleep(for: .seconds(1))
+                  try await compositorScreenshot("player-seek-pixels-releasing.png")
+                  let releasingPixels = try greenTrackPixels("player-seek-pixels-releasing.png")
+                  probe.isEnabled = false
+                  probe.layer.speed = 1
+                  probe.isEnabled = true
+                  try await compositorScreenshot("player-seek-pixels-released.png")
+                  let releasedPixels = try greenTrackPixels("player-seek-pixels-released.png")
+                  smokeLog("Seek compositor pixels: resting=\(restingPixels), active=\(activePixels), releasing=\(releasingPixels), released=\(releasedPixels)")
+                  guard restingPixels > 0, activePixels > restingPixels + 2,
+                        releasingPixels > restingPixels, releasingPixels < activePixels,
+                        abs(releasedPixels - restingPixels) <= 1 else {
+                    smokeLog("Seek compositor screenshots did not show a continuous thickness change"); return
+                  }
+                }
                 #if !targetEnvironment(macCatalyst)
                   let invalidVolumeDrag = RelativeVolumeDrag(value: 0.4, minimum: 0, maximum: 1, width: 0)
                   guard let drag = RelativeVolumeDrag(value: 0.4, minimum: 0, maximum: 1, width: 200),
