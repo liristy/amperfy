@@ -152,7 +152,7 @@ class MiniPlayerView: UIView, UIGestureRecognizerDelegate {
   }
 
   @objc
-  func timeSliderChanged(_ slider: UISlider) {
+  func timeSliderChanged(_ slider: PlayerTrackSlider) {
     playerHandler?.timeSliderChanged(timeSlider: timeSlider)
   }
 

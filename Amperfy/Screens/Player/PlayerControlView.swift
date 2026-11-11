@@ -258,7 +258,7 @@ class PlayerControlView: UIView {
   weak var skipForwardButton: UIButton!
 
   @IBOutlet
-  weak var timeSlider: UISlider!
+  weak var timeSlider: PlayerTrackSlider!
   @IBOutlet
   weak var elapsedTimeLabel: UILabel!
   @IBOutlet
@@ -350,6 +350,7 @@ class PlayerControlView: UIView {
     loudSpeaker.isAccessibilityElement = false
     volumeSlider.translatesAutoresizingMaskIntoConstraints = false
     #if targetEnvironment(macCatalyst)
+      volumeSlider.activeTrackHeight = 11
       volumeSlider.minimumValue = 0
       volumeSlider.maximumValue = 1
       volumeSlider.value = player.volume

@@ -76,6 +76,7 @@ struct RelativeVolumeDrag {
   }
 
   final class DragOnlySystemVolumeView: UIView, UIGestureRecognizerDelegate {
+    static let activeTrackScale: CGFloat = 11.0 / 7.0
     private let systemVolume = LayoutReportingSystemVolumeView(frame: .zero)
     private let trackPresentation = UIView()
     private let touchSurface = VolumeTouchSurface()
@@ -259,8 +260,7 @@ struct RelativeVolumeDrag {
       let expanded = isTrackExpansionEnabled && (isTouchPressed || volumeDrag != nil)
       guard expanded != isTrackExpanded else { return }
       isTrackExpanded = expanded
-      let scale = expanded ? PlayerTrackSlider.standardActiveTrackHeight /
-        PlayerTrackSlider.standardRestingTrackHeight : 1
+      let scale = expanded ? Self.activeTrackScale : 1
       let transform = CGAffineTransform(scaleX: 1, y: scale)
       guard window != nil, !UIAccessibility.isReduceMotionEnabled else {
         trackPresentation.layer.removeAllAnimations()
@@ -286,83 +286,251 @@ struct RelativeVolumeDrag {
   }
 #endif
 
-class PlayerTrackSlider: UISlider {
-  static let standardRestingTrackHeight: CGFloat = 7
-  static let standardActiveTrackHeight: CGFloat = 11
-  var restingTrackHeight: CGFloat = PlayerTrackSlider.standardRestingTrackHeight
-  var activeTrackHeight: CGFloat = PlayerTrackSlider.standardActiveTrackHeight
-  private var isTrackExpanded = false
-  private static let trackAnimationKey = "player-track-expansion"
+// Consume touches before they reach UISlider's own thumbless press animation.
+// The native slider is a sibling, so its gesture recognizers cannot observe these touches.
+private final class SliderTouchSurface: UIView {
+  weak var slider: PlayerTrackSlider?
+
+  override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent?) {
+    guard let touch = touches.first else { return }
+    _ = slider?.beginTracking(touch, with: event)
+  }
+
+  override func touchesMoved(_ touches: Set<UITouch>, with event: UIEvent?) {
+    guard let touch = touches.first, slider?.isTracking == true else { return }
+    _ = slider?.continueTracking(touch, with: event)
+  }
+
+  override func touchesEnded(_ touches: Set<UITouch>, with event: UIEvent?) {
+    guard slider?.isTracking == true else { return }
+    slider?.endTracking(touches.first, with: event)
+  }
+
+  override func touchesCancelled(_ touches: Set<UITouch>, with event: UIEvent?) {
+    slider?.cancelTracking(with: event)
+  }
+}
+
+private final class FixedTrackSlider: UISlider {
+  var restingTrackHeight: CGFloat = 7
 
   override func trackRect(forBounds bounds: CGRect) -> CGRect {
     let track = super.trackRect(forBounds: bounds)
     let height = min(bounds.height, restingTrackHeight)
     return CGRect(x: track.minX, y: bounds.midY - height / 2, width: track.width, height: height)
   }
+}
+
+class PlayerTrackSlider: UIControl {
+  static let standardRestingTrackHeight: CGFloat = 7
+  static let standardActiveTrackHeight: CGFloat = 8.5
+  var restingTrackHeight: CGFloat = PlayerTrackSlider.standardRestingTrackHeight {
+    didSet { nativeSlider.restingTrackHeight = restingTrackHeight; nativeSlider.setNeedsLayout() }
+  }
+  var activeTrackHeight: CGFloat = PlayerTrackSlider.standardActiveTrackHeight
+  private var isTrackExpanded = false
+  private var scrubStartValue: Float?
+  private var lastTouchLocation = CGPoint.zero
+  private let nativeSlider = FixedTrackSlider()
+  private let trackPresentation = UIView()
+  private let touchSurface = SliderTouchSurface()
+
+  var value: Float {
+    get { nativeSlider.value }
+    set { nativeSlider.value = newValue }
+  }
+  var minimumValue: Float {
+    get { nativeSlider.minimumValue }
+    set { nativeSlider.minimumValue = newValue }
+  }
+  var maximumValue: Float {
+    get { nativeSlider.maximumValue }
+    set { nativeSlider.maximumValue = newValue }
+  }
+  var isContinuous: Bool = true
+  var minimumTrackTintColor: UIColor? {
+    get { nativeSlider.minimumTrackTintColor }
+    set { nativeSlider.minimumTrackTintColor = newValue }
+  }
+  var maximumTrackTintColor: UIColor? {
+    get { nativeSlider.maximumTrackTintColor }
+    set { nativeSlider.maximumTrackTintColor = newValue }
+  }
+  var preferredBehavioralStyle: UIBehavioralStyle {
+    get { nativeSlider.preferredBehavioralStyle }
+    set { nativeSlider.preferredBehavioralStyle = newValue }
+  }
+  var sliderStyle: UISlider.Style {
+    get { nativeSlider.sliderStyle }
+    set { nativeSlider.sliderStyle = newValue }
+  }
+
+  func setValue(_ value: Float, animated: Bool) { nativeSlider.setValue(value, animated: animated) }
+
+  override var accessibilityLabel: String? {
+    didSet { nativeSlider.accessibilityLabel = accessibilityLabel }
+  }
+
+  override init(frame: CGRect) {
+    super.init(frame: frame)
+    configureTouchSurface()
+  }
+
+  required init?(coder: NSCoder) {
+    super.init(coder: coder)
+    configureTouchSurface()
+  }
+
+  private func configureTouchSurface() {
+    isAccessibilityElement = false
+    nativeSlider.isAccessibilityElement = true
+    nativeSlider.addTarget(self, action: #selector(nativeValueChanged), for: .valueChanged)
+    trackPresentation.addSubview(nativeSlider)
+    addSubview(trackPresentation)
+    touchSurface.slider = self
+    touchSurface.isAccessibilityElement = false
+    touchSurface.backgroundColor = .clear
+    addSubview(touchSurface)
+  }
+
+  @objc private func nativeValueChanged() {
+    // Keep VoiceOver's native adjustable control and its value announcements.
+    sendActions(for: .valueChanged)
+  }
+
+  override func layoutSubviews() {
+    super.layoutSubviews()
+    trackPresentation.bounds = bounds
+    trackPresentation.center = CGPoint(x: bounds.midX, y: bounds.midY)
+    nativeSlider.frame = trackPresentation.bounds
+    touchSurface.frame = bounds
+    bringSubviewToFront(touchSurface)
+  }
+
+  override func hitTest(_ point: CGPoint, with event: UIEvent?) -> UIView? {
+    guard isEnabled, isUserInteractionEnabled, !isHidden, alpha > 0.01,
+          self.point(inside: point, with: event) else { return nil }
+    return touchSurface
+  }
+
+  // Playback refresh and the player's dismissal gesture must see our drag even
+  // though the native slider only displays values and remains unpressed.
+  override var isTracking: Bool { scrubStartValue != nil }
+
+  func trackRect(forBounds bounds: CGRect) -> CGRect { nativeSlider.trackRect(forBounds: bounds) }
 
   override func beginTracking(_ touch: UITouch, with event: UIEvent?) -> Bool {
-    let accepted = super.beginTracking(touch, with: event)
-    setTrackExpanded(accepted)
-    return accepted
+    beginScrubbing(at: touch.location(in: self))
   }
 
   override func endTracking(_ touch: UITouch?, with event: UIEvent?) {
-    super.endTracking(touch, with: event)
-    setTrackExpanded(false)
+    finishScrubbing(at: touch?.location(in: self), cancelled: false)
   }
 
   override func continueTracking(_ touch: UITouch, with event: UIEvent?) -> Bool {
-    let continuing = super.continueTracking(touch, with: event)
-    if !continuing { setTrackExpanded(false) }
-    return continuing
+    continueScrubbing(at: touch.location(in: self))
   }
 
   override func cancelTracking(with event: UIEvent?) {
-    super.cancelTracking(with: event)
-    setTrackExpanded(false)
+    finishScrubbing(cancelled: true)
+  }
+
+  private func beginScrubbing(at point: CGPoint) -> Bool {
+    guard isEnabled, maximumValue > minimumValue,
+          trackRect(forBounds: bounds).width > 0 else { return false }
+    scrubStartValue = value
+    lastTouchLocation = point
+    setTrackExpanded(true)
+    sendActions(for: .touchDown)
+    updateScrubValue(at: point)
+    sendActions(for: .touchDragInside)
+    return true
+  }
+
+  private func continueScrubbing(at point: CGPoint) -> Bool {
+    guard isTracking, isEnabled else { return false }
+    lastTouchLocation = point
+    updateScrubValue(at: point)
+    sendActions(for: bounds.contains(point) ? .touchDragInside : .touchDragOutside)
+    return true
+  }
+
+  private func updateScrubValue(at point: CGPoint) {
+    let track = trackRect(forBounds: bounds)
+    guard track.width > 0, point.x.isFinite else { return }
+    var fraction = min(1, max(0, (point.x - track.minX) / track.width))
+    if effectiveUserInterfaceLayoutDirection == .rightToLeft { fraction = 1 - fraction }
+    let nextValue = minimumValue + Float(fraction) * (maximumValue - minimumValue)
+    guard nextValue != value else { return }
+    setValue(nextValue, animated: false)
+    if isContinuous { sendActions(for: .valueChanged) }
+  }
+
+  private func finishScrubbing(at point: CGPoint? = nil, cancelled: Bool, animated: Bool = true) {
+    if let initialValue = scrubStartValue {
+      if cancelled {
+        if !isContinuous {
+          setValue(initialValue, animated: false)
+          sendActions(for: .touchDragInside)
+        }
+      } else if let point {
+        lastTouchLocation = point
+        updateScrubValue(at: point)
+      }
+      scrubStartValue = nil
+      if !cancelled, !isContinuous { sendActions(for: .valueChanged) }
+      let completion: UIControl.Event = cancelled ? .touchCancel :
+        (bounds.contains(lastTouchLocation) ? .touchUpInside : .touchUpOutside)
+      sendActions(for: completion)
+    }
+    setTrackExpanded(false, animated: animated)
   }
 
   override var isEnabled: Bool {
-    didSet { if !isEnabled { setTrackExpanded(false, animated: false) } }
+    didSet {
+      nativeSlider.isEnabled = isEnabled
+      if !isEnabled { finishScrubbing(cancelled: true, animated: false) }
+    }
   }
 
   override func didMoveToWindow() {
     super.didMoveToWindow()
-    if window == nil { setTrackExpanded(false, animated: false) }
+    if window == nil { finishScrubbing(cancelled: true, animated: false) }
   }
 
   private func setTrackExpanded(_ expanded: Bool, animated: Bool = true) {
     guard expanded != isTrackExpanded || !animated else { return }
     isTrackExpanded = expanded
-    let from = (layer.presentation() ?? layer).sublayerTransform
     let restingHeight = min(bounds.height, restingTrackHeight)
     let activeHeight = min(bounds.height, activeTrackHeight)
     let scale = expanded && restingHeight > 0 ? activeHeight / restingHeight : 1
-    let target = CATransform3DMakeScale(1, scale, 1)
-
-    // Keep UIKit's track geometry fixed. The render server scales its contents
-    // around the track's center without relaying out the native slider per frame.
-    layer.removeAnimation(forKey: Self.trackAnimationKey)
-    CATransaction.begin()
-    CATransaction.setDisableActions(true)
-    layer.sublayerTransform = target
-    CATransaction.commit()
-    guard animated, window != nil, !UIAccessibility.isReduceMotionEnabled,
-          abs(from.m22 - scale) > 0.001 else { return }
-
-    let animation = CABasicAnimation(keyPath: "sublayerTransform")
-    animation.fromValue = NSValue(caTransform3D: from)
-    animation.toValue = NSValue(caTransform3D: target)
-    animation.duration = expanded ? 0.14 : 0.24
-    animation.timingFunction = CAMediaTimingFunction(name: .easeOut)
-    layer.add(animation, forKey: Self.trackAnimationKey)
+    let target = CGAffineTransform(scaleX: 1, y: scale)
+    guard animated, window != nil, !UIAccessibility.isReduceMotionEnabled else {
+      trackPresentation.layer.removeAllAnimations()
+      trackPresentation.transform = target
+      return
+    }
+    // Match the volume control's outer-view animation and interruption behavior.
+    // Native track geometry and horizontal touch coordinates remain unchanged.
+    UIView.animate(withDuration: expanded ? 0.16 : 0.2, delay: 0,
+      options: [.beginFromCurrentState, .allowUserInteraction, .curveEaseInOut]) {
+      self.trackPresentation.transform = target
+    }
   }
 
   #if DEBUG && targetEnvironment(simulator)
-    func beginTrackingForSmoke() { setTrackExpanded(true) }
+    func beginTrackingForSmoke(at point: CGPoint? = nil) {
+      let track = trackRect(forBounds: bounds)
+      var fraction = CGFloat((value - minimumValue) / max(0.001, maximumValue - minimumValue))
+      if effectiveUserInterfaceLayoutDirection == .rightToLeft { fraction = 1 - fraction }
+      _ = beginScrubbing(at: point ?? CGPoint(x: track.minX + track.width * fraction, y: track.midY))
+    }
+
+    func continueTrackingForSmoke(at point: CGPoint) { _ = continueScrubbing(at: point) }
+    var isNativeTrackingForSmoke: Bool { nativeSlider.isTracking || nativeSlider.isHighlighted }
 
     var renderedTrackHeightForSmoke: CGFloat {
-      let scale = (layer.presentation() ?? layer).sublayerTransform.m22
+      let scale = (trackPresentation.layer.presentation() ?? trackPresentation.layer).transform.m22
       return trackRect(forBounds: bounds).height * scale
     }
   #endif
@@ -371,6 +539,16 @@ class PlayerTrackSlider: UISlider {
 class SeekableTimeSlider: PlayerTrackSlider {
   static let verticalHitAreaExpansion: CGFloat = 20
   static let horizontalHitAreaExpansion: CGFloat = 8
+
+  override init(frame: CGRect) {
+    super.init(frame: frame)
+    isContinuous = false
+  }
+
+  required init?(coder: NSCoder) {
+    super.init(coder: coder)
+    isContinuous = false
+  }
 
   override func point(inside point: CGPoint, with event: UIEvent?) -> Bool {
     let expandedBounds = bounds.inset(
