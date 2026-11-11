@@ -34,8 +34,7 @@ final class PlayerTransportButton: UIButton {
   private var symbolIdentifier: String?
   private var symbolAnimator: UIViewPropertyAnimator?
   private var symbolTransitionID = UUID()
-  private var skipOverlay: UIView?
-  private var skipAnimationID = UUID()
+  private static let activationAnimationKey = "player-transport-activation"
 
   override func awakeFromNib() {
     super.awakeFromNib()
@@ -63,7 +62,6 @@ final class PlayerTransportButton: UIButton {
     symbolContainer.center = pressDisc.center
     symbolView.bounds = symbolContainer.bounds
     symbolView.center = CGPoint(x: symbolContainer.bounds.midX, y: symbolContainer.bounds.midY)
-    skipOverlay?.center = pressDisc.center
   }
 
   override var isHighlighted: Bool {
@@ -82,6 +80,7 @@ final class PlayerTransportButton: UIButton {
 
   func renderSymbol(_ image: UIImage, identifier: String) {
     guard symbolIdentifier != identifier else { return }
+    symbolView.layer.removeAnimation(forKey: Self.activationAnimationKey)
     let animated = symbolIdentifier != nil && window != nil && !UIAccessibility.isReduceMotionEnabled
     symbolIdentifier = identifier
     let transitionID = UUID()
@@ -131,44 +130,31 @@ final class PlayerTransportButton: UIButton {
     UIView.animate(withDuration: 0.3, delay: 0.05, options: [.allowUserInteraction, .beginFromCurrentState]) {
       self.pressDisc.alpha = 0
     }
-    guard direction != 0, !UIAccessibility.isReduceMotionEnabled,
+    guard window != nil, !UIAccessibility.isReduceMotionEnabled,
           let image = symbolView.image else { return }
-    skipOverlay?.removeFromSuperview()
-    let animationID = UUID()
-    skipAnimationID = animationID
-    let overlay = UIView(frame: CGRect(origin: .zero, size: image.size))
-    overlay.center = pressDisc.center
-    overlay.clipsToBounds = true
-    overlay.isUserInteractionEnabled = false
-    let slotWidth = image.size.width / 2
-    var triangles: [UIImageView] = []
-    for slot in -1...1 {
-      let triangle = UIImageView(image: UIImage(systemName: "play.fill"))
-      triangle.tintColor = .white
-      triangle.contentMode = .scaleAspectFit
-      triangle.frame = CGRect(x: CGFloat(slot) * slotWidth, y: 0, width: slotWidth, height: image.size.height)
-      if direction < 0 {
-        triangle.frame.origin.x = CGFloat(slot + 1) * slotWidth
-        triangle.transform = CGAffineTransform(rotationAngle: .pi)
-      }
-      overlay.addSubview(triangle)
-      triangles.append(triangle)
-    }
-    addSubview(overlay)
-    skipOverlay = overlay
-    symbolView.alpha = 0
-    UIView.animate(withDuration: 0.26, delay: 0, options: [.curveEaseOut, .allowUserInteraction]) {
-      for triangle in triangles { triangle.center.x += direction * slotWidth }
-    } completion: { [weak self, weak overlay] _ in
-      overlay?.removeFromSuperview()
-      guard let self, skipAnimationID == animationID else { return }
-      skipOverlay = nil
-      symbolView.alpha = 1
-    }
+    // Animate the original SF Symbol as one rigid glyph. Rebuilding its halves
+    // changes their spacing and weight, and clipping makes a third triangle flash.
+    let from = (symbolView.layer.presentation() ?? symbolView.layer).transform
+    let offset = (direction < 0 ? -1.0 : 1.0) * min(3, image.size.width * 0.1)
+    let impulse = CATransform3DScale(CATransform3DMakeTranslation(offset, 0, 0), 0.9, 0.9, 1)
+    let animation = CAKeyframeAnimation(keyPath: "transform")
+    animation.values = [NSValue(caTransform3D: from), NSValue(caTransform3D: impulse),
+                        NSValue(caTransform3D: CATransform3DIdentity)]
+    animation.keyTimes = [0, 0.32, 1]
+    animation.timingFunctions = [CAMediaTimingFunction(name: .easeOut),
+                                 CAMediaTimingFunction(name: .easeInEaseOut)]
+    animation.duration = 0.28
+    // The model stays centered; a rapid tap continues from the rendered position.
+    symbolView.layer.add(animation, forKey: Self.activationAnimationKey)
+  }
+
+  override func didMoveToWindow() {
+    super.didMoveToWindow()
+    if window == nil { symbolView.layer.removeAnimation(forKey: Self.activationAnimationKey) }
   }
 
   #if DEBUG && targetEnvironment(simulator)
-    var isRenderedSymbolSettled: Bool {
+    private var isCurrentSymbolImage: Bool {
       func pixels(_ image: UIImage?) -> Data? {
         guard let image else { return nil }
         return UIGraphicsImageRenderer(size: bounds.size).image { _ in
@@ -177,11 +163,49 @@ final class PlayerTransportButton: UIButton {
         }.pngData()
       }
       guard let rendered = pixels(symbolView.image), let expected = pixels(image(for: .normal)) else { return false }
-      return rendered == expected && symbolAnimator == nil &&
+      return rendered == expected
+    }
+
+    var isRenderedSymbolSettled: Bool {
+      isCurrentSymbolImage && symbolAnimator == nil &&
+        symbolView.layer.animation(forKey: Self.activationAnimationKey) == nil &&
         symbolView.alpha == 1 && symbolView.transform == .identity &&
         symbolContainer.transform == .identity &&
         abs(symbolView.center.x - symbolContainer.bounds.midX) < 0.5 &&
         abs(symbolView.center.y - symbolContainer.bounds.midY) < 0.5
+    }
+
+    func verifyActivationForSmoke(direction: CGFloat, filename: String) async throws -> Bool {
+      let originalBounds = bounds
+      var frames = [UIImage]()
+      var sawMotion = false
+      for _ in 0..<12 {
+        try await Task.sleep(for: .milliseconds(25))
+        let rendered = (symbolView.layer.presentation() ?? symbolView.layer).transform
+        sawMotion = sawMotion || abs(rendered.m41) > 0.1 || abs(rendered.m11 - 1) > 0.01
+        guard bounds == originalBounds, isCurrentSymbolImage, symbolView.alpha == 1,
+              abs(rendered.m42) < 0.1, abs(rendered.m11 - rendered.m22) < 0.01 else { return false }
+        frames.append(UIGraphicsImageRenderer(size: bounds.size).image { _ in
+          drawHierarchy(in: bounds, afterScreenUpdates: false)
+        })
+      }
+      guard UIAccessibility.isReduceMotionEnabled || sawMotion, isRenderedSymbolSettled else { return false }
+      let gridSize = CGSize(width: bounds.width * 6, height: bounds.height * 2)
+      let grid = UIGraphicsImageRenderer(size: gridSize).image { context in
+        UIColor.darkGray.setFill()
+        context.fill(CGRect(origin: .zero, size: gridSize))
+        for (index, frame) in frames.enumerated() {
+          frame.draw(at: CGPoint(x: CGFloat(index % 6) * bounds.width,
+                                y: CGFloat(index / 6) * bounds.height))
+        }
+      }
+      try grid.pngData()?.write(to: URL.documentsDirectory.appendingPathComponent(filename))
+      for _ in 0..<6 {
+        animateActivation(direction: direction)
+        try await Task.sleep(for: .milliseconds(35))
+      }
+      try await Task.sleep(for: .milliseconds(400))
+      return isRenderedSymbolSettled
     }
   #endif
 }

@@ -418,6 +418,11 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
                   descendants(of: window).first { $0.accessibilityIdentifier == "player-surface-transition-artwork" }
                 }
               }
+              func flyingShadow() -> UIView? {
+                miniPlayer.window.flatMap { window in
+                  descendants(of: window).first { $0.accessibilityIdentifier == "player-surface-transition-shadow" }
+                }
+              }
               func renderedSurface(_ popup: PopupPlayerVC) -> CGRect? {
                 guard let maskView = popup.view.mask else { return nil }
                 let page = popup.view.layer.presentation() ?? popup.view.layer
@@ -441,7 +446,7 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
               guard vc.presentedViewController !== cancelledPopup,
                     cancelledPopup.presentingViewController == nil, cancelledPopup.view.mask == nil,
                     miniPlayer.glassContainer.layer.opacity == 1,
-                    miniPlayer.artworkImage.layer.opacity == 1, flyingCover() == nil else {
+                    miniPlayer.artworkImage.layer.opacity == 1, flyingCover() == nil, flyingShadow() == nil else {
                 smokeLog("Cancelled upward expansion did not restore mini player")
                 return
               }
@@ -487,6 +492,18 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
                 smokeLog("A refresh exposed the real cover during paused opening")
                 return
               }
+              if let shadow = flyingShadow(), let cover = flyingCover(),
+                 let realShadow = pausedPopup.largeCurrentlyPlayingView?.transitionArtworkShadow {
+                let rendered = shadow.layer.presentation() ?? shadow.layer
+                if rendered.shadowOpacity <= 0.01 || rendered.shadowOpacity >= realShadow.layer.shadowOpacity ||
+                     abs(rendered.frame.width - cover.frame.width) > 0.5 || rendered.shadowPath == nil {
+                  smokeLog("Opening cover shadow did not fade and scale with the flying cover")
+                  playerPolishChecksPassed = false
+                }
+              } else {
+                smokeLog("Opening cover has no in-flight shadow")
+                playerPolishChecksPassed = false
+              }
               guard PlayerControlView.audioOutputSymbol(portType: .bluetoothA2DP, portName: "Renamed",
                                                         preferredSymbol: "airpods.gen3") == "airpods.gen3",
                     PlayerControlView.audioOutputSymbol(portType: .builtInSpeaker, portName: "iPhone",
@@ -507,7 +524,8 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
               miniPlayer.endPlayerExpansion(translation: pausedDistance * 0.85, velocity: 850)
               try await Task.sleep(for: .seconds(1))
               guard hiddenCover.mask == nil, miniPlayer.artworkImage.mask == nil,
-                    abs(hiddenCover.transform.a - 0.74) < 0.01, flyingCover() == nil else {
+                    abs(hiddenCover.transform.a - 0.74) < 0.01, flyingCover() == nil, flyingShadow() == nil,
+                    pausedPopup.largeCurrentlyPlayingView?.transitionArtworkShadow?.mask == nil else {
                 smokeLog("Paused opening did not hand off to the real scaled cover")
                 return
               }
@@ -538,7 +556,8 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
                     miniPlayer.glassContainer.alpha == 1, miniPlayer.glassContainer.transform == .identity,
                     pausedPopup.controlPlaceholderView.mask == nil,
                     hiddenCover.mask == nil, miniPlayer.artworkImage.mask == nil,
-                    flyingCover() == nil else {
+                    flyingCover() == nil, flyingShadow() == nil,
+                    pausedPopup.largeCurrentlyPlayingView?.transitionArtworkShadow?.mask == nil else {
                 smokeLog("Reversing the final closing phase did not restore all content masks")
                 return
               }
@@ -700,6 +719,123 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
                 return
               }
               if let controls = popup.controlView {
+                guard let seekSlider = controls.timeSlider as? PlayerTrackSlider else { return }
+                let seekBounds = seekSlider.bounds
+                @MainActor func checkSeekRelease(_ name: String) async throws -> Bool {
+                  var previous: CGFloat = 11
+                  var intermediate = false
+                  var heights = [CGFloat]()
+                  for _ in 0..<35 {
+                    try await Task.sleep(for: .milliseconds(10))
+                    let height = seekSlider.renderedTrackHeightForSmoke
+                    heights.append(height)
+                    guard height <= previous + 0.1, seekSlider.bounds == seekBounds,
+                          abs(seekSlider.trackRect(forBounds: seekBounds).height - 7) < 0.01 else {
+                      smokeLog("Seek \(name) changed native geometry or reversed its rendered motion"); return false
+                    }
+                    intermediate = intermediate || (height > 7.2 && height < 10.8)
+                    previous = height
+                  }
+                  guard abs(previous - 7) < 0.1,
+                        UIAccessibility.isReduceMotionEnabled || intermediate else {
+                    smokeLog("Seek \(name) did not render intermediate heights: \(heights)"); return false
+                  }
+                  smokeLog("Seek \(name) presentation heights: \(heights)")
+                  return true
+                }
+                seekSlider.beginTrackingForSmoke()
+                try await Task.sleep(for: .milliseconds(200))
+                guard abs(seekSlider.renderedTrackHeightForSmoke - 11) < 0.5,
+                      abs(seekSlider.trackRect(forBounds: seekBounds).height - 7) < 0.01 else {
+                  smokeLog("Seek track did not expand with fixed native geometry"); return
+                }
+                try await compositorScreenshot("player-seek-dragging.png")
+                seekSlider.endTracking(nil, with: nil)
+                guard try await checkSeekRelease("release") else { return }
+                try await compositorScreenshot("player-seek-released.png")
+                seekSlider.beginTrackingForSmoke()
+                try await Task.sleep(for: .milliseconds(200))
+                seekSlider.cancelTracking(with: nil)
+                guard try await checkSeekRelease("cancel") else { return }
+                seekSlider.beginTrackingForSmoke()
+                try await Task.sleep(for: .milliseconds(45))
+                let reversalHeight = seekSlider.renderedTrackHeightForSmoke
+                seekSlider.cancelTracking(with: nil)
+                try await Task.sleep(for: .milliseconds(20))
+                guard seekSlider.renderedTrackHeightForSmoke <= reversalHeight + 0.2 else {
+                  smokeLog("Seek track jumped when reversing expansion"); return
+                }
+                try await Task.sleep(for: .milliseconds(270))
+                guard abs(seekSlider.renderedTrackHeightForSmoke - 7) < 0.1 else {
+                  smokeLog("Seek motion failed to settle"); return
+                }
+                smokeLog("Seek compositor release, cancel and rapid reversal passed with fixed native geometry")
+                // A native slider on a flat plate makes compositor pixels measurable.
+                // Slow only this probe's layer clock so simctl can capture mid-release.
+                if !UIAccessibility.isReduceMotionEnabled, let probeWindow = seekSlider.window {
+                  let plate = UIView(frame: CGRect(x: 0, y: probeWindow.bounds.midY - 40,
+                    width: probeWindow.bounds.width, height: 80))
+                  plate.backgroundColor = .black
+                  plate.isUserInteractionEnabled = false
+                  let probe = PlayerTrackSlider(frame: CGRect(x: 40, y: 18,
+                    width: plate.bounds.width - 80, height: 44))
+                  probe.preferredBehavioralStyle = .pad
+                  probe.sliderStyle = .thumbless
+                  probe.minimumTrackTintColor = .green
+                  probe.maximumTrackTintColor = .green
+                  probe.value = 0.5
+                  plate.addSubview(probe)
+                  probeWindow.addSubview(plate)
+                  defer { plate.removeFromSuperview() }
+                  probe.layoutIfNeeded()
+                  @MainActor func greenTrackPixels(_ name: String) throws -> Int {
+                    guard let image = UIImage(contentsOfFile: URL.documentsDirectory
+                      .appendingPathComponent(name).path)?.cgImage else { return 0 }
+                    let width = image.width, height = image.height
+                    var pixels = [UInt8](repeating: 0, count: width * height * 4)
+                    let measured = pixels.withUnsafeMutableBytes { bytes -> Int in
+                      guard let context = CGContext(data: bytes.baseAddress, width: width, height: height,
+                        bitsPerComponent: 8, bytesPerRow: width * 4, space: CGColorSpaceCreateDeviceRGB(),
+                        bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue |
+                          CGBitmapInfo.byteOrder32Big.rawValue) else { return 0 }
+                      context.draw(image, in: CGRect(x: 0, y: 0, width: CGFloat(width), height: CGFloat(height)))
+                      let rgba = bytes.bindMemory(to: UInt8.self)
+                      let radius = Int(30 * CGFloat(height) / probeWindow.bounds.height)
+                      var longest = 0, run = 0
+                      for y in (height / 2 - radius)...(height / 2 + radius) {
+                        let offset = (y * width + width / 2) * 4
+                        if rgba[offset + 1] > 150, rgba[offset] < 100, rgba[offset + 2] < 100 {
+                          run += 1
+                          longest = max(longest, run)
+                        } else { run = 0 }
+                      }
+                      return longest
+                    }
+                    return measured
+                  }
+                  try await compositorScreenshot("player-seek-pixels-resting.png")
+                  let restingPixels = try greenTrackPixels("player-seek-pixels-resting.png")
+                  probe.beginTrackingForSmoke()
+                  try await Task.sleep(for: .milliseconds(300))
+                  try await compositorScreenshot("player-seek-pixels-active.png")
+                  let activePixels = try greenTrackPixels("player-seek-pixels-active.png")
+                  probe.layer.speed = 0.02
+                  probe.endTracking(nil, with: nil)
+                  try await Task.sleep(for: .seconds(1))
+                  try await compositorScreenshot("player-seek-pixels-releasing.png")
+                  let releasingPixels = try greenTrackPixels("player-seek-pixels-releasing.png")
+                  probe.isEnabled = false
+                  probe.layer.speed = 1
+                  probe.isEnabled = true
+                  try await compositorScreenshot("player-seek-pixels-released.png")
+                  let releasedPixels = try greenTrackPixels("player-seek-pixels-released.png")
+                  smokeLog("Seek compositor pixels: resting=\(restingPixels), active=\(activePixels), releasing=\(releasingPixels), released=\(releasedPixels)")
+                  guard restingPixels > 0, activePixels > restingPixels + 2,
+                        releasingPixels > restingPixels, releasingPixels < activePixels,
+                        abs(releasedPixels - restingPixels) <= 1 else {
+                    smokeLog("Seek compositor screenshots did not show a continuous thickness change"); return
+                  }
+                }
                 #if !targetEnvironment(macCatalyst)
                   let invalidVolumeDrag = RelativeVolumeDrag(value: 0.4, minimum: 0, maximum: 1, width: 0)
                   guard let drag = RelativeVolumeDrag(value: 0.4, minimum: 0, maximum: 1, width: 200),
@@ -905,7 +1041,12 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
               guard self.appDelegate.player.elapsedTime >= 41 else { return }
               // Exercise real transport actions and the server-empty local fallback.
               controls.previousButtonPushed(controls.previousButton as Any)
-              try await Task.sleep(for: .milliseconds(70))
+              guard let previousTransport = controls.previousButton as? PlayerTransportButton,
+                    try await previousTransport.verifyActivationForSmoke(direction: -1,
+                      filename: "player-transport-previous-frames.png") else {
+                smokeLog("Previous symbol changed shape or failed to settle after rapid activation")
+                return
+              }
               try await compositorScreenshot("player-transport-previous-transition.png")
               self.appDelegate.player.setAutoplayEnabled(false)
               self.appDelegate.player.setRepeatMode(.off)
@@ -913,7 +1054,13 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
               try await Task.sleep(for: .milliseconds(700))
               self.appDelegate.player.seek(toSecond: 42)
               controls.nextButtonPushed(controls.nextButton as Any)
-              try await Task.sleep(for: .milliseconds(70))
+              guard let nextTransport = controls.nextButton as? PlayerTransportButton,
+                    try await nextTransport.verifyActivationForSmoke(direction: 1,
+                      filename: "player-transport-next-frames.png") else {
+                smokeLog("Next symbol changed shape or failed to settle after rapid activation")
+                return
+              }
+              smokeLog("Previous/next whole symbols preserved shape and settled after rapid activation")
               try await compositorScreenshot("player-transport-next-transition.png")
               try await Task.sleep(for: .milliseconds(500))
               guard !self.appDelegate.player.isPlaying,

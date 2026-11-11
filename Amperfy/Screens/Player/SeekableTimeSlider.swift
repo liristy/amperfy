@@ -291,12 +291,81 @@ class PlayerTrackSlider: UISlider {
   static let standardActiveTrackHeight: CGFloat = 11
   var restingTrackHeight: CGFloat = PlayerTrackSlider.standardRestingTrackHeight
   var activeTrackHeight: CGFloat = PlayerTrackSlider.standardActiveTrackHeight
+  private var isTrackExpanded = false
+  private static let trackAnimationKey = "player-track-expansion"
 
   override func trackRect(forBounds bounds: CGRect) -> CGRect {
     let track = super.trackRect(forBounds: bounds)
-    let height = min(bounds.height, isTracking ? activeTrackHeight : restingTrackHeight)
+    let height = min(bounds.height, restingTrackHeight)
     return CGRect(x: track.minX, y: bounds.midY - height / 2, width: track.width, height: height)
   }
+
+  override func beginTracking(_ touch: UITouch, with event: UIEvent?) -> Bool {
+    let accepted = super.beginTracking(touch, with: event)
+    setTrackExpanded(accepted)
+    return accepted
+  }
+
+  override func endTracking(_ touch: UITouch?, with event: UIEvent?) {
+    super.endTracking(touch, with: event)
+    setTrackExpanded(false)
+  }
+
+  override func continueTracking(_ touch: UITouch, with event: UIEvent?) -> Bool {
+    let continuing = super.continueTracking(touch, with: event)
+    if !continuing { setTrackExpanded(false) }
+    return continuing
+  }
+
+  override func cancelTracking(with event: UIEvent?) {
+    super.cancelTracking(with: event)
+    setTrackExpanded(false)
+  }
+
+  override var isEnabled: Bool {
+    didSet { if !isEnabled { setTrackExpanded(false, animated: false) } }
+  }
+
+  override func didMoveToWindow() {
+    super.didMoveToWindow()
+    if window == nil { setTrackExpanded(false, animated: false) }
+  }
+
+  private func setTrackExpanded(_ expanded: Bool, animated: Bool = true) {
+    guard expanded != isTrackExpanded || !animated else { return }
+    isTrackExpanded = expanded
+    let from = (layer.presentation() ?? layer).sublayerTransform
+    let restingHeight = min(bounds.height, restingTrackHeight)
+    let activeHeight = min(bounds.height, activeTrackHeight)
+    let scale = expanded && restingHeight > 0 ? activeHeight / restingHeight : 1
+    let target = CATransform3DMakeScale(1, scale, 1)
+
+    // Keep UIKit's track geometry fixed. The render server scales its contents
+    // around the track's center without relaying out the native slider per frame.
+    layer.removeAnimation(forKey: Self.trackAnimationKey)
+    CATransaction.begin()
+    CATransaction.setDisableActions(true)
+    layer.sublayerTransform = target
+    CATransaction.commit()
+    guard animated, window != nil, !UIAccessibility.isReduceMotionEnabled,
+          abs(from.m22 - scale) > 0.001 else { return }
+
+    let animation = CABasicAnimation(keyPath: "sublayerTransform")
+    animation.fromValue = NSValue(caTransform3D: from)
+    animation.toValue = NSValue(caTransform3D: target)
+    animation.duration = expanded ? 0.14 : 0.24
+    animation.timingFunction = CAMediaTimingFunction(name: .easeOut)
+    layer.add(animation, forKey: Self.trackAnimationKey)
+  }
+
+  #if DEBUG && targetEnvironment(simulator)
+    func beginTrackingForSmoke() { setTrackExpanded(true) }
+
+    var renderedTrackHeightForSmoke: CGFloat {
+      let scale = (layer.presentation() ?? layer).sublayerTransform.m22
+      return trackRect(forBounds: bounds).height * scale
+    }
+  #endif
 }
 
 class SeekableTimeSlider: PlayerTrackSlider {
