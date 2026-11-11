@@ -166,7 +166,12 @@ final class MOCK_LibrarySyncer: LibrarySyncer {
   func sync(genre: Genre) async throws {}
   func sync(artist: Artist) async throws {}
   func sync(album: Album) async throws {}
-  func sync(song: Song) async throws {}
+  var syncedSongs = [String]()
+  var onSyncSong: (@MainActor (Song) async throws -> Void)?
+  func sync(song: Song) async throws {
+    syncedSongs.append(song.uniqueID)
+    try await onSyncSong?(song)
+  }
   func sync(podcast: Podcast) async throws {}
   func syncNewestPodcastEpisodes() async throws {}
   func syncNewestAlbums(offset: Int, count: Int) async throws {}
@@ -674,6 +679,209 @@ class MusicPlayerTest: XCTestCase {
     migrated = storage.settings.accounts.getSetting(account.info).read
     XCTAssertEqual(migrated.themePreference, .green)
     XCTAssertEqual(migrated.libraryDisplaySettings.inUse, [.songs, .playlists])
+  }
+
+  private func makePreparationHandler(
+    notifications: EventNotificationHandler = EventNotificationHandler(),
+    audio: MOCK_SongDownloader, artwork: MOCK_SongDownloader, syncer: MOCK_LibrarySyncer
+  ) -> PlayerDownloadPreparationHandler {
+    PlayerDownloadPreparationHandler(playerStatus: playerData, musicPlayer: testMusicPlayer,
+      storage: storage, notificationHandler: notifications,
+      getPlayableDownloaderCB: { _ in audio }, getArtworkDownloaderCB: { _ in artwork },
+      getLibrarySyncerCB: { _ in syncer })
+  }
+
+  private func writeTestCover(for song: Song, size: CGSize) throws -> URL {
+    let format = UIGraphicsImageRendererFormat()
+    format.scale = 1
+    let image = UIGraphicsImageRenderer(size: size, format: format).image { context in
+      UIColor.blue.setFill()
+      context.fill(CGRect(origin: .zero, size: size))
+    }
+    let relative = URL(string: "preload-cover-\(UUID().uuidString).png")!
+    let path = try XCTUnwrap(CacheFileManager.shared.getAbsoluteAmperfyPath(relFilePath: relative))
+    try CacheFileManager.shared.writeDataExcludedFromBackup(
+      data: XCTUnwrap(image.pngData()), to: path, accountInfo: account.info)
+    let artwork = library.createArtwork(account: account)
+    artwork.id = UUID().uuidString
+    artwork.relFilePath = relative
+    artwork.status = .CustomImage
+    song.artwork = artwork
+    library.saveContext()
+    return path
+  }
+
+  func testUpcomingPreparationFollowsQueueEditsAndRespectsCachePolicies() async throws {
+    try await startAutoplayFixture()
+    testPlayer.isAutoCachePlayedItems = true
+    let audio = MOCK_SongDownloader(), covers = MOCK_SongDownloader(), syncer = MOCK_LibrarySyncer()
+    let preparation = makePreparationHandler(audio: audio, artwork: covers, syncer: syncer)
+    testPlayer.addNotifier(notifier: preparation)
+    defer { preparation.didStopPlaying() }
+    let artwork = library.createArtwork(account: account)
+    artwork.status = .NotChecked
+    songToDownload.artwork = artwork
+    testPlayer.appendContextQueue(playables: [songToDownload, songCached])
+    XCTAssertTrue(audio.downloadables.contains { $0.uniqueID == songToDownload.uniqueID })
+    XCTAssertFalse(audio.downloadables.contains { $0.uniqueID == songCached.uniqueID })
+    XCTAssertTrue(covers.downloadables.contains { $0.uniqueID == artwork.uniqueID })
+    let inserted = try XCTUnwrap(playlistAllCached.playables.first { $0 != songCached })
+    testPlayer.insertUserQueue(playables: [inserted])
+    XCTAssertEqual(testMusicPlayer.upcomingPlayablesForPreparation(limit: 1).first, inserted)
+
+    audio.downloadables.removeAll()
+    testPlayer.isAutoCachePlayedItems = false
+    preparation.didStartPlaying()
+    XCTAssertTrue(audio.downloadables.isEmpty)
+    covers.downloadables.removeAll()
+    testPlayer.isOfflineMode = true
+    preparation.didPlaylistChange()
+    XCTAssertTrue(audio.downloadables.isEmpty)
+    XCTAssertTrue(covers.downloadables.isEmpty)
+  }
+
+  func testGoingOfflineCancelsUpcomingMetadataBeforeItStarts() async throws {
+    try await startAutoplayFixture()
+    songToDownload.artwork = nil
+    let audio = MOCK_SongDownloader(), covers = MOCK_SongDownloader(), syncer = MOCK_LibrarySyncer()
+    let preparation = makePreparationHandler(audio: audio, artwork: covers, syncer: syncer)
+    testPlayer.addNotifier(notifier: preparation)
+    defer { preparation.didStopPlaying() }
+    let unexpectedSync = expectation(description: "no speculative metadata request while offline")
+    unexpectedSync.isInverted = true
+    syncer.onSyncSong = { _ in unexpectedSync.fulfill() }
+
+    testPlayer.appendContextQueue(playables: [songToDownload])
+    testPlayer.isOfflineMode = true
+    await fulfillment(of: [unexpectedSync], timeout: 0.1)
+    XCTAssertTrue(syncer.syncedSongs.isEmpty)
+    XCTAssertEqual(testPlayer.currentlyPlaying, songCached)
+  }
+
+  func testStoppingCancelsUpcomingMetadataBeforeItStarts() async throws {
+    try await startAutoplayFixture()
+    songToDownload.artwork = nil
+    let audio = MOCK_SongDownloader(), covers = MOCK_SongDownloader(), syncer = MOCK_LibrarySyncer()
+    let preparation = makePreparationHandler(audio: audio, artwork: covers, syncer: syncer)
+    testPlayer.addNotifier(notifier: preparation)
+    defer { preparation.didStopPlaying() }
+    let unexpectedSync = expectation(description: "no speculative metadata request after stopping")
+    unexpectedSync.isInverted = true
+    syncer.onSyncSong = { _ in unexpectedSync.fulfill() }
+
+    testPlayer.appendContextQueue(playables: [songToDownload])
+    testPlayer.stop()
+    await fulfillment(of: [unexpectedSync], timeout: 0.1)
+    XCTAssertTrue(syncer.syncedSongs.isEmpty)
+    XCTAssertFalse(testPlayer.isPlaying)
+  }
+
+  func testUpcomingMetadataAndDownloadedCoverArePreparedBeforeNextTrack() async throws {
+    try await startAutoplayFixture()
+    storage.settings.accounts.updateSetting(account.info) { $0.artworkDisplayPreference = .serverArtworkOnly }
+    songToDownload.artwork = nil
+    let audio = MOCK_SongDownloader(), covers = MOCK_SongDownloader(), syncer = MOCK_LibrarySyncer()
+    let notifications = EventNotificationHandler()
+    let preparation = makePreparationHandler(notifications: notifications, audio: audio, artwork: covers, syncer: syncer)
+    testPlayer.addNotifier(notifier: preparation)
+    defer { preparation.didStopPlaying() }
+    let artwork = library.createArtwork(account: account)
+    artwork.status = .NotChecked
+    let synced = expectation(description: "next song metadata fetched once")
+    syncer.onSyncSong = { song in song.artwork = artwork; synced.fulfill() }
+    testPlayer.appendContextQueue(playables: [songToDownload])
+    preparation.didShuffleChange()
+    preparation.didStartPlaying()
+    await fulfillment(of: [synced], timeout: 2)
+    for _ in 0..<50 {
+      if covers.downloadables.contains(where: { $0.uniqueID == artwork.uniqueID }) { break }
+      try await Task.sleep(for: .milliseconds(10))
+    }
+    XCTAssertEqual(syncer.syncedSongs, [songToDownload.uniqueID])
+    XCTAssertTrue(covers.downloadables.contains { $0.uniqueID == artwork.uniqueID })
+    XCTAssertEqual(testPlayer.currentlyPlaying, songCached)
+
+    let path = try writeTestCover(for: songToDownload, size: CGSize(width: 321, height: 123))
+    defer { try? CacheFileManager.shared.removeItem(at: path, accountInfo: account.info) }
+    XCTAssertNil(LibraryEntityImage.preparedImage(at: path.path))
+    notifications.post(name: .downloadFinishedSuccess, object: covers,
+      userInfo: DownloadNotification(id: songToDownload.artwork!.uniqueID).asNotificationUserInfo)
+    for _ in 0..<100 {
+      if LibraryEntityImage.preparedImage(at: path.path) != nil { break }
+      try await Task.sleep(for: .milliseconds(20))
+    }
+    XCTAssertNotNil(LibraryEntityImage.preparedImage(at: path.path))
+    XCTAssertEqual(testPlayer.currentlyPlaying, songCached)
+    let center = MPNowPlayingInfoCenter.default()
+    let handler = NowPlayingInfoCenterHandler(musicPlayer: testMusicPlayer, backendAudioPlayer: backendPlayer,
+      nowPlayingInfoCenter: center, storage: storage, notificationHandler: notifications,
+      getArtworkDownloaderCB: { _ in covers }, getPlayableDownloaderCB: { _ in audio })
+    defer { handler.didStopPlaying() }
+    testPlayer.playNext()
+    handler.didStartPlaying()
+    XCTAssertEqual((center.nowPlayingInfo?[MPMediaItemPropertyArtwork] as? MPMediaItemArtwork)?.bounds.size,
+                   CGSize(width: 321, height: 123))
+    XCTAssertEqual(center.nowPlayingInfo?[MPMediaItemPropertyTitle] as? String, songToDownload.title)
+  }
+
+  func testUpcomingMissingTitleIsFetchedDespiteDisplayFallback() async throws {
+    try await startAutoplayFixture()
+    let next = songToDownload!
+    XCTAssertNotNil(next.artist)
+    XCTAssertNotNil(next.album)
+    next.artwork = library.createArtwork(account: account)
+    next.playableManagedObject.title = nil
+    XCTAssertFalse(next.title.isEmpty) // The UI getter returns a localized fallback.
+    let audio = MOCK_SongDownloader(), covers = MOCK_SongDownloader(), syncer = MOCK_LibrarySyncer()
+    let preparation = makePreparationHandler(audio: audio, artwork: covers, syncer: syncer)
+    testPlayer.addNotifier(notifier: preparation)
+    defer { preparation.didStopPlaying() }
+    let synced = expectation(description: "missing stored title fetched")
+    syncer.onSyncSong = { song in
+      song.title = "Prepared next track"
+      synced.fulfill()
+    }
+    testPlayer.appendContextQueue(playables: [next])
+    await fulfillment(of: [synced], timeout: 2)
+    XCTAssertEqual(next.title, "Prepared next track")
+    XCTAssertEqual(testPlayer.currentlyPlaying, songCached)
+  }
+
+  func testColdDiskCoverPublishesAtomicallyAndCancelledDecodeCannotResurrectInfo() async throws {
+    try await startAutoplayFixture()
+    storage.settings.accounts.updateSetting(account.info) { $0.artworkDisplayPreference = .serverArtworkOnly }
+    let path = try writeTestCover(for: songCached, size: CGSize(width: 317, height: 173))
+    defer { try? CacheFileManager.shared.removeItem(at: path, accountInfo: account.info) }
+    let center = MPNowPlayingInfoCenter.default()
+    let handler = NowPlayingInfoCenterHandler(musicPlayer: testMusicPlayer, backendAudioPlayer: backendPlayer,
+      nowPlayingInfoCenter: center, storage: storage, notificationHandler: EventNotificationHandler(),
+      getArtworkDownloaderCB: { _ in self.songDownloader }, getPlayableDownloaderCB: { _ in self.songDownloader })
+    defer { handler.didStopPlaying() }
+    handler.didStopPlaying()
+    XCTAssertNil(LibraryEntityImage.preparedImage(at: path.path))
+    handler.didStartPlaying()
+    handler.didElapsedTimeChange()
+    // No default artwork is ever published while a known real disk cover decodes.
+    XCTAssertNil(center.nowPlayingInfo)
+    mockAudioStreamingPlayer.mockElapsedTime = 51
+    for _ in 0..<100 {
+      if center.nowPlayingInfo != nil { break }
+      try await Task.sleep(for: .milliseconds(20))
+    }
+    XCTAssertEqual((center.nowPlayingInfo?[MPMediaItemPropertyArtwork] as? MPMediaItemArtwork)?.bounds.size,
+                   CGSize(width: 317, height: 173))
+    XCTAssertEqual(center.nowPlayingInfo?[MPNowPlayingInfoPropertyElapsedPlaybackTime] as? Double, 51)
+
+    let secondPath = try writeTestCover(for: songCached, size: CGSize(width: 201, height: 101))
+    defer { try? CacheFileManager.shared.removeItem(at: secondPath, accountInfo: account.info) }
+    handler.didArtworkChange()
+    handler.didStopPlaying()
+    for _ in 0..<100 {
+      if LibraryEntityImage.preparedImage(at: secondPath.path) != nil { break }
+      try await Task.sleep(for: .milliseconds(20))
+    }
+    XCTAssertNotNil(LibraryEntityImage.preparedImage(at: secondPath.path))
+    XCTAssertNil(center.nowPlayingInfo)
   }
 
   func testLateLockScreenArtworkLoadsWithoutAnyPlayerViewAndSurvivesTimingUpdates() async throws {
@@ -2672,6 +2880,8 @@ class MusicPlayerTest: XCTestCase {
     await fulfillment(of: [ready], timeout: 2)
     XCTAssertEqual(testPlayer.autoplayQueue.count, recommended.count)
     XCTAssertEqual(testPlayer.nextQueueCount, 0)
+    XCTAssertEqual(testMusicPlayer.upcomingPlayablesForPreparation(limit: 3).map { $0.uniqueID },
+                   recommended.map { $0.uniqueID })
     XCTAssertEqual(testPlayer.currentlyPlaying, songCached)
     testPlayer.setAutoplayEnabled(false)
     XCTAssertTrue(testPlayer.autoplayQueue.isEmpty)
