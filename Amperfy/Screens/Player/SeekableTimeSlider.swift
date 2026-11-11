@@ -541,6 +541,13 @@ class PlayerTrackSlider: UIControl {
     func continueTrackingForSmoke(at point: CGPoint) { _ = continueScrubbing(at: point) }
     var isNativeTrackingForSmoke: Bool { nativeSlider.isTracking || nativeSlider.isHighlighted }
 
+    func pauseTrackAnimationForSmoke(at fraction: CGFloat) -> Bool {
+      guard let animator = trackAnimator, animator.state == .active else { return false }
+      animator.pauseAnimation()
+      animator.fractionComplete = min(1, max(0, fraction))
+      return true
+    }
+
     var renderedTrackHeightForSmoke: CGFloat {
       let scale = (trackPresentation.layer.presentation() ?? trackPresentation.layer).transform.m22
       return trackRect(forBounds: bounds).height * scale

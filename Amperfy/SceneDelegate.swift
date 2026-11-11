@@ -773,7 +773,8 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
                 }
                 smokeLog("Seek release, cancel and rapid reversal passed with a single 7-to-8.5pt animation")
                 // A native slider on a flat plate makes compositor pixels measurable.
-                // Slow only this probe's layer clock so simctl can capture mid-release.
+                // Pause the real release animator so simctl's asynchronous capture
+                // cannot miss a 0.2-second transition. Real-time motion is sampled above.
                 if !UIAccessibility.isReduceMotionEnabled, let probeWindow = seekSlider.window {
                   let plate = UIView(frame: CGRect(x: 0, y: probeWindow.bounds.midY - 40,
                     width: probeWindow.bounds.width, height: 80))
@@ -841,16 +842,17 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
                   }
                   try await compositorScreenshot("player-seek-pixels-active.png")
                   let activePixels = try greenTrackPixels("player-seek-pixels-active.png")
-                  probe.layer.speed = 0.04
                   probe.endTracking(nil, with: nil)
                   guard !probe.isTracking, committedSeekValues == [75] else {
                     smokeLog("Seek release failed to commit exactly once"); return
                   }
-                  try await Task.sleep(for: .milliseconds(1500))
+                  guard probe.pauseTrackAnimationForSmoke(at: 0.5) else {
+                    smokeLog("Seek release animator was unavailable for compositor capture"); return
+                  }
+                  try await Task.sleep(for: .milliseconds(100))
                   try await compositorScreenshot("player-seek-pixels-releasing.png")
                   let releasingPixels = try greenTrackPixels("player-seek-pixels-releasing.png")
                   probe.isEnabled = false
-                  probe.layer.speed = 1
                   probe.isEnabled = true
                   try await compositorScreenshot("player-seek-pixels-released.png")
                   let releasedPixels = try greenTrackPixels("player-seek-pixels-released.png")
