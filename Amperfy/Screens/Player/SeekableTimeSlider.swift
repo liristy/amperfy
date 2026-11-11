@@ -330,6 +330,7 @@ class PlayerTrackSlider: UIControl {
   var activeTrackHeight: CGFloat = PlayerTrackSlider.standardActiveTrackHeight
   private var isTrackExpanded = false
   private var scrubStartValue: Float?
+  private var trackAnimator: UIViewPropertyAnimator?
   private var lastTouchLocation = CGPoint.zero
   private let nativeSlider = FixedTrackSlider()
   private let trackPresentation = UIView()
@@ -501,6 +502,13 @@ class PlayerTrackSlider: UIControl {
   private func setTrackExpanded(_ expanded: Bool, animated: Bool = true) {
     guard expanded != isTrackExpanded || !animated else { return }
     isTrackExpanded = expanded
+    // Freeze an interrupted press at its rendered height. UIView's implicit
+    // beginFromCurrentState can carry the growing velocity into a release.
+    if let animator = trackAnimator, animator.state == .active {
+      animator.stopAnimation(false)
+      animator.finishAnimation(at: .current)
+    }
+    trackAnimator = nil
     let restingHeight = min(bounds.height, restingTrackHeight)
     let activeHeight = min(bounds.height, activeTrackHeight)
     let scale = expanded && restingHeight > 0 ? activeHeight / restingHeight : 1
@@ -510,12 +518,16 @@ class PlayerTrackSlider: UIControl {
       trackPresentation.transform = target
       return
     }
-    // Match the volume control's outer-view animation and interruption behavior.
-    // Native track geometry and horizontal touch coordinates remain unchanged.
-    UIView.animate(withDuration: expanded ? 0.16 : 0.2, delay: 0,
-      options: [.beginFromCurrentState, .allowUserInteraction, .curveEaseInOut]) {
-      self.trackPresentation.transform = target
+    // Match the volume control's timing and easing, with explicit interruption.
+    let animator = UIViewPropertyAnimator(duration: expanded ? 0.16 : 0.2, curve: .easeInOut) { [weak self] in
+      self?.trackPresentation.transform = target
     }
+    animator.addCompletion { [weak self, weak animator] _ in
+      guard let self, trackAnimator === animator else { return }
+      trackAnimator = nil
+    }
+    trackAnimator = animator
+    animator.startAnimation()
   }
 
   #if DEBUG && targetEnvironment(simulator)
