@@ -137,7 +137,9 @@ class PopupPlayerVC: UIViewController, UIScrollViewDelegate, UIGestureRecognizer
       createdPlayerControlView.prepare(toWorkOnRootView: self)
       controlPlaceholderView.addSubview(createdPlayerControlView)
     }
-    controlPlaceholderView.clipsToBounds = true
+    // Pressed tracks and their labels expand beyond the resting rail margins.
+    // Only clip while collapsing the controls for immersive lyrics.
+    controlPlaceholderView.clipsToBounds = false
     let restoreControls = UITapGestureRecognizer(target: self, action: #selector(restoreLyricsControls))
     restoreControls.delegate = self
     view.addGestureRecognizer(restoreControls)
@@ -319,6 +321,7 @@ class PopupPlayerVC: UIViewController, UIScrollViewDelegate, UIGestureRecognizer
     view.layoutIfNeeded()
     controlPlaceholderView.isUserInteractionEnabled = !hidden
     controlPlaceholderView.accessibilityElementsHidden = hidden
+    controlPlaceholderView.clipsToBounds = hidden
     controlPlaceholderHeightConstraint.constant = hidden && !usesLandscapeLayout ? 0 :
       PlayerControlView.frameHeight + safetyMarginOnBottom
     let changes = {
