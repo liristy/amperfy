@@ -35,8 +35,8 @@ final class PlayerTransportButton: UIButton {
   private let activationView = UIView()
   private var activationTask: Task<Void, Never>?
   private var symbolIdentifier: String?
-  private var symbolAnimator: UIViewPropertyAnimator?
-  private var symbolTransitionID = UUID()
+  private var symbolTransitionTask: Task<Void, Never>?
+  private static let symbolTransitionKey = "player-symbol-replacement"
   private static let activationAnimationKey = "player-transport-activation"
 
   override func awakeFromNib() {
@@ -80,8 +80,8 @@ final class PlayerTransportButton: UIButton {
     didSet {
       guard oldValue != isHighlighted else { return }
       let pressed = isHighlighted
-    UIView.animate(withDuration: pressed ? 0.12 : 0.32, delay: 0,
-      usingSpringWithDamping: pressed ? 1 : 0.75, initialSpringVelocity: 0,
+      UIView.animate(withDuration: pressed ? 0.12 : 0.32, delay: 0,
+        usingSpringWithDamping: pressed ? 1 : 0.75, initialSpringVelocity: 0,
         options: [.beginFromCurrentState, .allowUserInteraction]) {
         self.pressDisc.alpha = pressed ? 1 : 0
         self.symbolContainer.transform = pressed && !UIAccessibility.isReduceMotionEnabled ?
@@ -96,52 +96,60 @@ final class PlayerTransportButton: UIButton {
     symbolView.layer.removeAnimation(forKey: Self.activationAnimationKey)
     let animated = symbolIdentifier != nil && window != nil && !UIAccessibility.isReduceMotionEnabled
     symbolIdentifier = identifier
-    let transitionID = UUID()
-    symbolTransitionID = transitionID
-    // Finish at the rendered position so rapid taps don't restart from full size
-    // or allow an older completion to install an outdated play/pause symbol.
-    if let animator = symbolAnimator {
-      animator.stopAnimation(false)
-      animator.finishAnimation(at: .current)
-      symbolAnimator = nil
-    }
-    guard animated else {
-      symbolView.image = image
-      symbolView.transform = .identity
-      symbolView.alpha = 1
-      setNeedsLayout()
-      return
-    }
-    // The new symbol starts appearing before the old one disappears (0.94–1.30 s
-    // in the reference), rather than leaving an empty frame between the two.
-    if symbolView.alpha >= retiringSymbolView.alpha {
-      retiringSymbolView.image = symbolView.image
-      retiringSymbolView.transform = symbolView.transform
-      retiringSymbolView.alpha = symbolView.alpha
-    }
+    let current = symbolView.layer.presentation() ?? symbolView.layer
+    let retiring = retiringSymbolView.layer.presentation() ?? retiringSymbolView.layer
+    let outgoingView = current.opacity >= retiring.opacity ? symbolView : retiringSymbolView
+    let outgoing = outgoingView.layer.presentation() ?? outgoingView.layer
+    let outgoingImage = outgoingView.image
+    let outgoingScale = outgoing.transform.m11
+    let outgoingOpacity = outgoing.opacity
+    finishSymbolTransition()
     symbolView.image = image
-    symbolView.transform = CGAffineTransform(scaleX: 0.12, y: 0.12)
-    symbolView.alpha = 0
-    let replacement = UIViewPropertyAnimator(duration: 0.36, curve: .easeInOut) {
-      UIView.animateKeyframes(withDuration: 0.36, delay: 0, options: [.calculationModeLinear]) {
-        UIView.addKeyframe(withRelativeStartTime: 0, relativeDuration: 0.36) {
-          self.retiringSymbolView.transform = CGAffineTransform(scaleX: 0.12, y: 0.12)
-          self.retiringSymbolView.alpha = 0
-        }
-        UIView.addKeyframe(withRelativeStartTime: 0.12, relativeDuration: 0.88) {
-          self.symbolView.transform = .identity
-          self.symbolView.alpha = 1
-        }
+    symbolView.transform = .identity
+    symbolView.alpha = 1
+    setNeedsLayout()
+    guard animated else { return }
+
+    // Use compositor animations directly. A nested UIView keyframe animator can
+    // finish the replacement during layout, leaving a hard cut in real recordings.
+    retiringSymbolView.image = outgoingImage
+    retiringSymbolView.transform = .identity
+    retiringSymbolView.alpha = 0
+    func animate(_ layer: CALayer, scale: [CGFloat], opacity: [Float], times: [NSNumber]) {
+      let size = CAKeyframeAnimation(keyPath: "transform.scale")
+      size.values = scale
+      size.keyTimes = times
+      let fade = CAKeyframeAnimation(keyPath: "opacity")
+      fade.values = opacity
+      fade.keyTimes = times
+      for animation in [size, fade] {
+        animation.duration = 0.36
+        animation.timingFunctions = Array(repeating: CAMediaTimingFunction(name: .easeInEaseOut),
+          count: times.count - 1)
       }
+      let group = CAAnimationGroup()
+      group.animations = [size, fade]
+      group.duration = 0.36
+      layer.add(group, forKey: Self.symbolTransitionKey)
     }
-    replacement.addCompletion { [weak self] _ in
-      guard let self, symbolTransitionID == transitionID else { return }
-      retiringSymbolView.image = nil
-      retiringSymbolView.alpha = 0
-      symbolAnimator = nil
+    // 0.94–1.30 s: overlap the outgoing shrink with the incoming growth.
+    animate(retiringSymbolView.layer, scale: [outgoingScale, 0.12, 0.12],
+      opacity: [outgoingOpacity, 0, 0], times: [0, 0.36, 1])
+    animate(symbolView.layer, scale: [0.12, 0.12, 1], opacity: [0, 0, 1], times: [0, 0.12, 1])
+    symbolTransitionTask = Task { @MainActor [weak self] in
+      try? await Task.sleep(for: .milliseconds(370))
+      guard !Task.isCancelled else { return }
+      self?.finishSymbolTransition()
     }
-    symbolAnimator = replacement
-    replacement.startAnimation()
+  }
+
+  private func finishSymbolTransition() {
+    symbolTransitionTask?.cancel()
+    symbolTransitionTask = nil
+    symbolView.layer.removeAnimation(forKey: Self.symbolTransitionKey)
+    retiringSymbolView.layer.removeAnimation(forKey: Self.symbolTransitionKey)
+    retiringSymbolView.image = nil
+    retiringSymbolView.alpha = 0
   }
 
   func animateActivation(direction: CGFloat = 0) {
@@ -244,7 +252,10 @@ final class PlayerTransportButton: UIButton {
 
   override func didMoveToWindow() {
     super.didMoveToWindow()
-    if window == nil { finishActivation() }
+    if window == nil {
+      finishActivation()
+      finishSymbolTransition()
+    }
   }
 
   #if DEBUG && targetEnvironment(simulator)
@@ -261,7 +272,7 @@ final class PlayerTransportButton: UIButton {
     }
 
     var isRenderedSymbolSettled: Bool {
-      isCurrentSymbolImage && symbolAnimator == nil && activationTask == nil && !symbolView.isHidden &&
+      isCurrentSymbolImage && symbolTransitionTask == nil && activationTask == nil && !symbolView.isHidden &&
         symbolView.layer.animation(forKey: Self.activationAnimationKey) == nil &&
         symbolView.alpha == 1 && symbolView.transform == .identity &&
         symbolContainer.transform == .identity &&
