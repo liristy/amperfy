@@ -163,7 +163,7 @@ final class PlayerTransportButton: UIButton {
     }
     guard activationTask == nil, window != nil, !UIAccessibility.isReduceMotionEnabled,
           let image = symbolView.image else { return }
-    guard let pieces = transportPieces(image) else { return }
+    guard let pieces = transportPieces(image, direction: direction) else { return }
     let leading = direction > 0 ? pieces.0 : pieces.1
     let trailing = direction > 0 ? pieces.1 : pieces.0
     let distance = trailing.frame.midX - leading.frame.midX
@@ -213,7 +213,7 @@ final class PlayerTransportButton: UIButton {
     symbolView.isHidden = false
   }
 
-  private func transportPieces(_ image: UIImage)
+  private func transportPieces(_ image: UIImage, direction: CGFloat)
     -> ((image: CGImage, frame: CGRect), (image: CGImage, frame: CGRect))? {
     let rendered = UIGraphicsImageRenderer(size: image.size).image { _ in
       image.withTintColor(.white, renderingMode: .alwaysOriginal).draw(at: .zero)
@@ -235,16 +235,41 @@ final class PlayerTransportButton: UIButton {
         left = min(left, x); right = max(right, x); top = min(top, y); bottom = max(bottom, y)
       }
     }
-    guard right > left, bottom > top else { return nil }
-    let middle = (left + right + 1) / 2
+    guard right - left > 3, bottom > top else { return nil }
+    // SF Symbols can meet off the bounding box midpoint. Split at the narrow
+    // join so the moving triangle never carries the other triangle's vertical edge.
+    let midpoint = (left + right + 1) / 2
+    let searchRadius = max(1, (right - left) / 10)
+    let candidates = max(left + 1, midpoint - searchRadius)...min(right - 1, midpoint + searchRadius)
+    let join = candidates.min { first, second in
+      func coverage(_ x: Int) -> Int {
+        (top...bottom).reduce(0) { $0 + Int(rgba[($1 * width + x) * 4 + 3]) }
+      }
+      let firstCoverage = coverage(first), secondCoverage = coverage(second)
+      return firstCoverage == secondCoverage ? abs(first - midpoint) < abs(second - midpoint) :
+        firstCoverage < secondCoverage
+    } ?? midpoint
+    let middle = direction > 0 ? join : join + 1
     let scale = rendered.scale
     let origin = CGPoint(x: (symbolView.bounds.width - image.size.width) / 2,
                          y: (symbolView.bounds.height - image.size.height) / 2)
     func piece(_ x: Int, _ w: Int) -> (image: CGImage, frame: CGRect)? {
       let crop = CGRect(x: CGFloat(x), y: CGFloat(top), width: CGFloat(w), height: CGFloat(bottom - top + 1))
       guard let bitmap = cg.cropping(to: crop) else { return nil }
-      return (bitmap, CGRect(x: origin.x + CGFloat(x) / scale, y: origin.y + CGFloat(top) / scale,
-        width: CGFloat(w) / scale, height: CGFloat(bottom - top + 1) / scale))
+      // Give each piece independent storage and a transparent texel border.
+      // Filtering a tight CGImage crop can sample the adjacent glyph and draw a hairline.
+      let padding = 1 / scale
+      let size = CGSize(width: (CGFloat(w) + 2) / scale, height: (crop.height + 2) / scale)
+      let format = UIGraphicsImageRendererFormat()
+      format.scale = scale
+      format.opaque = false
+      let isolated = UIGraphicsImageRenderer(size: size, format: format).image { _ in
+        UIImage(cgImage: bitmap, scale: scale, orientation: .up)
+          .draw(at: CGPoint(x: padding, y: padding))
+      }
+      guard let isolatedBitmap = isolated.cgImage else { return nil }
+      return (isolatedBitmap, CGRect(x: origin.x + CGFloat(x) / scale - padding,
+        y: origin.y + CGFloat(top) / scale - padding, width: size.width, height: size.height))
     }
     guard let first = piece(left, middle - left), let second = piece(middle, right + 1 - middle) else { return nil }
     return (first, second)
