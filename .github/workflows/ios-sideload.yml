@@ -125,7 +125,9 @@ jobs:
   build:
     # Standard hosted runners are free for public repositories only.
     if: github.event.repository.private == false
-    runs-on: macos-26
+    # Device archives cross-compile to arm64; keep them off the capacity-limited
+    # ARM simulator pool. This is the standard Intel label, not a larger runner.
+    runs-on: macos-26-intel
     timeout-minutes: 45
     env:
       DEVELOPER_DIR: /Applications/Xcode_26.3.app/Contents/Developer
