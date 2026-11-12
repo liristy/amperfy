@@ -524,7 +524,7 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
               miniPlayer.endPlayerExpansion(translation: pausedDistance * 0.85, velocity: 850)
               try await Task.sleep(for: .seconds(1))
               guard hiddenCover.mask == nil, miniPlayer.artworkImage.mask == nil,
-                    abs(hiddenCover.transform.a - 0.74) < 0.01, flyingCover() == nil, flyingShadow() == nil,
+                    abs(hiddenCover.transform.a - 0.73) < 0.01, flyingCover() == nil, flyingShadow() == nil,
                     pausedPopup.largeCurrentlyPlayingView?.transitionArtworkShadow?.mask == nil else {
                 smokeLog("Paused opening did not hand off to the real scaled cover")
                 return
@@ -724,28 +724,35 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
                 @MainActor func checkSeekRelease(_ name: String) async throws -> Bool {
                   var previous = PlayerTrackSlider.standardActiveTrackHeight
                   var intermediate = false
+                  var rebound = false
                   var heights = [CGFloat]()
-                  for _ in 0..<35 {
+                  for _ in 0..<65 {
                     try await Task.sleep(for: .milliseconds(10))
                     let height = seekSlider.renderedTrackHeightForSmoke
                     heights.append(height)
-                    guard height <= previous + 0.1, seekSlider.bounds == seekBounds,
+                    guard height >= 5.9, height <= 17.5, seekSlider.bounds == seekBounds,
+                          abs(seekSlider.renderedTrackWidthForSmoke /
+                            seekSlider.trackRect(forBounds: seekBounds).width -
+                            (1 + 0.05 * (height - 7) / 10)) < 0.004,
                           abs(seekSlider.trackRect(forBounds: seekBounds).height - 7) < 0.01 else {
-                      smokeLog("Seek \(name) changed native geometry or reversed its rendered motion"); return false
+                      smokeLog("Seek \(name) departed from the reference capsule geometry"); return false
                     }
-                    intermediate = intermediate || (height > 7.1 && height < 8.4)
+                    intermediate = intermediate || (height > 8 && height < 16)
+                    rebound = rebound || height < 6.8
                     previous = height
                   }
                   guard abs(previous - 7) < 0.1,
-                        UIAccessibility.isReduceMotionEnabled || intermediate else {
+                        UIAccessibility.isReduceMotionEnabled || (intermediate && rebound) else {
                     smokeLog("Seek \(name) did not render intermediate heights: \(heights)"); return false
                   }
                   smokeLog("Seek \(name) presentation heights: \(heights)")
                   return true
                 }
                 seekSlider.beginTrackingForSmoke()
-                try await Task.sleep(for: .milliseconds(200))
-                guard abs(seekSlider.renderedTrackHeightForSmoke - 8.5) < 0.2,
+                try await Task.sleep(for: .milliseconds(300))
+                guard abs(seekSlider.renderedTrackHeightForSmoke - 17) < 0.5,
+                      abs(seekSlider.renderedTrackWidthForSmoke /
+                        seekSlider.trackRect(forBounds: seekBounds).width - 1.05) < 0.003,
                       seekSlider.isTracking, !seekSlider.isNativeTrackingForSmoke,
                       !seekSlider.isHighlighted,
                       abs(seekSlider.trackRect(forBounds: seekBounds).height - 7) < 0.01 else {
@@ -756,7 +763,7 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
                 guard try await checkSeekRelease("release") else { return }
                 try await compositorScreenshot("player-seek-released.png")
                 seekSlider.beginTrackingForSmoke()
-                try await Task.sleep(for: .milliseconds(200))
+                try await Task.sleep(for: .milliseconds(300))
                 seekSlider.cancelTracking(with: nil)
                 guard try await checkSeekRelease("cancel") else { return }
                 seekSlider.beginTrackingForSmoke()
@@ -767,14 +774,14 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
                 guard seekSlider.renderedTrackHeightForSmoke <= reversalHeight + 0.2 else {
                   smokeLog("Seek track jumped when reversing expansion"); return
                 }
-                try await Task.sleep(for: .milliseconds(270))
+                try await Task.sleep(for: .milliseconds(600))
                 guard abs(seekSlider.renderedTrackHeightForSmoke - 7) < 0.1 else {
                   smokeLog("Seek motion failed to settle"); return
                 }
-                smokeLog("Seek release, cancel and rapid reversal passed with a single 7-to-8.5pt animation")
+                smokeLog("Seek release, cancel and rapid reversal matched the 7-to-17pt, 1.05x reference spring")
                 // A native slider on a flat plate makes compositor pixels measurable.
-                // Pause the real release animator so simctl's asynchronous capture
-                // cannot miss a 0.2-second transition. Real-time motion is sampled above.
+                // Pause the real release animation during its main travel so simctl's
+                // asynchronous capture cannot miss it. Real-time motion is sampled above.
                 if !UIAccessibility.isReduceMotionEnabled, let probeWindow = seekSlider.window {
                   let plate = UIView(frame: CGRect(x: 0, y: probeWindow.bounds.midY - 40,
                     width: probeWindow.bounds.width, height: 80))
@@ -837,7 +844,7 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
                   try await Task.sleep(for: .milliseconds(300))
                   guard probe.isTracking, !probe.isNativeTrackingForSmoke, !probe.isHighlighted,
                         abs(probe.value - 75) < 0.01, committedSeekValues.isEmpty,
-                        abs(probe.renderedTrackHeightForSmoke - 8.5) < 0.1 else {
+                        abs(probe.renderedTrackHeightForSmoke - 17) < 0.5 else {
                     smokeLog("Seek drag triggered native tracking, committed early or exceeded its target height"); return
                   }
                   try await compositorScreenshot("player-seek-pixels-active.png")
@@ -846,7 +853,7 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
                   guard !probe.isTracking, committedSeekValues == [75] else {
                     smokeLog("Seek release failed to commit exactly once"); return
                   }
-                  guard probe.pauseTrackAnimationForSmoke(at: 0.5) else {
+                  guard probe.pauseTrackAnimationForSmoke(at: 0.2) else {
                     smokeLog("Seek release animator was unavailable for compositor capture"); return
                   }
                   try await Task.sleep(for: .milliseconds(100))
@@ -858,10 +865,18 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
                   let releasedPixels = try greenTrackPixels("player-seek-pixels-released.png")
                   smokeLog("Seek compositor pixels: resting=\(restingPixels), active=\(activePixels), releasing=\(releasingPixels), released=\(releasedPixels)")
                   guard restingPixels > 0, activePixels > restingPixels + 2,
-                        activePixels <= Int(ceil(CGFloat(restingPixels) * 8.5 / 7)) + 1,
+                        activePixels <= Int(ceil(CGFloat(restingPixels) * 17 / 7)) + 2,
                         releasingPixels > restingPixels, releasingPixels < activePixels,
                         abs(releasedPixels - restingPixels) <= 1 else {
                     smokeLog("Seek compositor screenshots did not show a continuous thickness change"); return
+                  }
+                  probe.beginTrackingForSmoke(at: startPoint)
+                  guard abs(probe.value - 75) < 0.01 else {
+                    smokeLog("Seek contact jumped to the finger instead of grabbing the current value"); return
+                  }
+                  probe.endTracking(nil, with: nil)
+                  guard committedSeekValues == [75] else {
+                    smokeLog("A stationary seek tap committed a playback jump"); return
                   }
                   probe.beginTrackingForSmoke(at: startPoint)
                   probe.cancelTracking(with: nil)
@@ -886,8 +901,8 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
                   smokeLog("Seek touch isolation, deferred single commit, cancellation, disabling and removal passed")
                 }
                 #if !targetEnvironment(macCatalyst)
-                  let invalidVolumeDrag = RelativeVolumeDrag(value: 0.4, minimum: 0, maximum: 1, width: 0)
-                  guard let drag = RelativeVolumeDrag(value: 0.4, minimum: 0, maximum: 1, width: 200),
+                  let invalidVolumeDrag = RelativeSliderDrag(value: 0.4, minimum: 0, maximum: 1, width: 0)
+                  guard let drag = RelativeSliderDrag(value: 0.4, minimum: 0, maximum: 1, width: 200),
                         abs(drag.value(forTranslationX: 0) - 0.4) < 0.001,
                         abs(drag.value(forTranslationX: 40) - 0.6) < 0.001,
                         abs(drag.value(forTranslationX: -40) - 0.2) < 0.001,
@@ -948,8 +963,9 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
                   layoutProbe.setTouchPressedForSmoke(true)
                   let activeVolumeTrack = nativeSliderProbe.convert(
                     nativeSliderProbe.trackRect(forBounds: nativeSliderProbe.bounds), to: layoutProbe)
-                  let volumeTrackRatio = DragOnlySystemVolumeView.activeTrackScale
-                  guard abs(activeVolumeTrack.height - restingVolumeTrack.height * volumeTrackRatio) < 0.5,
+                  guard abs(layoutProbe.renderedTrackHeightForSmoke - 17) < 0.5,
+                        abs(layoutProbe.renderedTrackWidthForSmoke - restingVolumeTrack.width * 1.05) < 0.5,
+                        abs(activeVolumeTrack.height - restingVolumeTrack.height) < 0.5,
                         abs(activeVolumeTrack.midY - layoutProbe.bounds.midY) < 0.5,
                         abs(activeVolumeTrack.width - restingVolumeTrack.width) < 0.5,
                         nativeSliderProbe.frame == volumeFrameBeforePress,
@@ -967,7 +983,8 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
                   layoutProbe.setTouchPressedForSmoke(false)
                   let releasedVolumeTrack = nativeSliderProbe.convert(
                     nativeSliderProbe.trackRect(forBounds: nativeSliderProbe.bounds), to: layoutProbe)
-                  guard abs(releasedVolumeTrack.height - restingVolumeTrack.height) < 0.5,
+                  guard abs(layoutProbe.renderedTrackHeightForSmoke - 7) < 0.5,
+                        abs(releasedVolumeTrack.height - restingVolumeTrack.height) < 0.5,
                         abs(releasedVolumeTrack.midY - layoutProbe.bounds.midY) < 0.5 else {
                     smokeLog("Volume release did not restore the resting track"); return
                   }
@@ -975,11 +992,12 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
                   layoutProbe.cancelTouchForSmoke()
                   let cancelledVolumeTrack = nativeSliderProbe.convert(
                     nativeSliderProbe.trackRect(forBounds: nativeSliderProbe.bounds), to: layoutProbe)
-                  guard abs(cancelledVolumeTrack.height - restingVolumeTrack.height) < 0.5,
+                  guard abs(layoutProbe.renderedTrackHeightForSmoke - 7) < 0.5,
+                        abs(cancelledVolumeTrack.height - restingVolumeTrack.height) < 0.5,
                         abs(nativeSliderProbe.value - 0.4) < 0.001 else {
                     smokeLog("Volume cancellation left the track expanded or changed its value"); return
                   }
-                  smokeLog("Volume retained its original expansion ratio; release and cancellation restored size; native re-layout kept the center and touch coordinates")
+                  smokeLog("Volume matched the reference capsule; release/cancellation restored size and native layout preserved touch coordinates")
                   let songBeforeVolume = self.appDelegate.player.currentlyPlaying
                   let gainBeforeVolume = self.appDelegate.player.volume
                   let modeBeforeVolume = self.appDelegate.player.playerMode
@@ -1024,7 +1042,7 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
               try await Task.sleep(for: .seconds(1))
               self.appDelegate.player.pause()
               try await Task.sleep(for: .milliseconds(700))
-              guard abs(fullPlayer.artworkImage.transform.a - 0.74) < 0.01,
+              guard abs(fullPlayer.artworkImage.transform.a - 0.73) < 0.01,
                     fullPlayer.compactHeader.transform == .identity else {
                 smokeLog("Pausing did not shrink only the large artwork")
                 return
@@ -1039,20 +1057,26 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
               // Capture the short centered symbol exchange inside the app; the
               // external compositor handshake can arrive after it has finished.
               var symbolFrames: [UIImage] = []
+              var resumedCoverPeak: CGFloat = 1
               let symbolFrameSize = controls.playButton.bounds.size
-              for _ in 0..<12 {
+              for _ in 0..<16 {
                 try await Task.sleep(for: .milliseconds(25))
+                resumedCoverPeak = max(resumedCoverPeak,
+                  (fullPlayer.artworkImage.layer.presentation() ?? fullPlayer.artworkImage.layer).transform.m11)
                 symbolFrames.append(UIGraphicsImageRenderer(size: symbolFrameSize).image { _ in
                   controls.playButton.drawHierarchy(in: controls.playButton.bounds, afterScreenUpdates: false)
                 })
               }
-              let symbolGridSize = CGSize(width: symbolFrameSize.width * 6, height: symbolFrameSize.height * 2)
+              guard UIAccessibility.isReduceMotionEnabled || resumedCoverPeak > 1.015 else {
+                smokeLog("Resuming artwork missed the reference overshoot: \(resumedCoverPeak)"); return
+              }
+              let symbolGridSize = CGSize(width: symbolFrameSize.width * 8, height: symbolFrameSize.height * 2)
               let symbolGrid = UIGraphicsImageRenderer(size: symbolGridSize).image { context in
                 UIColor.darkGray.setFill()
                 context.fill(CGRect(origin: .zero, size: symbolGridSize))
                 for (index, frame) in symbolFrames.enumerated() {
-                  frame.draw(at: CGPoint(x: CGFloat(index % 6) * symbolFrameSize.width,
-                    y: CGFloat(index / 6) * symbolFrameSize.height))
+                  frame.draw(at: CGPoint(x: CGFloat(index % 8) * symbolFrameSize.width,
+                    y: CGFloat(index / 8) * symbolFrameSize.height))
                 }
               }
               try symbolGrid.pngData()?.write(to: URL.documentsDirectory
@@ -1108,7 +1132,7 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
                 smokeLog("Next symbol changed shape or failed to settle after rapid activation")
                 return
               }
-              smokeLog("Previous/next whole symbols preserved shape and settled after rapid activation")
+              smokeLog("Previous/next triangle handoffs preserved native symbol geometry and settled after rapid activation")
               try await compositorScreenshot("player-transport-next-transition.png")
               try await Task.sleep(for: .milliseconds(500))
               guard !self.appDelegate.player.isPlaying,

@@ -31,6 +31,9 @@ final class PlayerTransportButton: UIButton {
   private let pressDisc = UIView()
   private let symbolContainer = UIView()
   private let symbolView = UIImageView()
+  private let retiringSymbolView = UIImageView()
+  private let activationView = UIView()
+  private var activationTask: Task<Void, Never>?
   private var symbolIdentifier: String?
   private var symbolAnimator: UIViewPropertyAnimator?
   private var symbolTransitionID = UUID()
@@ -45,6 +48,12 @@ final class PlayerTransportButton: UIButton {
       addSubview(view)
     }
     symbolContainer.addSubview(symbolView)
+    symbolContainer.addSubview(retiringSymbolView)
+    symbolContainer.addSubview(activationView)
+    retiringSymbolView.contentMode = .center
+    retiringSymbolView.tintColor = .white
+    retiringSymbolView.alpha = 0
+    activationView.isUserInteractionEnabled = false
     symbolView.contentMode = .center
     symbolView.tintColor = .white
   }
@@ -52,7 +61,7 @@ final class PlayerTransportButton: UIButton {
   override func layoutSubviews() {
     super.layoutSubviews()
     imageView?.isHidden = true
-    let side = min(56, min(bounds.width, bounds.height))
+    let side = min(60, min(bounds.width, bounds.height))
     pressDisc.bounds = CGRect(x: 0, y: 0, width: side, height: side)
     pressDisc.center = CGPoint(x: bounds.midX, y: bounds.midY)
     pressDisc.layer.cornerRadius = side / 2
@@ -62,24 +71,28 @@ final class PlayerTransportButton: UIButton {
     symbolContainer.center = pressDisc.center
     symbolView.bounds = symbolContainer.bounds
     symbolView.center = CGPoint(x: symbolContainer.bounds.midX, y: symbolContainer.bounds.midY)
+    retiringSymbolView.bounds = symbolView.bounds
+    retiringSymbolView.center = symbolView.center
+    activationView.frame = symbolContainer.bounds
   }
 
   override var isHighlighted: Bool {
     didSet {
       guard oldValue != isHighlighted else { return }
       let pressed = isHighlighted
-      UIView.animate(withDuration: pressed ? 0.09 : 0.18, delay: 0,
-        usingSpringWithDamping: pressed ? 1 : 0.9, initialSpringVelocity: 0,
+    UIView.animate(withDuration: pressed ? 0.12 : 0.32, delay: 0,
+      usingSpringWithDamping: pressed ? 1 : 0.75, initialSpringVelocity: 0,
         options: [.beginFromCurrentState, .allowUserInteraction]) {
         self.pressDisc.alpha = pressed ? 1 : 0
         self.symbolContainer.transform = pressed && !UIAccessibility.isReduceMotionEnabled ?
-          CGAffineTransform(scaleX: 0.94, y: 0.94) : .identity
+          CGAffineTransform(scaleX: 0.90, y: 0.90) : .identity
       }
     }
   }
 
   func renderSymbol(_ image: UIImage, identifier: String) {
     guard symbolIdentifier != identifier else { return }
+    finishActivation()
     symbolView.layer.removeAnimation(forKey: Self.activationAnimationKey)
     let animated = symbolIdentifier != nil && window != nil && !UIAccessibility.isReduceMotionEnabled
     symbolIdentifier = identifier
@@ -99,26 +112,36 @@ final class PlayerTransportButton: UIButton {
       setNeedsLayout()
       return
     }
-    let shrink = UIViewPropertyAnimator(duration: 0.07, curve: .easeIn) {
-      self.symbolView.transform = CGAffineTransform(scaleX: 0.15, y: 0.15)
-      self.symbolView.alpha = 0
+    // The new symbol starts appearing before the old one disappears (0.94–1.30 s
+    // in the reference), rather than leaving an empty frame between the two.
+    if symbolView.alpha >= retiringSymbolView.alpha {
+      retiringSymbolView.image = symbolView.image
+      retiringSymbolView.transform = symbolView.transform
+      retiringSymbolView.alpha = symbolView.alpha
     }
-    shrink.addCompletion { [weak self] _ in
+    symbolView.image = image
+    symbolView.transform = CGAffineTransform(scaleX: 0.12, y: 0.12)
+    symbolView.alpha = 0
+    let replacement = UIViewPropertyAnimator(duration: 0.36, curve: .easeInOut) {
+      UIView.animateKeyframes(withDuration: 0.36, delay: 0, options: [.calculationModeLinear]) {
+        UIView.addKeyframe(withRelativeStartTime: 0, relativeDuration: 0.36) {
+          self.retiringSymbolView.transform = CGAffineTransform(scaleX: 0.12, y: 0.12)
+          self.retiringSymbolView.alpha = 0
+        }
+        UIView.addKeyframe(withRelativeStartTime: 0.12, relativeDuration: 0.88) {
+          self.symbolView.transform = .identity
+          self.symbolView.alpha = 1
+        }
+      }
+    }
+    replacement.addCompletion { [weak self] _ in
       guard let self, symbolTransitionID == transitionID else { return }
-      symbolView.image = image
-      let expand = UIViewPropertyAnimator(duration: 0.2, dampingRatio: 0.9) {
-        self.symbolView.transform = .identity
-        self.symbolView.alpha = 1
-      }
-      expand.addCompletion { [weak self] _ in
-        guard let self, symbolTransitionID == transitionID else { return }
-        symbolAnimator = nil
-      }
-      symbolAnimator = expand
-      expand.startAnimation()
+      retiringSymbolView.image = nil
+      retiringSymbolView.alpha = 0
+      symbolAnimator = nil
     }
-    symbolAnimator = shrink
-    shrink.startAnimation()
+    symbolAnimator = replacement
+    replacement.startAnimation()
   }
 
   func animateActivation(direction: CGFloat = 0) {
@@ -130,27 +153,98 @@ final class PlayerTransportButton: UIButton {
     UIView.animate(withDuration: 0.3, delay: 0.05, options: [.allowUserInteraction, .beginFromCurrentState]) {
       self.pressDisc.alpha = 0
     }
-    guard window != nil, !UIAccessibility.isReduceMotionEnabled,
+    guard activationTask == nil, window != nil, !UIAccessibility.isReduceMotionEnabled,
           let image = symbolView.image else { return }
-    // Animate the original SF Symbol as one rigid glyph. Rebuilding its halves
-    // changes their spacing and weight, and clipping makes a third triangle flash.
-    let from = (symbolView.layer.presentation() ?? symbolView.layer).transform
-    let offset = (direction < 0 ? -1.0 : 1.0) * min(3, image.size.width * 0.1)
-    let impulse = CATransform3DScale(CATransform3DMakeTranslation(offset, 0, 0), 0.9, 0.9, 1)
-    let animation = CAKeyframeAnimation(keyPath: "transform")
-    animation.values = [NSValue(caTransform3D: from), NSValue(caTransform3D: impulse),
-                        NSValue(caTransform3D: CATransform3DIdentity)]
-    animation.keyTimes = [0, 0.32, 1]
-    animation.timingFunctions = [CAMediaTimingFunction(name: .easeOut),
-                                 CAMediaTimingFunction(name: .easeInEaseOut)]
-    animation.duration = 0.28
-    // The model stays centered; a rapid tap continues from the rendered position.
-    symbolView.layer.add(animation, forKey: Self.activationAnimationKey)
+    guard let pieces = transportPieces(image) else { return }
+    let leading = direction > 0 ? pieces.0 : pieces.1
+    let trailing = direction > 0 ? pieces.1 : pieces.0
+    let distance = trailing.frame.midX - leading.frame.midX
+    func makeLayer(_ piece: (image: CGImage, frame: CGRect)) -> CALayer {
+      let layer = CALayer()
+      layer.contents = piece.image
+      layer.contentsScale = CGFloat(piece.image.width) / piece.frame.width
+      layer.frame = piece.frame
+      activationView.layer.addSublayer(layer)
+      return layer
+    }
+    let incoming = makeLayer(leading)
+    let travelling = makeLayer(leading)
+    let outgoing = makeLayer(trailing)
+    incoming.opacity = 0
+    incoming.transform = CATransform3DMakeScale(0.001, 0.001, 1)
+    symbolView.isHidden = true
+    func animate(_ layer: CALayer, key: String, values: [Any], times: [NSNumber]) {
+      let animation = CAKeyframeAnimation(keyPath: key)
+      animation.values = values
+      animation.keyTimes = times
+      animation.duration = 0.32
+      animation.timingFunctions = Array(repeating: CAMediaTimingFunction(name: .easeInEaseOut), count: times.count - 1)
+      animation.fillMode = .forwards
+      animation.isRemovedOnCompletion = false
+      layer.add(animation, forKey: key)
+    }
+    // 9.00–9.32 s: front triangle shrinks in place, rear triangle takes its
+    // position, and a new rear triangle grows. Reuse the exact SF Symbol pixels.
+    animate(outgoing, key: "transform.scale", values: [1, 0.001, 0.001], times: [0, 0.48, 1])
+    animate(outgoing, key: "opacity", values: [1, 0, 0], times: [0, 0.48, 1])
+    animate(travelling, key: "position.x", values: [leading.frame.midX, leading.frame.midX + distance, leading.frame.midX + distance], times: [0, 0.78, 1])
+    animate(incoming, key: "transform.scale", values: [0.001, 0.001, 1, 1], times: [0, 0.08, 0.80, 1])
+    animate(incoming, key: "opacity", values: [0, 0, 1, 1], times: [0, 0.08, 0.80, 1])
+    // Rapid taps keep the running handoff continuous; playback actions are not delayed.
+    activationTask = Task { @MainActor [weak self] in
+      try? await Task.sleep(for: .milliseconds(330))
+      guard !Task.isCancelled else { return }
+      self?.finishActivation()
+    }
+  }
+
+  private func finishActivation() {
+    activationTask?.cancel()
+    activationTask = nil
+    activationView.layer.sublayers?.forEach { $0.removeFromSuperlayer() }
+    symbolView.isHidden = false
+  }
+
+  private func transportPieces(_ image: UIImage)
+    -> ((image: CGImage, frame: CGRect), (image: CGImage, frame: CGRect))? {
+    let rendered = UIGraphicsImageRenderer(size: image.size).image { _ in
+      image.withTintColor(.white, renderingMode: .alwaysOriginal).draw(at: .zero)
+    }
+    guard let cg = rendered.cgImage else { return nil }
+    let width = cg.width, height = cg.height
+    var rgba = [UInt8](repeating: 0, count: width * height * 4)
+    let decoded = rgba.withUnsafeMutableBytes { bytes -> Bool in
+      guard let context = CGContext(data: bytes.baseAddress, width: width, height: height,
+        bitsPerComponent: 8, bytesPerRow: width * 4, space: CGColorSpaceCreateDeviceRGB(),
+        bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue | CGBitmapInfo.byteOrder32Big.rawValue) else { return false }
+      context.draw(cg, in: CGRect(x: 0, y: 0, width: CGFloat(width), height: CGFloat(height)))
+      return true
+    }
+    guard decoded else { return nil }
+    var left = width, right = 0, top = height, bottom = 0
+    for y in 0..<height {
+      for x in 0..<width where rgba[(y * width + x) * 4 + 3] > 0 {
+        left = min(left, x); right = max(right, x); top = min(top, y); bottom = max(bottom, y)
+      }
+    }
+    guard right > left, bottom > top else { return nil }
+    let middle = (left + right + 1) / 2
+    let scale = rendered.scale
+    let origin = CGPoint(x: (symbolView.bounds.width - image.size.width) / 2,
+                         y: (symbolView.bounds.height - image.size.height) / 2)
+    func piece(_ x: Int, _ w: Int) -> (image: CGImage, frame: CGRect)? {
+      let crop = CGRect(x: CGFloat(x), y: CGFloat(top), width: CGFloat(w), height: CGFloat(bottom - top + 1))
+      guard let bitmap = cg.cropping(to: crop) else { return nil }
+      return (bitmap, CGRect(x: origin.x + CGFloat(x) / scale, y: origin.y + CGFloat(top) / scale,
+        width: CGFloat(w) / scale, height: CGFloat(bottom - top + 1) / scale))
+    }
+    guard let first = piece(left, middle - left), let second = piece(middle, right + 1 - middle) else { return nil }
+    return (first, second)
   }
 
   override func didMoveToWindow() {
     super.didMoveToWindow()
-    if window == nil { symbolView.layer.removeAnimation(forKey: Self.activationAnimationKey) }
+    if window == nil { finishActivation() }
   }
 
   #if DEBUG && targetEnvironment(simulator)
@@ -167,7 +261,7 @@ final class PlayerTransportButton: UIButton {
     }
 
     var isRenderedSymbolSettled: Bool {
-      isCurrentSymbolImage && symbolAnimator == nil &&
+      isCurrentSymbolImage && symbolAnimator == nil && activationTask == nil && !symbolView.isHidden &&
         symbolView.layer.animation(forKey: Self.activationAnimationKey) == nil &&
         symbolView.alpha == 1 && symbolView.transform == .identity &&
         symbolContainer.transform == .identity &&
@@ -179,10 +273,13 @@ final class PlayerTransportButton: UIButton {
       let originalBounds = bounds
       var frames = [UIImage]()
       var sawMotion = false
-      for _ in 0..<12 {
+      for _ in 0..<16 {
         try await Task.sleep(for: .milliseconds(25))
         let rendered = (symbolView.layer.presentation() ?? symbolView.layer).transform
-        sawMotion = sawMotion || abs(rendered.m41) > 0.1 || abs(rendered.m11 - 1) > 0.01
+        sawMotion = sawMotion || activationView.layer.sublayers?.contains(where: {
+          let current = $0.presentation() ?? $0
+          return current.opacity > 0 && abs(current.transform.m11 - 1) > 0.01
+        }) == true
         guard bounds == originalBounds, isCurrentSymbolImage, symbolView.alpha == 1,
               abs(rendered.m42) < 0.1, abs(rendered.m11 - rendered.m22) < 0.01 else { return false }
         frames.append(UIGraphicsImageRenderer(size: bounds.size).image { _ in
@@ -190,13 +287,13 @@ final class PlayerTransportButton: UIButton {
         })
       }
       guard UIAccessibility.isReduceMotionEnabled || sawMotion, isRenderedSymbolSettled else { return false }
-      let gridSize = CGSize(width: bounds.width * 6, height: bounds.height * 2)
+      let gridSize = CGSize(width: bounds.width * 8, height: bounds.height * 2)
       let grid = UIGraphicsImageRenderer(size: gridSize).image { context in
         UIColor.darkGray.setFill()
         context.fill(CGRect(origin: .zero, size: gridSize))
         for (index, frame) in frames.enumerated() {
-          frame.draw(at: CGPoint(x: CGFloat(index % 6) * bounds.width,
-                                y: CGFloat(index / 6) * bounds.height))
+          frame.draw(at: CGPoint(x: CGFloat(index % 8) * bounds.width,
+                                y: CGFloat(index / 8) * bounds.height))
         }
       }
       try grid.pngData()?.write(to: URL.documentsDirectory.appendingPathComponent(filename))
@@ -310,12 +407,22 @@ class PlayerControlView: UIView {
     playerHandler = PlayerUIHandler(player: player, style: .popupPlayer)
     configureIconControls()
     configureVolumeSlider()
-    timeSlider.minimumTrackTintColor = .white.withAlphaComponent(0.8)
-    timeSlider.maximumTrackTintColor = .white.withAlphaComponent(0.18)
+    timeSlider.minimumTrackTintColor = .white.withAlphaComponent(0.7)
+    timeSlider.maximumTrackTintColor = .white.withAlphaComponent(0.26)
     timeSlider.accessibilityLabel = "Playback position".localized
     for label in [elapsedTimeLabel, remainingTimeLabel, audioInfoLabel] {
       label?.font = .monospacedDigitSystemFont(ofSize: 12, weight: .medium)
       label?.textColor = .white.withAlphaComponent(0.65)
+    }
+    for label in [elapsedTimeLabel, remainingTimeLabel] {
+      label?.textColor = .white
+      label?.alpha = 0.4
+    }
+    timeSlider.onExpansionChanged = { [weak self] expanded in
+      guard let self else { return }
+      let distance = timeSlider.bounds.width * 0.025
+      animateSliderFeedback(on: elapsedTimeLabel, translation: -distance, expanded: expanded, restingAlpha: 0.4)
+      animateSliderFeedback(on: remainingTimeLabel, translation: distance, expanded: expanded, restingAlpha: 0.4)
     }
     airplayButton.accessibilityLabel = "AirPlay"
     displayPlaylistButton.accessibilityLabel = "Playing next".localized
@@ -350,12 +457,12 @@ class PlayerControlView: UIView {
     loudSpeaker.isAccessibilityElement = false
     volumeSlider.translatesAutoresizingMaskIntoConstraints = false
     #if targetEnvironment(macCatalyst)
-      volumeSlider.activeTrackHeight = 11
+      volumeSlider.activeTrackHeight = 17
       volumeSlider.minimumValue = 0
       volumeSlider.maximumValue = 1
       volumeSlider.value = player.volume
       volumeSlider.minimumTrackTintColor = .white.withAlphaComponent(0.7)
-      volumeSlider.maximumTrackTintColor = .white.withAlphaComponent(0.18)
+      volumeSlider.maximumTrackTintColor = .white.withAlphaComponent(0.26)
       volumeSlider.preferredBehavioralStyle = .pad
       volumeSlider.sliderStyle = .thumbless
       volumeSlider.accessibilityLabel = "Volume".localized
@@ -368,8 +475,10 @@ class PlayerControlView: UIView {
       volumeSlider.showsVolumeSlider = true
       volumeSlider.isTrackExpansionEnabled = true
       volumeSlider.tintColor = .white.withAlphaComponent(0.7)
-      volumeSlider.setMinimumVolumeSliderImage(volumeTrackImage(alpha: 0.7), for: .normal)
-      volumeSlider.setMaximumVolumeSliderImage(volumeTrackImage(alpha: 0.18), for: .normal)
+      // Keep MPVolumeView in charge of system values and accessibility. The
+      // shared capsule renderer supplies the measured press/release geometry.
+      volumeSlider.setMinimumVolumeSliderImage(volumeTrackImage(alpha: 0), for: .normal)
+      volumeSlider.setMaximumVolumeSliderImage(volumeTrackImage(alpha: 0), for: .normal)
       let invisibleThumb = UIGraphicsImageRenderer(size: CGSize(width: 1, height: 1)).image { _ in }
       volumeSlider.setVolumeThumbImage(invisibleThumb, for: .normal)
     #endif
@@ -380,6 +489,16 @@ class PlayerControlView: UIView {
     quietSpeaker.contentMode = .scaleAspectFit
     quietSpeaker.tintColor = .white.withAlphaComponent(0.5)
     addSubview(quietSpeaker)
+    for speaker in [quietSpeaker, loudSpeaker].compactMap({ $0 }) {
+      speaker.tintColor = .white
+      speaker.alpha = 0.5
+    }
+    volumeSlider.onExpansionChanged = { [weak self, weak quietSpeaker] expanded in
+      guard let self, let quietSpeaker else { return }
+      let distance = volumeSlider.bounds.width * 0.025
+      animateSliderFeedback(on: quietSpeaker, translation: -distance, expanded: expanded, restingAlpha: 0.5)
+      animateSliderFeedback(on: loudSpeaker, translation: distance, expanded: expanded, restingAlpha: 0.5)
+    }
     NSLayoutConstraint.activate([
       quietSpeaker.leadingAnchor.constraint(equalTo: layoutMarginsGuide.leadingAnchor),
       quietSpeaker.centerYAnchor.constraint(equalTo: loudSpeaker.centerYAnchor),
@@ -390,6 +509,32 @@ class PlayerControlView: UIView {
       volumeSlider.centerYAnchor.constraint(equalTo: loudSpeaker.centerYAnchor),
       volumeSlider.heightAnchor.constraint(equalToConstant: 32),
     ])
+  }
+
+  private func animateSliderFeedback(on view: UIView, translation: CGFloat, expanded: Bool,
+                                     restingAlpha: CGFloat) {
+    let rendered = view.layer.presentation() ?? view.layer
+    let fromTransform = rendered.transform
+    let fromOpacity = rendered.opacity
+    let target = CATransform3DMakeTranslation(expanded ? translation : 0, 0, 0)
+    let opacity: Float = expanded ? 1 : Float(restingAlpha)
+    view.layer.removeAnimation(forKey: "slider-label-feedback")
+    CATransaction.begin()
+    CATransaction.setDisableActions(true)
+    view.layer.transform = target
+    view.layer.opacity = opacity
+    CATransaction.commit()
+    guard view.window != nil, !UIAccessibility.isReduceMotionEnabled else { return }
+    let movement = PlayerSliderTrackView.spring(keyPath: "transform", expanded: expanded,
+      from: NSValue(caTransform3D: fromTransform), to: NSValue(caTransform3D: target))
+    let brightness = CABasicAnimation(keyPath: "opacity")
+    brightness.fromValue = fromOpacity
+    brightness.toValue = opacity
+    brightness.duration = expanded ? 0.12 : 0.2
+    let group = CAAnimationGroup()
+    group.animations = [movement, brightness]
+    group.duration = PlayerSliderTrackView.animationDuration
+    view.layer.add(group, forKey: "slider-label-feedback")
   }
 
   #if !targetEnvironment(macCatalyst)

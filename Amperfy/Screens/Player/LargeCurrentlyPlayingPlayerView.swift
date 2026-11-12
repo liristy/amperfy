@@ -510,19 +510,47 @@ class LargeCurrentlyPlayingPlayerView: UIView {
     let playing = appDelegate.player.isPlaying
     guard artworkIsPlaying != playing else { return }
     artworkIsPlaying = playing
-    let scale: CGFloat = playing ? 1 : 0.74
+    let scale: CGFloat = playing ? 1 : 0.73
+    let renderedScale = (artworkImage.layer.presentation() ?? artworkImage.layer).transform.m11
+    let renderedShadowOpacity = (artworkShadowView.layer.presentation() ?? artworkShadowView.layer).shadowOpacity
+    artworkImage.layer.removeAnimation(forKey: "playback-cover-scale")
+    artworkShadowView.layer.removeAnimation(forKey: "playback-cover-scale")
+    artworkShadowView.layer.removeAnimation(forKey: "playback-cover-shadow")
     let changes = {
       self.artworkImage.transform = CGAffineTransform(scaleX: scale, y: scale)
       self.artworkShadowView.transform = CGAffineTransform(scaleX: scale, y: scale)
       self.artworkShadowView.layer.shadowOpacity = playing ? 0.3 : 0.16
     }
-    if animated && !UIAccessibility.isReduceMotionEnabled {
-      UIView.animate(withDuration: 0.4, delay: 0,
-                     options: [.beginFromCurrentState, .allowUserInteraction, .curveEaseInOut],
-                     animations: changes)
+    UIView.performWithoutAnimation(changes)
+    guard animated, !UIAccessibility.isReduceMotionEnabled else { return }
+    let animation: CAAnimation
+    if playing {
+      // Frame measurements at 50 ms intervals: 73% -> 103.2% -> 100%.
+      let response: [CGFloat] = [0, 0.03, 0.135, 0.34, 0.62, 0.9, 1.08, 1.12, 1.07, 1.02, 0.99, 0.995, 1, 1]
+      let bounce = CAKeyframeAnimation(keyPath: "transform.scale")
+      bounce.values = response.map { renderedScale + (scale - renderedScale) * $0 }
+      bounce.keyTimes = response.indices.map { NSNumber(value: Double($0) / Double(response.count - 1)) }
+      bounce.calculationMode = .cubic
+      bounce.duration = 0.65
+      animation = bounce
     } else {
-      UIView.performWithoutAnimation(changes)
+      let shrink = CASpringAnimation(keyPath: "transform.scale")
+      shrink.mass = 1
+      shrink.stiffness = 151.29
+      shrink.damping = 22.632
+      shrink.fromValue = renderedScale
+      shrink.toValue = scale
+      shrink.duration = 0.7
+      animation = shrink
     }
+    artworkImage.layer.add(animation, forKey: "playback-cover-scale")
+    artworkShadowView.layer.add(animation, forKey: "playback-cover-scale")
+    let shadow = CABasicAnimation(keyPath: "shadowOpacity")
+    shadow.fromValue = renderedShadowOpacity
+    shadow.toValue = playing ? 0.3 : 0.16
+    shadow.duration = animation.duration
+    shadow.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+    artworkShadowView.layer.add(shadow, forKey: "playback-cover-shadow")
   }
 
   func refreshArtwork() {
