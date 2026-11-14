@@ -305,6 +305,7 @@ class PlayableTableCell: BasicTableCell {
       playable: playable,
       newStyle: isDislayAlbumTrackNumberStyle ? .trackNumber : .artwork
     )
+    entityImage.imageContentMode = rootView is PlaylistDetailVC ? .scaleAspectFill : .scaleAspectFit
     entityImage.display(
       theme: appDelegate.storage.settings.accounts.getSetting(playable.account?.info).read
         .themePreference,
