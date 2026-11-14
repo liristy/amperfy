@@ -17,6 +17,8 @@
 
 录屏含 Apple 生成的全幅歌单封面变体。当前服务器模型没有此布局元数据，也没有歌单作者字段，因此采用录屏里的普通居中封面布局，副标题显示实际歌曲数，不伪造作者或文件夹。
 
+实际模拟器截图复核后，资料库使用原生 inline 大标题，使标题与右侧操作处于同一行；账户按钮独立于操作胶囊。网格为每项显式计算宽度，避免 repeatingSubitem 保留整组宽度。资料库及歌单缩略图按方形裁切，播放器仍完整展示非方形封面。原生接口依据：[inline 大标题](https://developer.apple.com/documentation/uikit/uinavigationitem/largetitledisplaymode-swift.enum/inline)、[重复项目尺寸约束](https://developer.apple.com/documentation/uikit/nscollectionlayoutgroup/horizontal(layoutsize:repeatingsubitem:count:))。
+
 ## 后台播放
 
 - 未显示频谱或进入后台时移除分析 tap，保留音频引擎、ReplayGain、淡入淡出和预加载。

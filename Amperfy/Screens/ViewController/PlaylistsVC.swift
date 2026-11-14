@@ -433,6 +433,7 @@ final class MusicPlaylistListCell: UITableViewCell {
   override init(style: UITableViewCell.CellStyle, reuseIdentifier: String?) {
     super.init(style: style, reuseIdentifier: reuseIdentifier)
     contentView.addSubview(artwork)
+    artwork.imageContentMode = .scaleAspectFill
     contentView.addSubview(nameLabel)
     nameLabel.font = .preferredFont(forTextStyle: .body)
     nameLabel.adjustsFontForContentSizeCategory = true

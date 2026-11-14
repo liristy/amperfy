@@ -36,6 +36,13 @@ open class EntityImageView: UIView {
 
   private var view: UIView!
 
+  public var imageContentMode: UIView.ContentMode = .scaleAspectFit {
+    didSet {
+      singleImage?.contentMode = imageContentMode
+      quadImages.forEach { $0.contentMode = imageContentMode }
+    }
+  }
+
   private var quadImages: [LibraryEntityImage] {
     [
       quadImage1,

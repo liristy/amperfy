@@ -56,7 +56,7 @@ class LibraryVC: KeyCommandCollectionViewController {
   override func viewDidLoad() {
     super.viewDidLoad()
     navigationController?.navigationBar.prefersLargeTitles = true
-    navigationItem.largeTitleDisplayMode = .always
+    navigationItem.largeTitleDisplayMode = .inline
     title = "Library".localized
     collectionView.backgroundColor = .systemBackground
     collectionView.collectionViewLayout = makeLayout()
@@ -74,7 +74,7 @@ class LibraryVC: KeyCommandCollectionViewController {
         content.imageProperties.tintColor = .label
         content.imageProperties.reservedLayoutSize = CGSize(width: 28, height: 28)
         content.textProperties.font = .preferredFont(forTextStyle: .title3)
-        content.directionalLayoutMargins = NSDirectionalEdgeInsets(top: 10, leading: 20, bottom: 10, trailing: 20)
+        content.directionalLayoutMargins = NSDirectionalEdgeInsets(top: 8, leading: 20, bottom: 8, trailing: 20)
         cell.contentConfiguration = content
         cell.accessories = [.disclosureIndicator()]
         cell.backgroundConfiguration = .clear()
@@ -183,6 +183,7 @@ class LibraryVC: KeyCommandCollectionViewController {
   }
 
   private func updateMenu() {
+    userBarButtonItem?.hidesSharedBackground = true
     let pins = pinnedIDs
     let pinActions = playlists.sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }.map { playlist in
       UIAction(title: playlist.name, image: UIImage(systemName: "pin"), state: pins.contains(pinIdentifier(playlist)) ? .on : .off) { [weak self] _ in
@@ -222,7 +223,7 @@ class LibraryVC: KeyCommandCollectionViewController {
         section.interGroupSpacing = 12
         section.orthogonalScrollingBehavior = .continuous
         let inset = max(20, (width - CGFloat(count) * side - CGFloat(max(0, count - 1)) * 12) / 2)
-        section.contentInsets = .init(top: 8, leading: inset, bottom: 24, trailing: inset)
+        section.contentInsets = .init(top: 8, leading: inset, bottom: 12, trailing: inset)
         return section
       case .categories:
         var config = UICollectionLayoutListConfiguration(appearance: .plain)
@@ -232,7 +233,7 @@ class LibraryVC: KeyCommandCollectionViewController {
       case .recent:
         let columns = width > 600 ? 4 : 2
         let side = (width - 40 - CGFloat(columns - 1) * 12) / CGFloat(columns)
-        let item = NSCollectionLayoutItem(layoutSize: .init(widthDimension: .fractionalWidth(1), heightDimension: .fractionalHeight(1)))
+        let item = NSCollectionLayoutItem(layoutSize: .init(widthDimension: .absolute(side), heightDimension: .fractionalHeight(1)))
         let group = NSCollectionLayoutGroup.horizontal(layoutSize: .init(widthDimension: .fractionalWidth(1), heightDimension: .absolute(side + 46)),
           repeatingSubitem: item, count: columns)
         group.interItemSpacing = .fixed(12)
@@ -323,11 +324,15 @@ private final class LibraryArtworkTile: UICollectionViewCell {
   override init(frame: CGRect) {
     super.init(frame: frame)
     [artwork, favorite, titleLabel, subtitleLabel].forEach { contentView.addSubview($0) }
+    artwork.imageContentMode = .scaleAspectFill
     favorite.tintColor = .systemPink
     favorite.contentMode = .scaleAspectFit
     favorite.backgroundColor = .secondarySystemBackground
     favorite.layer.cornerRadius = 8
-    favorite.clipsToBounds = true
+    favorite.layer.shadowColor = UIColor.black.cgColor
+    favorite.layer.shadowOpacity = 0.1
+    favorite.layer.shadowRadius = 4
+    favorite.layer.shadowOffset = CGSize(width: 0, height: 2)
     titleLabel.numberOfLines = 1
     subtitleLabel.numberOfLines = 1
     subtitleLabel.textColor = .secondaryLabel
@@ -367,6 +372,7 @@ private final class LibraryArtworkTile: UICollectionViewCell {
     let side = bounds.width
     artwork.frame = CGRect(x: 0, y: 0, width: side, height: side)
     favorite.frame = artwork.frame
+    favorite.layer.shadowPath = UIBezierPath(roundedRect: favorite.bounds, cornerRadius: 8).cgPath
     // SF Symbol padding belongs inside the tile, not in the collection grid.
     favorite.preferredSymbolConfiguration = UIImage.SymbolConfiguration(pointSize: side * 0.48)
     favorite.contentMode = .center
