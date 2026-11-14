@@ -2759,7 +2759,13 @@ class MusicPlayerTest: XCTestCase {
     try await startCachedSong(at: 37)
     backendPlayer.setVisualUpdatesEnabled(true)
     testPlayer.pause()
-    try await Task.sleep(for: .milliseconds(150))
+    // The mock does not render the fade envelope, so pause first waits for its
+    // bounded silence fallback and output drain. Start this seek in .paused.
+    for _ in 0..<50 {
+      if mockAudioStreamingPlayer.getState() == .paused { break }
+      try await Task.sleep(for: .milliseconds(20))
+    }
+    XCTAssertEqual(mockAudioStreamingPlayer.getState(), .paused)
     testPlayer.seek(toSecond: 65.125)
     XCTAssertEqual(mockAudioStreamingPlayer.mockElapsedTime, 65.125)
     XCTAssertEqual(mockMusicPlayable.lyricsTimes.last?.seconds, 65.125)
