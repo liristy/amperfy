@@ -336,6 +336,17 @@ final class PlayerTransportButton: UIButton {
   }
 
   #if DEBUG && targetEnvironment(simulator)
+    private func transportSnapshotForSmoke() -> UIImage {
+      UIGraphicsImageRenderer(size: bounds.size).image { context in
+        guard let window else { return }
+        let origin = convert(bounds, to: window).origin
+        context.cgContext.translateBy(x: -origin.x, y: -origin.y)
+        // Glass content is composed by its ancestors; drawing the button alone
+        // produces an empty image even though its glyph is visible onscreen.
+        window.drawHierarchy(in: window.bounds, afterScreenUpdates: false)
+      }
+    }
+
     private var isCurrentSymbolImage: Bool {
       func pixels(_ image: UIImage?) -> Data? {
         guard let image else { return nil }
@@ -370,9 +381,7 @@ final class PlayerTransportButton: UIButton {
               abs(rendered.position.y - bounds.midY) < 0.5,
               abs(rendered.transform.m11 - rendered.transform.m22) < 0.01,
               abs(rendered.transform.m12) < 0.01 else { return false }
-        frames.append(UIGraphicsImageRenderer(size: bounds.size).image { _ in
-          drawHierarchy(in: bounds, afterScreenUpdates: false)
-        })
+        frames.append(transportSnapshotForSmoke())
       }
       guard UIAccessibility.isReduceMotionEnabled || sawShrink, isRenderedSymbolSettled else { return false }
       let gridSize = CGSize(width: bounds.width * 10, height: bounds.height * 2)
@@ -395,17 +404,25 @@ final class PlayerTransportButton: UIButton {
       for _ in 0..<16 {
         try await Task.sleep(for: .milliseconds(25))
         let rendered = (symbolView.layer.presentation() ?? symbolView.layer).transform
-        sawMotion = sawMotion || activationView.layer.sublayers?.contains(where: {
+        let animatedLayers = activationView.subviews.isEmpty ?
+          (activationView.layer.sublayers ?? []) : activationView.subviews.map(\.layer)
+        // Liquid Glass may insert composition layers above template image views.
+        // Inspect the animated glyph layers, not those intermediate containers.
+        sawMotion = sawMotion || animatedLayers.contains(where: {
           let current = $0.presentation() ?? $0
           return current.opacity > 0 && abs(current.transform.m11 - 1) > 0.01
-        }) == true
-        guard bounds == originalBounds, isCurrentSymbolImage, symbolView.alpha == 1,
-              abs(rendered.m42) < 0.1, abs(rendered.m11 - rendered.m22) < 0.01 else { return false }
-        frames.append(UIGraphicsImageRenderer(size: bounds.size).image { _ in
-          drawHierarchy(in: bounds, afterScreenUpdates: false)
         })
+        guard bounds == originalBounds, isCurrentSymbolImage, symbolView.alpha == 1,
+              abs(rendered.m42) < 0.1, abs(rendered.m11 - rendered.m22) < 0.01 else {
+          FileHandle.standardOutput.write(Data(("Transport sample failed: \(filename), bounds=\(bounds), expected=\(originalBounds), image=\(isCurrentSymbolImage), alpha=\(symbolView.alpha), transform=\(rendered)\n").utf8))
+          return false
+        }
+        frames.append(transportSnapshotForSmoke())
       }
-      guard UIAccessibility.isReduceMotionEnabled || sawMotion, isRenderedSymbolSettled else { return false }
+      guard UIAccessibility.isReduceMotionEnabled || sawMotion, isRenderedSymbolSettled else {
+        FileHandle.standardOutput.write(Data(("Transport did not settle: \(filename), motion=\(sawMotion), image=\(isCurrentSymbolImage), activation=\(activationTask != nil), replacement=\(symbolTransitionTask != nil), hidden=\(symbolView.isHidden), container=\(symbolContainer.transform), center=\(symbolView.center), bounds=\(symbolContainer.bounds)\n").utf8))
+        return false
+      }
       let gridSize = CGSize(width: bounds.width * 8, height: bounds.height * 2)
       let grid = UIGraphicsImageRenderer(size: gridSize).image { context in
         UIColor.darkGray.setFill()
