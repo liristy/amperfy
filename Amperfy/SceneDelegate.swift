@@ -1212,8 +1212,16 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
                         }) else { return false }
                   for (index, element) in elements.enumerated() {
                     guard element === fixedElements[index], !element.isHidden, element.alpha == 1 else { return false }
-                    let layer = element.layer.presentation() ?? element.layer
-                    let frame = layer.convert(layer.bounds, to: popup.view.layer.presentation() ?? popup.view.layer)
+                    // Reparenting the shared card can temporarily leave a detached
+                    // presentation copy. Never convert between unrelated layer trees.
+                    var frame = element.convert(element.bounds, to: popup.view)
+                    if let rendered = element.layer.presentation() {
+                      var ancestor = rendered.superlayer
+                      while let current = ancestor, current.model() !== popup.view.layer {
+                        ancestor = current.superlayer
+                      }
+                      if let ancestor { frame = rendered.convert(rendered.bounds, to: ancestor) }
+                    }
                     let expected = fixedFrames[index]
                     guard abs(frame.minX - expected.minX) < 0.5,
                           abs(frame.minY - expected.minY) < 0.5,
