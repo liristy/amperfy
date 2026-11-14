@@ -474,13 +474,18 @@ class BackendAudioPlayer: NSObject {
   func seek(toSecond: Double) {
     guard toSecond.isFinite, toSecond >= 0 else { return }
     lastKnownPlaybackTime = toSecond
-    if currentPlayUrl != "", player?.getState() == .playing || player?.getState() == .paused {
+    if currentPlayUrl != "", let player,
+       [.playing, .paused, .bufferring].contains(player.getState()) {
+      // A second lyric tap commonly arrives while the first seek is buffering.
+      // This entry has already started; it will not send didStartPlaying again.
+      // Pass the latest request to the engine instead of parking it forever.
       seekTimeWhenStarted = nil
-      player?.seek(to: toSecond)
+      player.seek(to: toSecond)
     } else {
       seekTimeWhenStarted = toSecond
     }
     responder?.didSeek()
+    if isVisualUpdatesEnabled { notifyLyricsTimeChanged() }
   }
 
   private func restartPlayer() {
@@ -999,6 +1004,8 @@ extension BackendAudioPlayer: AudioStreaming.AudioPlayerDelegate {
       if let seekTimeWhenStarted {
         player?.seek(to: seekTimeWhenStarted)
         self.seekTimeWhenStarted = nil
+        responder?.didElapsedTimeChange()
+        if isVisualUpdatesEnabled { notifyLyricsTimeChanged() }
       }
       isErrorOccurred = false
     }

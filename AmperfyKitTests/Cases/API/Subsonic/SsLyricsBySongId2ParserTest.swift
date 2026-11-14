@@ -58,6 +58,24 @@ class SsLyricsBySongId2ParserTest: AbstractSsParserTest {
     XCTAssertNil(lyrics.activeLineIndex(at: time(2000)))
   }
 
+  func testExactMillisecondSeekBoundariesWithPositiveAndNegativeOffsets() {
+    var lyrics = StructuredLyrics()
+    lyrics.synced = true
+    lyrics.line = [0, 1001, 16013, 32003, 65001].map { start in
+      var line = LyricsLine()
+      line.start = start
+      return line
+    }
+    for offset in [-125, 0, 250] {
+      lyrics.offset = offset
+      for index in 1..<lyrics.line.count {
+        let time = CMTime(value: Int64(lyrics.line[index].start! - offset), timescale: 1000)
+        XCTAssertEqual(lyrics.activeLineIndex(at: time), index)
+        XCTAssertEqual(lyrics.activeLineIndex(at: CMTimeSubtract(time, CMTime(value: 1, timescale: 1000))), index-1)
+      }
+    }
+  }
+
   override func checkCorrectParsing() {
     guard let lyricsParser = ssParserDelegate as? SsLyricsParserDelegate,
           let lyricsList = lyricsParser.lyricsList

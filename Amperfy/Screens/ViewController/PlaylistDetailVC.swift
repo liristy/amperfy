@@ -225,13 +225,29 @@ class PlaylistDetailVC: SingleSnapshotFetchedResultsTableViewController<Playlist
 
   override func viewWillDisappear(_ animated: Bool) {
     super.viewWillDisappear(animated)
-    navigationController?.navigationBar.overrideUserInterfaceStyle = previousNavStyle ?? .unspecified
-    navigationController?.navigationBar.tintColor = previousNavTint
-    transitionCoordinator?.animate(alongsideTransition: nil) { [weak self] context in
-      guard context.isCancelled, let self else { return }
-      navigationController?.navigationBar.overrideUserInterfaceStyle = .dark
-      navigationController?.navigationBar.tintColor = .white
+    let bar = navigationController?.navigationBar
+    let restore = { [previousNavStyle, previousNavTint] in
+      bar?.overrideUserInterfaceStyle = previousNavStyle ?? .unspecified
+      bar?.tintColor = previousNavTint
     }
+    // Keep the current page's contrast while an interactive pop can still cancel.
+    if let coordinator = transitionCoordinator {
+      coordinator.animate(alongsideTransition: nil) { context in
+        if !context.isCancelled { restore() }
+      }
+    } else {
+      restore()
+    }
+  }
+
+  var scrollCompatibleZoomOptions: UIViewController.Transition.ZoomOptions {
+    let options = UIViewController.Transition.ZoomOptions()
+    // Vertical drags belong to the list and pull-to-refresh. Allow the native
+    // horizontal back gesture without starting a competing zoom dismissal.
+    options.interactiveDismissShouldBegin = { context in
+      abs(context.velocity.dx) > abs(context.velocity.dy)
+    }
+    return options
   }
 
   override func viewDidLayoutSubviews() {
@@ -242,11 +258,20 @@ class PlaylistDetailVC: SingleSnapshotFetchedResultsTableViewController<Playlist
       header.frame.size = size
       tableView.tableHeaderView = header
     }
+    updateNavigationTitle()
   }
 
   override func scrollViewDidScroll(_ scrollView: UIScrollView) {
+    updateNavigationTitle()
+  }
+
+  private func updateNavigationTitle() {
     let headerHeight = detailOperationsView?.frame.height ?? 0
-    navigationItem.title = scrollView.contentOffset.y + scrollView.adjustedContentInset.top > headerHeight - 80 ? playlist.name : nil
+    let collapsed = headerHeight > 0 && tableView.contentOffset.y + tableView.adjustedContentInset.top > headerHeight - 80
+    // nil falls back to the controller title, duplicating the header title.
+    // Avoid rebuilding navigation contents for every scroll event.
+    let title = collapsed ? playlist.name : ""
+    if navigationItem.title != title { navigationItem.title = title }
   }
 
   private func downloadPlaylist() {

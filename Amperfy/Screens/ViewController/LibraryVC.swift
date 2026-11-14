@@ -26,11 +26,8 @@ import UIKit
 @MainActor
 class LibraryVC: KeyCommandCollectionViewController {
   private enum Section: Int, Hashable { case pinned, categories, recent }
-  private enum Item: Hashable { case favorites, playlist(String), category(Int), album(NSManagedObjectID) }
+  private enum Item: Hashable { case playlist(String), category(Int), album(NSManagedObjectID) }
   private let account: Account
-  private var userButton: UIButton?
-  private var userBarButtonItem: UIBarButtonItem?
-  private var accountNotificationHandler: AccountNotificationHandler?
   private var source: UICollectionViewDiffableDataSource<Section, Item>!
   private var recentAlbums: AlbumFetchedResultsController?
   private var playlists = [Playlist]()
@@ -83,7 +80,6 @@ class LibraryVC: KeyCommandCollectionViewController {
       }
       let cell = view.dequeueReusableCell(withReuseIdentifier: "artwork", for: path) as! LibraryArtworkTile
       switch item {
-      case .favorites: cell.displayFavorites()
       case let .playlist(id):
         if let playlist = playlists.first(where: { $0.managedObject.objectID.uriRepresentation().absoluteString == id }) {
           cell.display(playlist, pinned: true)
@@ -104,13 +100,6 @@ class LibraryVC: KeyCommandCollectionViewController {
       name: .NSManagedObjectContextObjectsDidChange, object: appDelegate.storage.main.context)
     NotificationCenter.default.addObserver(self, selector: #selector(becameActive),
       name: UIApplication.didBecomeActiveNotification, object: nil)
-    accountNotificationHandler = AccountNotificationHandler(storage: appDelegate.storage,
-      notificationHandler: appDelegate.notificationHandler)
-    accountNotificationHandler?.registerCallbackForActiveAccountChange { [weak self] _ in
-      guard let self else { return }
-      setupUserNavButton(currentAccount: account, userButton: &userButton, userBarButtonItem: &userBarButtonItem)
-      updateMenu()
-    }
     refreshLibrary()
   }
 
@@ -156,15 +145,10 @@ class LibraryVC: KeyCommandCollectionViewController {
     recentAlbums?.search(searchText: "", onlyCached: appDelegate.storage.settings.user.isOfflineMode, displayFilter: .newest)
     let albums = (recentAlbums?.fetchedObjects as? [AlbumMO]) ?? []
     let selected = appDelegate.storage.settings.accounts.getSetting(account.info).read.libraryDisplaySettings.inUse
-    // Favorites has its own tile; recent additions have their own grid.
-    var categories = selected.filter { $0 != .favoriteSongs && $0 != .newestAlbums }
-    // Migrate the old default ordering visually, preserving custom selections.
-    if selected == LibraryDisplaySettings.defaultSettings.inUse {
-      categories = [.playlists, .artists, .albums, .songs, .downloads]
-    }
+    // Favorites stays in the user's category order; only playlists can be pinned.
+    let categories = selected.filter { $0 != .newestAlbums }
     var snapshot = NSDiffableDataSourceSnapshot<Section, Item>()
-    let pins: [Item] = (selected.contains(.favoriteSongs) ? [.favorites] : []) +
-      pinnedIDs.filter { id in playlists.contains { $0.managedObject.objectID.uriRepresentation().absoluteString == id } }.map(Item.playlist)
+    let pins = pinnedIDs.filter { id in playlists.contains { $0.managedObject.objectID.uriRepresentation().absoluteString == id } }.map(Item.playlist)
     if !pins.isEmpty {
       snapshot.appendSections([.pinned])
       snapshot.appendItems(pins, toSection: .pinned)
@@ -183,7 +167,6 @@ class LibraryVC: KeyCommandCollectionViewController {
   }
 
   private func updateMenu() {
-    userBarButtonItem?.hidesSharedBackground = true
     let pins = pinnedIDs
     let pinActions = playlists.sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }.map { playlist in
       UIAction(title: playlist.name, image: UIImage(systemName: "pin"), state: pins.contains(pinIdentifier(playlist)) ? .on : .off) { [weak self] _ in
@@ -197,13 +180,13 @@ class LibraryVC: KeyCommandCollectionViewController {
     }
     let pin = UIBarButtonItem(image: UIImage(systemName: "pin"), menu: UIMenu(title: "Pin to Library".localized, children: pinActions))
     pin.accessibilityLabel = "Pin to Library".localized
-    let edit = UIBarButtonItem(image: UIImage(systemName: "ellipsis"), menu: UIMenu(children: [
-      UIAction(title: "Edit".localized, image: UIImage(systemName: "slider.horizontal.3")) { [weak self] _ in self?.editCategories() },
-    ]))
-    navigationItem.rightBarButtonItems = [userBarButtonItem, edit, pin].compactMap { $0 }
+    let edit = UIBarButtonItem(title: "Edit".localized, style: .plain, target: self,
+                              action: #selector(editCategories))
+    edit.accessibilityIdentifier = "library-edit-categories"
+    navigationItem.rightBarButtonItems = [edit, pin]
   }
 
-  private func editCategories() {
+  @objc private func editCategories() {
     let editor = LibraryCategoriesEditor(account: account)
     present(UINavigationController(rootViewController: editor), animated: true)
   }
@@ -252,7 +235,6 @@ class LibraryVC: KeyCommandCollectionViewController {
     guard let item = source.itemIdentifier(for: indexPath) else { return }
     let destination: UIViewController?
     switch item {
-    case .favorites: destination = AppStoryboard.Main.segueToFavoriteSongs(account: account)
     case let .playlist(id):
       destination = playlists.first(where: { $0.managedObject.objectID.uriRepresentation().absoluteString == id }).map { AppStoryboard.Main.segueToPlaylistDetail(account: account, playlist: $0) }
     case let .category(raw): destination = LibraryDisplayType(rawValue: raw)?.controller(account: account, settings: appDelegate.storage.settings)
@@ -264,7 +246,7 @@ class LibraryVC: KeyCommandCollectionViewController {
     if let destination {
       switch item {
       case .playlist, .album:
-        destination.preferredTransition = .zoom { [weak self] _ in
+        destination.preferredTransition = .zoom(options: (destination as? PlaylistDetailVC)?.scrollCompatibleZoomOptions) { [weak self] _ in
           guard let self, let path = source.indexPath(for: item) else { return nil }
           return (collectionView.cellForItem(at: path) as? LibraryArtworkTile)?.artwork
         }
@@ -317,22 +299,13 @@ private final class LibraryRecentHeading: UICollectionReusableView {
 @MainActor
 private final class LibraryArtworkTile: UICollectionViewCell {
   let artwork = EntityImageView(frame: .zero)
-  let favorite = UIImageView(image: UIImage(systemName: "star.fill"))
   let titleLabel = UILabel()
   let subtitleLabel = UILabel()
   private var pinned = false
   override init(frame: CGRect) {
     super.init(frame: frame)
-    [artwork, favorite, titleLabel, subtitleLabel].forEach { contentView.addSubview($0) }
+    [artwork, titleLabel, subtitleLabel].forEach { contentView.addSubview($0) }
     artwork.imageContentMode = .scaleAspectFill
-    favorite.tintColor = .systemPink
-    favorite.contentMode = .scaleAspectFit
-    favorite.backgroundColor = .secondarySystemBackground
-    favorite.layer.cornerRadius = 8
-    favorite.layer.shadowColor = UIColor.black.cgColor
-    favorite.layer.shadowOpacity = 0.1
-    favorite.layer.shadowRadius = 4
-    favorite.layer.shadowOffset = CGSize(width: 0, height: 2)
     titleLabel.numberOfLines = 1
     subtitleLabel.numberOfLines = 1
     subtitleLabel.textColor = .secondaryLabel
@@ -340,19 +313,8 @@ private final class LibraryArtworkTile: UICollectionViewCell {
     accessibilityTraits = .button
   }
   required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
-  func displayFavorites() {
-    pinned = true
-    artwork.isHidden = true
-    favorite.isHidden = false
-    titleLabel.text = "Favorites".localized
-    subtitleLabel.text = nil
-    updateStyle()
-    accessibilityIdentifier = "library-pinned-favorites"
-  }
   func display(_ container: PlayableContainable, pinned: Bool) {
     self.pinned = pinned
-    favorite.isHidden = true
-    artwork.isHidden = false
     artwork.display(theme: appDelegate.storage.settings.accounts.getSetting(container.account?.info).read.themePreference,
       container: container, cornerRadius: .small)
     titleLabel.text = container.name
@@ -371,11 +333,6 @@ private final class LibraryArtworkTile: UICollectionViewCell {
     super.layoutSubviews()
     let side = bounds.width
     artwork.frame = CGRect(x: 0, y: 0, width: side, height: side)
-    favorite.frame = artwork.frame
-    favorite.layer.shadowPath = UIBezierPath(roundedRect: favorite.bounds, cornerRadius: 8).cgPath
-    // SF Symbol padding belongs inside the tile, not in the collection grid.
-    favorite.preferredSymbolConfiguration = UIImage.SymbolConfiguration(pointSize: side * 0.48)
-    favorite.contentMode = .center
     titleLabel.frame = CGRect(x: 0, y: side + 5, width: side, height: 18)
     subtitleLabel.frame = CGRect(x: 0, y: side + 23, width: side, height: 16)
   }

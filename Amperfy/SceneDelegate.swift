@@ -1177,6 +1177,29 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
                 return lyricsTable.visibleCells.contains { $0.accessibilityTraits.contains(.selected) }
               }
               guard activeLyricIsVisible() else { smokeLog("Lyrics did not highlight when opened"); return }
+              // Drive the real lyric selection callback and engine, including
+              // rapid forward/backward taps while the previous seek can buffer.
+              for row in [7, 2, 6] {
+                lyricsTable.tableView(lyricsTable, didSelectRowAt: IndexPath(row: row, section: 0))
+                try await Task.sleep(for: .milliseconds(30))
+              }
+              try await Task.sleep(for: .milliseconds(800))
+              guard abs(self.appDelegate.player.elapsedTime - 60) < 2,
+                    lyricsTable.cellForRow(at: IndexPath(row: 6, section: 0))?.accessibilityTraits.contains(.selected) == true else {
+                smokeLog("Rapid lyric taps did not align engine position and selected line"); return
+              }
+              self.appDelegate.player.pause()
+              try await Task.sleep(for: .milliseconds(200))
+              lyricsTable.tableView(lyricsTable, didSelectRowAt: IndexPath(row: 3, section: 0))
+              try await Task.sleep(for: .milliseconds(500))
+              guard !self.appDelegate.player.isPlaying,
+                    abs(self.appDelegate.player.elapsedTime - 30) < 0.2,
+                    lyricsTable.cellForRow(at: IndexPath(row: 3, section: 0))?.accessibilityTraits.contains(.selected) == true else {
+                smokeLog("Paused lyric tap did not align engine position and highlight"); return
+              }
+              self.appDelegate.player.seek(toSecond: 42)
+              self.appDelegate.player.play()
+              smokeLog("Rapid and paused lyric selection aligned with the real audio engine")
               let heightWithControls = popup.largePlayerPlaceholderView.bounds.height
               try await compositorScreenshot("player-lyrics-controls.png")
               try await Task.sleep(for: .seconds(5))
@@ -1620,6 +1643,8 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
               try await Task.sleep(for: .milliseconds(80))
               popup.updateInteractiveDismissal(translation: 28)
               let returningCoverStartWidth = popup.transitionArtwork?.bounds.width ?? 72
+              let capsuleTransform = miniPlayer.glassContainer.transform
+              let capsuleFrame = miniPlayer.glassContainer.convert(miniPlayer.glassContainer.bounds, to: vc.view.window)
               popup.endInteractiveDismissal(translation: 28, velocity: 900)
               var sampledClosingTravel = false
               var sampledReturningCover = false
@@ -1629,6 +1654,12 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
                 guard popup.view.mask != nil,
                       let animatedFrame = renderedSurface(popup) else { continue }
                 let destination = miniPlayer.glassContainer.bounds
+                let currentCapsule = miniPlayer.glassContainer.convert(destination, to: vc.view.window)
+                guard miniPlayer.glassContainer.transform == capsuleTransform,
+                      abs(currentCapsule.minY-capsuleFrame.minY) < 0.5,
+                      abs(currentCapsule.width-capsuleFrame.width) < 0.5 else {
+                  smokeLog("Live capsule moved or scaled during the closing handoff"); return
+                }
                 if animatedFrame.height > destination.height + 10 && animatedFrame.height < popup.view.bounds.height - 10 {
                   sampledClosingTravel = true
                 }
@@ -2005,11 +2036,35 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
       }
       let collection = libraryVC.collectionView!
       collection.layoutIfNeeded()
-      guard collection.visibleCells.contains(where: { $0.accessibilityIdentifier == "library-pinned-favorites" }),
+      guard collection.visibleCells.contains(where: { $0.accessibilityIdentifier == "library-pinned-playlist" }),
+            collection.visibleCells.contains(where: { $0.accessibilityIdentifier == "library-category-\(LibraryDisplayType.favoriteSongs.rawValue)" }),
+            !collection.visibleCells.contains(where: { $0.accessibilityIdentifier == "library-pinned-favorites" }),
             let category = collection.visibleCells.first(where: {
               $0.accessibilityIdentifier == "library-category-\(LibraryDisplayType.playlists.rawValue)"
             }), let categoryPath = collection.indexPath(for: category) else {
-        smokeLog("Library favorites or playlist category is missing"); return false
+        smokeLog("Library favorites category or pinned playlist is missing"); return false
+      }
+      guard let edit = libraryVC.navigationItem.rightBarButtonItems?.first(where: {
+        $0.accessibilityIdentifier == "library-edit-categories"
+      }), let editAction = edit.action,
+      libraryVC.navigationItem.rightBarButtonItems?.count == 2,
+      UIApplication.shared.sendAction(editAction, to: edit.target, from: edit, for: nil) else {
+        smokeLog("Library Edit button did not dispatch its action"); return false
+      }
+      try await Task.sleep(for: .milliseconds(700))
+      guard let editorNav = libraryVC.presentedViewController as? UINavigationController,
+            let editor = editorNav.topViewController as? UICollectionViewController,
+            editor.collectionView.isEditing,
+            editor.collectionView.numberOfItems(inSection: 0) > 0,
+            let done = editor.navigationItem.rightBarButtonItems?.first,
+            let doneAction = done.action else {
+        smokeLog("Library Edit did not open category settings"); return false
+      }
+      try await compositorScreenshot("player-library-edit.png")
+      guard UIApplication.shared.sendAction(doneAction, to: done.target, from: done, for: nil) else { return false }
+      try await Task.sleep(for: .milliseconds(700))
+      guard libraryVC.presentedViewController == nil else {
+        smokeLog("Library category Done button did not return to Library"); return false
       }
       try await compositorScreenshot("player-library-layout.png")
       let recentSection = collection.numberOfSections - 1
@@ -2054,12 +2109,38 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
             abs(detail.tableView.rectForRow(at: playlistPath).height-56) < 1 else {
         smokeLog("Playlist detail artwork or rows departed from reference"); return false
       }
+      guard detail.navigationItem.title == "" else {
+        smokeLog("Playlist title is duplicated above the expanded artwork header"); return false
+      }
       try await compositorScreenshot("player-playlist-detail.png")
       detail.tableView.setContentOffset(CGPoint(x: 0, y: header.frame.height), animated: false)
       try await compositorScreenshot("player-playlist-scrolled.png")
       guard detail.navigationItem.title == detail.playlist.name else {
         smokeLog("Playlist title did not follow the scrolling header"); return false
       }
+      let background = detail.tableView.backgroundColor
+      let headerSize = header.frame.size
+      let top = -detail.tableView.adjustedContentInset.top
+      // Descend through the title threshold into top-edge rubber banding, then
+      // return. Sample every step so a transient title or palette reset fails.
+      for step in 0...40 {
+        let fraction = CGFloat(step)/40
+        let y = header.frame.height + (top-90-header.frame.height)*fraction
+        detail.tableView.setContentOffset(CGPoint(x: 0, y: y), animated: false)
+        try await Task.sleep(for: .milliseconds(16))
+        guard header.frame.size == headerSize,
+              detail.tableView.backgroundColor == background,
+              group.managingNavigationController?.topViewController === detail,
+              detail.navigationController?.navigationBar.overrideUserInterfaceStyle == .dark else {
+          smokeLog("Playlist downward scroll changed its geometry or contrast"); return false
+        }
+        if y <= top, detail.navigationItem.title != "" {
+          smokeLog("Playlist top bounce duplicated its navigation title"); return false
+        }
+      }
+      try await compositorScreenshot("player-playlist-pulled-down.png")
+      detail.tableView.setContentOffset(CGPoint(x: 0, y: top), animated: true)
+      try await Task.sleep(for: .milliseconds(500))
       group.managingNavigationController?.popViewController(animated: true)
       try await Task.sleep(for: .seconds(1))
       guard group.managingNavigationController?.topViewController === list,

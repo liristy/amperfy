@@ -273,7 +273,7 @@ class PlaylistsVC: SingleSnapshotFetchedResultsTableViewController<PlaylistMO> {
     guard let playlist = playlistAt(indexPath: indexPath) else { return }
     let detail = AppStoryboard.Main.segueToPlaylistDetail(account: account, playlist: playlist)
     let objectID = playlist.managedObject.objectID
-    detail.preferredTransition = .zoom { [weak self] _ in
+    detail.preferredTransition = .zoom(options: detail.scrollCompatibleZoomOptions) { [weak self] _ in
       guard let self, let path = diffableDataSource?.indexPath(for: objectID) else { return nil }
       return (tableView.cellForRow(at: path) as? MusicPlaylistListCell)?.artwork
     }

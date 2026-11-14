@@ -2738,6 +2738,35 @@ class MusicPlayerTest: XCTestCase {
     XCTAssertEqual(elapsedTime, 3.0)
   }
 
+  func testRepeatedLyricSeeksWhileBufferingReachTheEngineAndPublishLatestTime() async throws {
+    try await startCachedSong(at: 37)
+    backendPlayer.setVisualUpdatesEnabled(true)
+    testPlayer.seek(toSecond: 42.001)
+    mockAudioStreamingPlayer.buffering.withLock { $0 = true }
+    // The first seek is still buffering when the listener taps later, then earlier.
+    testPlayer.seek(toSecond: 86.125)
+    testPlayer.seek(toSecond: 18.047)
+    XCTAssertEqual(mockAudioStreamingPlayer.mockElapsedTime, 18.047)
+    XCTAssertEqual(testPlayer.elapsedTime, 18.047)
+    XCTAssertEqual(mockMusicPlayable.lyricsTimes.last?.seconds ?? -1, 18.047, accuracy: 0.001)
+    mockAudioStreamingPlayer.buffering.withLock { $0 = false }
+    backendPlayer.audioPlayerStateChanged(player: mockAudioStreamingPlayer, with: .playing, previous: .bufferring)
+    for _ in 0..<10 { await Task.yield() }
+    XCTAssertEqual(testPlayer.elapsedTime, 18.047, "Resuming must not replay an older seek")
+  }
+
+  func testPausedLyricSeekPublishesWithoutWaitingForPlaybackTimer() async throws {
+    try await startCachedSong(at: 37)
+    backendPlayer.setVisualUpdatesEnabled(true)
+    testPlayer.pause()
+    try await Task.sleep(for: .milliseconds(150))
+    testPlayer.seek(toSecond: 65.125)
+    XCTAssertEqual(mockAudioStreamingPlayer.mockElapsedTime, 65.125)
+    XCTAssertEqual(mockMusicPlayable.lyricsTimes.last?.seconds, 65.125)
+    XCTAssertFalse(testPlayer.isPlaying)
+    XCTAssertFalse(mockAudioStreamingPlayer.isPlaying)
+  }
+
   func testPlayPreviousOrReplay_EmptyPlaylist() {
     testPlayer.playPreviousOrReplay()
     XCTAssertEqual(testPlayer.currentlyPlaying, nil)

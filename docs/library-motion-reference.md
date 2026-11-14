@@ -4,7 +4,7 @@
 
 | 时间 | 观察 | 实现 |
 | --- | --- | --- |
-| 8–12 秒 | 固定项目、分类列表、双列最近添加 | 顶部固定收藏和用户选择的歌单，分类保留自定义选项；最近添加两列，宽屏四列 |
+| 8–12 秒 | 固定项目、分类列表、双列最近添加 | 仅置顶用户选择的歌单；收藏按用户要求保留为原有顺序中的分类行，分类保留自定义选项；最近添加两列，宽屏四列 |
 | 14 秒 | 歌单缩略图约 0.146 倍画面宽，行距约 0.184 倍 | 60 pt 图、76 pt 行，单行标题、原生排序和新增菜单 |
 | 15–19 秒 | 居中封面约 0.694 倍画面宽，标题与播放操作在下方 | 真实封面取色的深色背景，播放、随机、下载；歌曲行 56 pt、封面 44 pt |
 | 19–25 秒 | 封面和操作随歌曲一起滚走 | tableHeaderView 随列表滚动，导航标题在头部离开后出现 |
@@ -17,7 +17,7 @@
 
 录屏含 Apple 生成的全幅歌单封面变体。当前服务器模型没有此布局元数据，也没有歌单作者字段，因此采用录屏里的普通居中封面布局，副标题显示实际歌曲数，不伪造作者或文件夹。
 
-实际模拟器截图复核后，资料库使用原生 inline 大标题，使标题与右侧操作处于同一行；账户按钮独立于操作胶囊。网格为每项显式计算宽度，避免 repeatingSubitem 保留整组宽度。资料库及歌单缩略图按方形裁切，播放器仍完整展示非方形封面。原生接口依据：[inline 大标题](https://developer.apple.com/documentation/uikit/uinavigationitem/largetitledisplaymode-swift.enum/inline)、[重复项目尺寸约束](https://developer.apple.com/documentation/uikit/nscollectionlayoutgroup/horizontal(layoutsize:repeatingsubitem:count:))。
+实际模拟器截图复核后，资料库使用原生 inline 大标题，使标题与右侧操作处于同一行；按用户要求移除资料库账户头像，右上角只保留直接打开分类设置的“编辑”和歌单置顶入口。网格为每项显式计算宽度，避免 repeatingSubitem 保留整组宽度。资料库及歌单缩略图按方形裁切，播放器仍完整展示非方形封面。原生接口依据：[inline 大标题](https://developer.apple.com/documentation/uikit/uinavigationitem/largetitledisplaymode-swift.enum/inline)、[重复项目尺寸约束](https://developer.apple.com/documentation/uikit/nscollectionlayoutgroup/horizontal(layoutsize:repeatingsubitem:count:))。
 
 ## 后台播放
 
@@ -31,3 +31,9 @@
 回归包含后台定时器/歌词停止、音频 tap 移除与恢复、短 seek 立即发布、缓冲时锁屏速率为零、EQ 启停恢复、预加载和自动切歌。CI 另以真实进入后台的模拟器进程采集 CPU/RSS；没有测量真机电量、功率或每小时耗电，不能把模拟器 CPU 百分比当成电池节省比例。
 
 官方依据：[系统进度外推](https://developer.apple.com/documentation/mediaplayer/mpnowplayinginfopropertyelapsedplaybacktime)、[Timer 容差](https://developer.apple.com/documentation/foundation/timer/tolerance)、[移除音频 tap](https://developer.apple.com/documentation/avfaudio/avaudionode/removetap(onbus:))、[原生缩放转场](https://developer.apple.com/documentation/uikit/enhancing-your-app-with-fluid-transitions)。
+
+## 后续交互修正
+
+- 收起时移除尺寸不一致的临时标题/按钮，真实悬浮条保持最终位置和尺寸，按同一进度淡入。封面弧线使用连续切线的三次插值；结束前对齐最后一帧，隐藏播放器不再在交接点重建玻璃背景。
+- 歌单展开头部时使用空导航标题，避免 nil 回退到控制器标题产生重复；仅在状态改变时更新。垂直手势留给列表和下拉刷新，原生 zoom 只接管横向返回。交互返回取消时不提前恢复浅色导航样式。
+- UI 回归覆盖真实编辑入口/完成按钮、普通收藏行和歌单置顶、歌单向下滚动至顶部回弹时的尺寸/背景/标题、收起过程中真实悬浮条位置稳定。

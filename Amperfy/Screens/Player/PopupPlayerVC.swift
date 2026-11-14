@@ -428,6 +428,8 @@ class PopupPlayerVC: UIViewController, UIScrollViewDelegate, UIGestureRecognizer
     let shouldFinish = !cancelled && velocity > -100 &&
       (translation > 90 || (translation > 12 && velocity > 650))
     surfaceTransition.finishArtwork(completed: shouldFinish)
+    // Continue the released drag immediately, then decelerate into the capsule.
+    interaction.completionCurve = shouldFinish ? .easeOut : .easeInOut
     if shouldFinish { interaction.finish() } else { interaction.cancel() }
     surfaceTransition.interaction = nil
     if !shouldFinish { scheduleLyricsControlsHide() }

@@ -22,36 +22,6 @@
 import AmperfyKit
 import UIKit
 
-@MainActor
-private final class PlayerTransitionCapsuleHeader: UIView {
-  private let titleLabel = UILabel()
-  private let subtitleLabel = UILabel()
-  private let playIcon = UIImageView()
-  private let nextIcon = UIImageView(image: UIImage(systemName: "forward.fill"))
-  init(player: PlayerFacade) {
-    super.init(frame: .zero)
-    isUserInteractionEnabled = false
-    accessibilityElementsHidden = true
-    titleLabel.text = player.currentlyPlaying?.title
-    subtitleLabel.text = player.currentlyPlaying?.creatorName
-    titleLabel.font = .systemFont(ofSize: 11, weight: .semibold)
-    subtitleLabel.font = .systemFont(ofSize: 9)
-    titleLabel.textColor = .label
-    subtitleLabel.textColor = .secondaryLabel
-    playIcon.image = UIImage(systemName: player.isPlaying ? "pause.fill" : "play.fill")
-    [playIcon, nextIcon].forEach { $0.contentMode = .scaleAspectFit; $0.tintColor = .label }
-    [titleLabel, subtitleLabel, playIcon, nextIcon].forEach { addSubview($0) }
-  }
-  required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
-  override func layoutSubviews() {
-    super.layoutSubviews()
-    titleLabel.frame = CGRect(x: 20, y: 4, width: max(0, bounds.width-112), height: 14)
-    subtitleLabel.frame = CGRect(x: 20, y: 18, width: max(0, bounds.width-112), height: 12)
-    playIcon.frame = CGRect(x: bounds.width-76, y: 7, width: 18, height: 18)
-    nextIcon.frame = CGRect(x: bounds.width-44, y: 7, width: 22, height: 18)
-  }
-}
-
 // The complete player expands from, and contracts into, the mini-player capsule.
 // Keep the live content laid out at full size while its surface morphs in both axes.
 // Never swap a rendered screenshot for the real player at the end of the animation.
@@ -129,7 +99,6 @@ final class PlayerArtworkMotion: NSObject {
   private let backdrop: UIView
   private let palette: UIView
   private let paletteAlpha: CGFloat
-  private let capsuleHeader: UIView
   private let contentMasks: [UIView]
   private let manualDismissOpacity: Bool
 
@@ -137,7 +106,7 @@ final class PlayerArtworkMotion: NSObject {
        presenting: Bool, cover: UIImageView?, coverShadow: UIView?, fullArtworkShadow: UIView?,
        endFrame: CGRect, endRadius: CGFloat,
        foreground: [UIView], handle: UIView?, miniPlayer: UIView?, interactive: Bool,
-       glass: UIVisualEffectView, backdrop: UIView, palette: UIView, capsuleHeader: UIView, contentMasks: [UIView]) {
+       glass: UIVisualEffectView, backdrop: UIView, palette: UIView, contentMasks: [UIView]) {
     self.player = player
     self.surface = surface
     self.progressView = progressView
@@ -162,7 +131,6 @@ final class PlayerArtworkMotion: NSObject {
     self.backdrop = backdrop
     self.palette = palette
     self.paletteAlpha = palette.alpha
-    self.capsuleHeader = capsuleHeader
     self.contentMasks = contentMasks
     self.manualDismissOpacity = interactive && !presenting
     super.init()
@@ -189,8 +157,8 @@ final class PlayerArtworkMotion: NSObject {
   }
 
   private func render(transition: CGFloat) {
-    let expansion = presenting ? transition : 1 - transition
     let current = min(1, max(0, transition))
+    let expansion = presenting ? current : 1 - current
     if let destination {
       progress = destination == 1 ? max(progress, current) : min(progress, current)
     } else {
@@ -220,12 +188,7 @@ final class PlayerArtworkMotion: NSObject {
       if !presenting, destination == 1 {
         // Measured 4.97–5.30s: the shrinking cover travels down past the
         // capsule before settling into it. Keep this path separate from scale.
-        let positions: [CGFloat] = [0, 0.108, 0.317, 0.527, 0.683, 0.792, 0.880, 0.919, 0.962, 1]
-        let offsets: [CGFloat] = [0, 0.063, 0.096, 0.108, 0.105, 0.098, 0.078, 0.062, 0.043, 0]
-        if let i = positions.indices.dropFirst().first(where: { p <= positions[$0] }) {
-          let t = (p-positions[i-1]) / (positions[i]-positions[i-1])
-          coverFrame?.origin.y += fullFrame.height * (offsets[i-1] + (offsets[i]-offsets[i-1])*t)
-        }
+        coverFrame?.origin.y += fullFrame.height * Self.closingArc(p)
       }
     }
     renderedSurfaceFrame = frame
@@ -241,16 +204,15 @@ final class PlayerArtworkMotion: NSObject {
     UIView.performWithoutAnimation {
       // The live glass capsule and its title/buttons emerge on the same clock
       // as the collapsing surface. Reversing a drag reverses this handoff too.
-      let handoff = min(1, max(0, visualExpansion / 0.22))
-      let settling = min(1, max(-0.2, visualExpansion / 0.22))
-      miniPlayer?.alpha = miniAlpha * (1 - handoff)
-      miniPlayer?.transform = miniTransform
-        .translatedBy(x: 0, y: 8 * settling)
-        .scaledBy(x: 1 - 0.06 * settling, y: 1 - 0.12 * settling)
       func smooth(_ value: CGFloat) -> CGFloat {
         let v = min(1, max(0, value))
         return v*v*(3-2*v)
       }
+      let capsuleVisibility = 1 - smooth(visualExpansion / 0.16)
+      miniPlayer?.alpha = miniAlpha * capsuleVisibility
+      // Use the real title and controls at their final size and position.
+      // Scaling a duplicate header and swapping it out caused the final hitch.
+      miniPlayer?.transform = miniTransform
       if manualDismissOpacity {
         let closing = 1-visualExpansion
         player.alpha = 1-smooth((closing-0.78)/0.22)
@@ -259,12 +221,9 @@ final class PlayerArtworkMotion: NSObject {
       let colorProgress = smooth((visualExpansion-0.1)/0.8)
       glass.frame = frame
       glass.layer.cornerRadius = radius
-      glass.alpha = 1-colorProgress
+      glass.alpha = (1-colorProgress) * (1-capsuleVisibility)
       palette.alpha = paletteAlpha * colorProgress
       backdrop.alpha = 0.16 * clampedExpansion
-      capsuleHeader.frame = CGRect(x: frame.minX, y: frame.minY, width: frame.width, height: smallFrame.height)
-      capsuleHeader.alpha = tracking && !presenting ? 0 :
-        smooth(visualExpansion/0.07) * (1-smooth(visualExpansion/0.75))
       // Carry the content with the card's top edge, instead of uncovering a
       // bottom-anchored full-height page like a vertical curtain.
       player.transform = CGAffineTransform(a: scale, b: 0, c: 0, d: scale,
@@ -319,6 +278,32 @@ final class PlayerArtworkMotion: NSObject {
     CATransaction.commit()
   }
 
+  // Cubic interpolation keeps velocity continuous between the measured cover
+  // positions. The final tangent is flat so there is no last-segment snap.
+  private static func closingArc(_ progress: CGFloat) -> CGFloat {
+    let x: [CGFloat] = [0, 0.108, 0.317, 0.527, 0.683, 0.792, 0.880, 0.919, 0.962, 1]
+    let y: [CGFloat] = [0, 0.063, 0.096, 0.108, 0.105, 0.098, 0.078, 0.062, 0.043, 0]
+    guard progress > 0, progress < 1,
+          let i = x.indices.dropFirst().first(where: { progress <= x[$0] }) else { return 0 }
+    func slope(_ index: Int) -> CGFloat {
+      if index == 0 { return (y[1]-y[0])/(x[1]-x[0]) }
+      if index == x.count-1 { return 0 }
+      let left = (y[index]-y[index-1])/(x[index]-x[index-1])
+      let right = (y[index+1]-y[index])/(x[index+1]-x[index])
+      return left * right > 0 ? 2 * left * right / (left + right) : 0
+    }
+    let width = x[i]-x[i-1]
+    let t = (progress-x[i-1])/width
+    let t2 = t*t, t3 = t2*t
+    return (2*t3-3*t2+1)*y[i-1] + (t3-2*t2+t)*width*slope(i-1) +
+      (-2*t3+3*t2)*y[i] + (t3-t2)*width*slope(i)
+  }
+
+  func complete(at endpoint: CGFloat) {
+    // The animator completion can run between display-link callbacks.
+    render(transition: endpoint)
+  }
+
   func settle(to target: CGFloat) {
     guard destination == nil else { return }
     settleStartProgress = tracking ? trackingProgress : 0
@@ -342,7 +327,6 @@ final class PlayerArtworkMotion: NSObject {
     palette.alpha = paletteAlpha
     glass.removeFromSuperview()
     backdrop.removeFromSuperview()
-    capsuleHeader.removeFromSuperview()
   }
 }
 
@@ -451,11 +435,9 @@ final class PlayerSurfaceAnimator: NSObject, UIViewControllerAnimatedTransitioni
     glass.isUserInteractionEnabled = false
     glass.clipsToBounds = true
     glass.layer.cornerCurve = .continuous
-    let capsuleHeader = PlayerTransitionCapsuleHeader(player: popup.player)
     if !reducedMotion {
       container.insertSubview(backdrop, belowSubview: playerView)
       container.insertSubview(glass, belowSubview: playerView)
-      container.addSubview(capsuleHeader)
       playerView.backgroundColor = .clear
     }
     if !reducedMotion, let sourceArtwork, let targetArtwork,
@@ -491,7 +473,7 @@ final class PlayerSurfaceAnimator: NSObject, UIViewControllerAnimatedTransitioni
                      popup.queueModeBackgrounds].compactMap { $0 },
         handle: playerView.subviews.first(where: { $0 is UIButton }), miniPlayer: sourcePlayer,
         interactive: context.isInteractive, glass: glass, backdrop: backdrop,
-        palette: popup.backgroundImage, capsuleHeader: capsuleHeader, contentMasks: contentMasks)
+        palette: popup.backgroundImage, contentMasks: contentMasks)
       popup.surfaceTransition.artworkMotion = motion
       // A gesture can update before UIKit creates the transition animator.
       motion.update(popup.surfaceTransition.artworkProgress)
@@ -528,6 +510,7 @@ final class PlayerSurfaceAnimator: NSObject, UIViewControllerAnimatedTransitioni
     let presenting = isPresenting
     animator.addCompletion { [weak self, maskedViews, flyingArtwork, flyingShadow] _ in
       let completed = !context.transitionWasCancelled
+      popup.surfaceTransition.artworkMotion?.complete(at: completed ? 1 : 0)
       // Restore nested artwork masks before their ancestor content masks.
       for entry in maskedViews.reversed() { entry.view.mask = entry.original }
       playerView.mask = originalMask
@@ -545,8 +528,9 @@ final class PlayerSurfaceAnimator: NSObject, UIViewControllerAnimatedTransitioni
       popup.surfaceTransition.presentationInteraction = nil
       popup.surfaceTransition.interaction = nil
       self?.animator = nil
-      // Create fresh native backdrops after the transition masks are gone.
-      popup.rebuildQueueModeBackgrounds()
+      // Rebuild native backdrops only when this player remains visible.
+      // Recreating hidden glass at the capsule handoff stalls the last frame.
+      if presenting == completed { popup.rebuildQueueModeBackgrounds() }
       context.completeTransition(completed)
     }
     self.animator = animator
