@@ -173,7 +173,7 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
                   URL.documentsDirectory.appendingPathComponent("player-smoke-failed"))
               }
             }
-            func smokeLog(_ message: String) {
+            @MainActor @Sendable func smokeLog(_ message: String) {
               FileHandle.standardOutput.write(Data((message + "\n").utf8))
             }
             do {

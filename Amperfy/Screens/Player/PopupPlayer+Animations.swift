@@ -493,6 +493,8 @@ final class PlayerSurfaceAnimator: NSObject, UIViewControllerAnimatedTransitioni
         interactive: context.isInteractive, glass: glass, backdrop: backdrop,
         palette: popup.backgroundImage, capsuleHeader: capsuleHeader, contentMasks: contentMasks)
       popup.surfaceTransition.artworkMotion = motion
+      // A gesture can update before UIKit creates the transition animator.
+      motion.update(popup.surfaceTransition.artworkProgress)
       if let destination = popup.surfaceTransition.artworkDestination {
         motion.settle(to: destination)
       } else if !context.isInteractive {
