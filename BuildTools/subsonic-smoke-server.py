@@ -7,6 +7,7 @@ import wave
 import json
 import struct
 import zlib
+import math
 
 
 def rectangular_cover(second=False):
@@ -37,7 +38,21 @@ def silent_audio(seconds):
     return audio_buffer.getvalue()
 
 
-AUDIO = silent_audio(180)
+def seek_marker_audio(seconds):
+    """Each lyric's ten-second interval has a distinct audible frequency."""
+    audio_buffer = io.BytesIO()
+    with wave.open(audio_buffer, 'wb') as audio:
+        audio.setnchannels(1)
+        audio.setsampwidth(2)
+        audio.setframerate(16000)
+        for second in range(seconds):
+            frequency = 500 + ((second // 10) % 10) * 500
+            samples = [int(4000 * math.sin(2 * math.pi * frequency * i / 16000)) for i in range(16000)]
+            audio.writeframes(struct.pack('<16000h', *samples))
+    return audio_buffer.getvalue()
+
+
+AUDIO = seek_marker_audio(180)
 SCROBBLE_AUDIO = silent_audio(8)
 LYRICS = '<lyricsList><structuredLyrics lang="zh" synced="true">' + ''.join(
     f'<line start="{i * 10000}">{text}</line>' for i, text in enumerate([
