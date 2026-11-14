@@ -30,6 +30,7 @@ import UIKit
 @MainActor
 protocol BackendAudioPlayerNotifiable {
   func didElapsedTimeChange()
+  func didSeek()
   func didLyricsTimeChange(time: CMTime) // high refresh count
   func stop()
   func playPrevious()
@@ -81,10 +82,7 @@ class BackendAudioPlayer: NSObject {
   private let createAudioStreamingPlayerCB: CreateAudioStreamingPlayerCallback
   private let eventLogger: EventLogger
   private let networkMonitor: NetworkMonitorFacade
-  private let updateElapsedTimeInterval = CMTime(
-    seconds: 1.0,
-    preferredTimescale: CMTimeScale(NSEC_PER_SEC)
-  )
+  var elapsedUpdateInterval: TimeInterval { isVisualUpdatesEnabled ? 1 : 5 }
   private let updateLyricsTimeInterval = CMTime(
     seconds: 0.1,
     preferredTimescale: CMTimeScale(NSEC_PER_SEC)
@@ -203,6 +201,12 @@ class BackendAudioPlayer: NSObject {
     userDefinedPlaybackRate
   }
 
+  var nowPlayingPlaybackRate: Double {
+    isPlaying && player?.getState() == .playing ? userDefinedPlaybackRate.asDouble : 0
+  }
+
+  var activeEqualizerBandCount: Int { equalizer?.bands.filter { !$0.bypass }.count ?? 0 }
+
   var canBeContinued: Bool {
     currentPlayUrl != "" &&
       (
@@ -259,7 +263,10 @@ class BackendAudioPlayer: NSObject {
     guard isVisualUpdatesEnabled != enabled else { return }
     isVisualUpdatesEnabled = enabled
     audioAnalyzer.isInForeground = enabled
-    stopLyricsTimer()
+    // Save the exact position at the lifecycle boundary, then coalesce hidden
+    // bookkeeping. Audio rendering and end-of-track callbacks are independent.
+    responder?.didElapsedTimeChange()
+    if isPlaying { startTimers() } else { stopTimers() }
     if enabled {
       // Refresh once even when paused: the playhead may have changed while
       // the app was hidden. Only playing starts the high-frequency timer.
@@ -277,7 +284,7 @@ class BackendAudioPlayer: NSObject {
   private func startTimers() {
     stopTimers()
     timerElapsedTimeInterval = Timer.scheduledTimer(
-      withTimeInterval: updateElapsedTimeInterval.seconds,
+      withTimeInterval: elapsedUpdateInterval,
       repeats: true
     ) { [weak self] timer in
       Task { @MainActor in
@@ -293,8 +300,7 @@ class BackendAudioPlayer: NSObject {
         self.responder?.didElapsedTimeChange()
       }
     }
-    // Keep playback bookkeeping, preload and lock-screen updates at 1 Hz.
-    timerElapsedTimeInterval?.tolerance = 0.1
+    timerElapsedTimeInterval?.tolerance = isVisualUpdatesEnabled ? 0.1 : 0.5
     startLyricsTimerIfNeeded()
   }
 
@@ -332,7 +338,9 @@ class BackendAudioPlayer: NSObject {
     if nextPreloadedPlayable == nil, elapsedTime.isFinite, elapsedTime > 0, duration.isFinite,
        duration > 0 {
       let remainingTime = duration - elapsedTime
-      if remainingTime > 0, remainingTime < 10 {
+      // Account for the longer background bookkeeping interval without
+      // shortening the decoder's preparation window near the end of a song.
+      if remainingTime > 0, remainingTime <= (isVisualUpdatesEnabled ? 10 : 15.5) {
         nextPreloadedPlayable = nextPlayablePreloadCB?()
         guard let nextPreloadedPlayable = nextPreloadedPlayable else { return }
         os_log(.default, "Preloading: %s", nextPreloadedPlayable.displayString)
@@ -472,6 +480,7 @@ class BackendAudioPlayer: NSObject {
     } else {
       seekTimeWhenStarted = toSecond
     }
+    responder?.didSeek()
   }
 
   private func restartPlayer() {
@@ -487,6 +496,7 @@ class BackendAudioPlayer: NSObject {
     equalizer = AVAudioUnitEQ(numberOfBands: 10)
     replayGainNode = AVAudioMixerNode()
     audioAnalyzer = AudioAnalyzer()
+    audioAnalyzer.isInForeground = isVisualUpdatesEnabled
 
     guard let player,
           let eq = equalizer,
@@ -502,7 +512,7 @@ class BackendAudioPlayer: NSObject {
     audioAnalyzer.install(on: equalizer!)
 
     setupEqualizerBands()
-    applyEqualizerSetting(eqSetting: currentEqualizerSetting)
+    applyEqualizerSetting(eqSetting: isEqualizerEnabled ? currentEqualizerSetting : .off)
     applyReplayGain()
     os_log(.debug, "Player setup completed with EQ and ReplayGain support")
   }
@@ -886,7 +896,7 @@ class BackendAudioPlayer: NSObject {
       band.bandwidth = 1.0
       band.filterType = .parametric
       band.gain = 0.0
-      band.bypass = false
+      band.bypass = true
     }
   }
 
@@ -902,7 +912,9 @@ class BackendAudioPlayer: NSObject {
       band.filterType = .parametric
       band.bandwidth = 1.0
       band.gain = gain
-      band.bypass = false
+      // A zero-gain parametric band is an identity operation. Bypass its DSP
+      // while keeping the node/render envelope connected for pop-free skips.
+      band.bypass = gain == 0
     }
 
     equalizerVolumeCompensation = isEqualizerEnabled ? eqSetting.compensatedVolume : 1.0
@@ -1002,11 +1014,14 @@ extension BackendAudioPlayer: AudioStreaming.AudioPlayerDelegate {
     with newState: AudioStreaming.AudioPlayerState,
     previous: AudioStreaming.AudioPlayerState
   ) {
-    guard newState == .playing else { return }
+    let isPlayingState = newState == .playing
     let identity = ObjectIdentifier(player)
     Task { @MainActor in
       guard self.player.map(ObjectIdentifier.init) == identity else { return }
-      fadeInWhenPlaying()
+      if isPlayingState { fadeInWhenPlaying() }
+      // Buffering/paused -> playing changes the system's elapsed-time clock.
+      // Publish this event immediately instead of polling lock-screen state.
+      responder?.didElapsedTimeChange()
     }
   }
 

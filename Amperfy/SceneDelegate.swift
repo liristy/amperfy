@@ -536,18 +536,12 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
               pausedPopup.refreshCurrentlyPlayingInfoView()
               pausedPopup.controlView?.refreshView()
               try await Task.sleep(for: .milliseconds(100))
-              if let controlsMask = pausedPopup.controlPlaceholderView.mask,
-                    controlsMask.accessibilityIdentifier == "player-transition-content-mask",
-                    (controlsMask.layer.presentation()?.opacity ?? controlsMask.layer.opacity) < 0.01,
-                    (pausedPopup.view.layer.presentation()?.opacity ?? pausedPopup.view.layer.opacity) > 0.1,
-                    miniPlayer.glassContainer.alpha > 0.1,
-                    miniPlayer.glassContainer.alpha < 1,
-                    miniPlayer.glassContainer.transform.a < 1,
-                    hiddenCover.mask?.alpha == 0, flyingCover() != nil {
-                smokeLog("Interactive closing capsule handoff is visible")
-              } else {
-                smokeLog("Closing did not hand off to the animated capsule, or exposed fullscreen controls")
-                playerPolishChecksPassed = false
+              guard abs(pausedPopup.view.transform.a - 1) < 0.001,
+                    abs(pausedPopup.view.frame.minY - closingDistance * 0.93) < 1,
+                    pausedPopup.view.alpha == 1,
+                    pausedPopup.controlPlaceholderView.mask?.alpha == 1,
+                    hiddenCover.mask?.alpha == 0, flyingCover() != nil else {
+                smokeLog("Long dismissal drag shrank or faded the page before release"); return
               }
               try await compositorScreenshot("player-closing-capsule.png")
               pausedPopup.endInteractiveDismissal(translation: closingDistance * 0.93, velocity: -200, cancelled: true)
@@ -561,7 +555,7 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
                 smokeLog("Reversing the final closing phase did not restore all content masks")
                 return
               }
-              smokeLog("Opening and closing kept the morphing surface visible; refresh kept one cover; capsule hid fullscreen controls; reversal restored masks")
+              smokeLog("Opening kept one cover; closing drag preserved scale and foreground; reversal restored masks")
               pausedPopup.dismiss(animated: false)
               try await Task.sleep(for: .milliseconds(150))
               if vc.presentedViewController != nil {
@@ -622,10 +616,7 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
               // UIKit may defer presentation until the next run-loop turn. Sample frames
               // throughout the transition instead of assuming one fixed scheduling delay.
               var sampledSurfaceExpansion = false
-              var sampledSpringOvershoot = false
-              var sampledContentRebound = false
               var largestOpeningHeight: CGFloat = 0
-              var largestContentScale: CGFloat = 1
               var previousCoverWidth = coverFrame.width
               var lastSample = "no transition surface"
               for _ in 0..<60 {
@@ -647,7 +638,10 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
                 }
                 lastSample = "height \(animatedFrame.height), destination \(destinationHeight)"
                 largestOpeningHeight = max(largestOpeningHeight, animatedFrame.height)
-                if animatedFrame.height > destinationHeight + 0.5 { sampledSpringOvershoot = true }
+                if animatedFrame.height > destinationHeight + 0.5 {
+                  smokeLog("Opening surface overshot the measured full-size endpoint")
+                  playerPolishChecksPassed = false
+                }
                 if let cover = flyingCover() {
                   let frame = (cover.layer.presentation() ?? cover.layer).frame
                   let pageProgress = min(1, max(0, (animatedFrame.height - sourceSurface.height) /
@@ -666,17 +660,6 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
                   }
                   previousCoverWidth = frame.width
                 }
-                let layer = popup.view.layer.presentation() ?? popup.view.layer
-                if layer.transform.m22 > 1.012 {
-                  largestContentScale = max(largestContentScale, layer.transform.m22)
-                  // Model alpha can be 1 while the rendered page is invisible.
-                  // The rebound must be visible in both surface and content.
-                  if layer.opacity > 0.98,
-                     let content = popup.controlPlaceholderView.mask?.layer.presentation(),
-                     content.opacity > 0.98 {
-                    sampledContentRebound = true
-                  }
-                }
                 if animatedFrame.width > miniPlayer.glassContainer.bounds.width + 1,
                    animatedFrame.width < popup.view.bounds.width - 1,
                    animatedFrame.height > miniPlayer.glassContainer.bounds.height + 10,
@@ -687,12 +670,11 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
                 return
               }
               smokeLog("Whole player expanded from the mini-player capsule: \(lastSample)")
-              if !sampledSpringOvershoot || !sampledContentRebound {
-                smokeLog("Whole player did not rebound on opening: largest height \(largestOpeningHeight), \(lastSample)")
-                playerPolishChecksPassed = false
-              } else {
-                smokeLog("Complete player surface rebounded visibly (scale \(largestContentScale))")
+              guard largestOpeningHeight > popup.view.bounds.height * 0.95 else {
+                smokeLog("Opening never approached its measured endpoint: \(lastSample)")
+                return
               }
+              smokeLog("Opening reached full size without overshooting, matching the November 14 reference")
               try await Task.sleep(for: .seconds(1))
               guard popup.largePlayerPlaceholderView.transform == .identity,
                     popup.transitionArtwork?.isHidden == false,
@@ -700,8 +682,16 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
                     flyingCover() == nil else { return }
               popup.beginInteractiveDismissal()
               try await Task.sleep(for: .milliseconds(80))
+              let heldArtworkBefore = flyingCover()?.frame
               popup.updateInteractiveDismissal(translation: 70)
               try await Task.sleep(for: .milliseconds(80))
+              if let before = heldArtworkBefore, let after = flyingCover()?.frame {
+                guard abs(after.width-before.width) < 0.5, abs(after.minY-before.minY-70) < 1,
+                      abs(popup.view.transform.a-1) < 0.001 else {
+                  smokeLog("Dragging shrank the cover before release")
+                  return
+                }
+              } else { return }
               popup.endInteractiveDismissal(translation: 70, velocity: -150, cancelled: true)
               try await Task.sleep(for: .seconds(1))
               guard vc.presentedViewController === popup, popup.view.transform == .identity,
@@ -1618,7 +1608,7 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
               popup.updateInteractiveDismissal(translation: 28)
               let returningCoverStartWidth = popup.transitionArtwork?.bounds.width ?? 72
               popup.endInteractiveDismissal(translation: 28, velocity: 900)
-              var sampledClosingRebound = false
+              var sampledClosingTravel = false
               var sampledReturningCover = false
               var previousReturningWidth = returningCoverStartWidth
               for _ in 0..<60 {
@@ -1626,7 +1616,13 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
                 guard popup.view.mask != nil,
                       let animatedFrame = renderedSurface(popup) else { continue }
                 let destination = miniPlayer.glassContainer.bounds
-                if animatedFrame.height < destination.height - 0.25 { sampledClosingRebound = true }
+                if animatedFrame.height > destination.height + 10 && animatedFrame.height < popup.view.bounds.height - 10 {
+                  sampledClosingTravel = true
+                }
+                if animatedFrame.height < destination.height - 0.5 {
+                  smokeLog("Closing surface shrank below the destination capsule")
+                  playerPolishChecksPassed = false
+                }
                 if let cover = flyingCover() {
                   let frame = (cover.layer.presentation() ?? cover.layer).frame
                   if frame.width > previousReturningWidth + 0.5 ||
@@ -1641,11 +1637,11 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
                   }
                 }
               }
-              if !sampledClosingRebound {
-                smokeLog("Released downward gesture never produced a spring rebound")
+              if !sampledClosingTravel {
+                smokeLog("Released downward gesture never interpolated toward the capsule")
                 playerPolishChecksPassed = false
               } else {
-                smokeLog("Released downward gesture spring rebound sampled before settling")
+                smokeLog("Released downward gesture contracted continuously to the capsule")
               }
               // Returning home can present the first-run welcome message. Check the
               // player's own presentation relationship, not whether every modal is gone.
@@ -1718,6 +1714,75 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
                   tabHost.view.drawHierarchy(in: tabHost.view.bounds, afterScreenUpdates: true)
                 }
                 try image.pngData()?.write(to: URL.documentsDirectory.appendingPathComponent("player-library-defaults.png"))
+                guard let group = libraryTab as? UITabGroup,
+                      let libraryVC = group.managingNavigationController?.topViewController as? LibraryVC else {
+                  smokeLog("Library tab did not present the collection layout"); return
+                }
+                let collection = libraryVC.collectionView!
+                collection.layoutIfNeeded()
+                guard collection.visibleCells.contains(where: { $0.accessibilityIdentifier == "library-pinned-favorites" }),
+                      let category = collection.visibleCells.first(where: {
+                        $0.accessibilityIdentifier == "library-category-\(LibraryDisplayType.playlists.rawValue)"
+                      }), let categoryPath = collection.indexPath(for: category) else {
+                  smokeLog("Library favorites or playlist category is missing"); return
+                }
+                try await compositorScreenshot("player-library-layout.png")
+                let recentPaths = (0..<collection.numberOfSections).flatMap { section in
+                  (0..<collection.numberOfItems(inSection: section)).map { IndexPath(item: $0, section: section) }
+                }.filter { $0.section == collection.numberOfSections-1 }
+                guard recentPaths.count >= 2,
+                      let left = collection.layoutAttributesForItem(at: recentPaths[0]),
+                      let right = collection.layoutAttributesForItem(at: recentPaths[1]),
+                      abs(left.frame.minY-right.frame.minY) < 1,
+                      abs(left.frame.width-right.frame.width) < 1,
+                      abs(left.frame.width - (collection.bounds.width-52)/2) < 1 else {
+                  smokeLog("Recent albums are not a two-column grid"); return
+                }
+                collection.scrollToItem(at: recentPaths[0], at: .top, animated: false)
+                try await compositorScreenshot("player-library-recent.png")
+                collection.setContentOffset(CGPoint(x: 0, y: -collection.adjustedContentInset.top), animated: false)
+                libraryVC.collectionView(collection, didSelectItemAt: categoryPath)
+                try await Task.sleep(for: .seconds(2))
+                guard let list = group.managingNavigationController?.topViewController as? PlaylistsVC else {
+                  smokeLog("Library category did not open playlists"); return
+                }
+                for _ in 0..<50 {
+                  if list.tableView.numberOfSections > 0, list.tableView.numberOfRows(inSection: 0) > 0 { break }
+                  try await Task.sleep(for: .milliseconds(100))
+                }
+                let playlistPath = IndexPath(row: 0, section: 0)
+                guard list.tableView.numberOfSections > 0, list.tableView.numberOfRows(inSection: 0) > 0 else {
+                  smokeLog("Playlist fixture did not sync"); return
+                }
+                list.tableView.layoutIfNeeded()
+                guard abs(list.tableView.rectForRow(at: playlistPath).height-76) < 1 else {
+                  smokeLog("Playlist row height departed from reference"); return
+                }
+                try await compositorScreenshot("player-playlists-layout.png")
+                list.tableView(list.tableView, didSelectRowAt: playlistPath)
+                try await Task.sleep(for: .seconds(2))
+                guard let detail = group.managingNavigationController?.topViewController as? PlaylistDetailVC,
+                      let header = detail.detailOperationsView,
+                      detail.tableView.numberOfRows(inSection: 0) == 16,
+                      abs(header.artwork.bounds.width - min(340, detail.view.bounds.width*0.694)) < 1,
+                      abs(detail.tableView.rectForRow(at: playlistPath).height-56) < 1 else {
+                  smokeLog("Playlist detail artwork or rows departed from reference"); return
+                }
+                try await compositorScreenshot("player-playlist-detail.png")
+                detail.tableView.setContentOffset(CGPoint(x: 0, y: header.frame.height), animated: false)
+                try await compositorScreenshot("player-playlist-scrolled.png")
+                guard detail.navigationItem.title == detail.playlist.name else {
+                  smokeLog("Playlist title did not follow the scrolling header"); return
+                }
+                group.managingNavigationController?.popViewController(animated: true)
+                try await Task.sleep(for: .seconds(1))
+                guard group.managingNavigationController?.topViewController === list,
+                      list.tableView.visibleCells.contains(where: { $0.accessibilityIdentifier == "library-playlist-row" }) else {
+                  smokeLog("Playlist zoom did not restore the source row"); return
+                }
+                group.managingNavigationController?.popToRootViewController(animated: false)
+                smokeLog("Library grid, playlist list, scrolling detail and native zoom passed")
+
               }
               if let tabHost = vc as? TabBarVC, let dock = tabHost.playerDock {
                 dock.onSearch?()
@@ -1899,7 +1964,8 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
     #if DEBUG && targetEnvironment(simulator)
       if !resourceProfilePhase.isEmpty {
         let event: [String: Any] = ["phase": resourceProfilePhase,
-                                    "state": "background", "playing": appDelegate.player.isPlaying]
+                                    "state": "background", "playing": appDelegate.player.isPlaying,
+                                    "audio_tap_installed": appDelegate.player.audioAnalyzer.isTapInstalled]
         if let data = try? JSONSerialization.data(withJSONObject: event) {
           try? data.write(to: URL.documentsDirectory.appendingPathComponent("player-resource-background.json"), options: .atomic)
         }
@@ -2008,7 +2074,8 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
         try await Task.sleep(for: .seconds(3))
         host.dismiss(animated: false)
 
-        let phases = ["paused_cover", "playing_cover", "paused_queue", "playing_queue",
+        let phases = ProcessInfo.processInfo.arguments.contains("--smoke-background-profile") ?
+          ["playing_background", "paused_background"] : ["paused_cover", "playing_cover", "paused_queue", "playing_queue",
                       "playing_queue_scroll", "playing_lyrics", "paused_lyrics",
                       "playing_visualizer", "playing_transitions", "playing_background", "paused_background"]
         for (index, phase) in phases.enumerated() {
@@ -2058,7 +2125,8 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
                      "background": phase.contains("background"), "pid": ProcessInfo.processInfo.processIdentifier,
                      "state": UIApplication.shared.applicationState.rawValue,
                      "queue": queue, "lyrics": lyrics, "visualizer": visualizer,
-                     "audio_analyzer_active": player.audioAnalyzer.isActive], name: "player-resource-phase.json")
+                     "audio_analyzer_active": player.audioAnalyzer.isActive,
+                     "audio_tap_installed": player.audioAnalyzer.isTapInstalled], name: "player-resource-phase.json")
           if phase == "playing_queue_scroll" {
             let maximum = max(0, popup.tableView.contentSize.height - popup.tableView.bounds.height)
             for step in 0..<30 {

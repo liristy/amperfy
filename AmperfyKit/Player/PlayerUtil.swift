@@ -32,6 +32,7 @@ public protocol MusicPlayable: AnyObject {
   func didPause()
   func didStopPlaying()
   func didElapsedTimeChange()
+  func didSeek()
   func didLyricsTimeChange(time: CMTime) // high refresh count
   func didPlaylistChange()
   func didArtworkChange()
@@ -42,6 +43,7 @@ public protocol MusicPlayable: AnyObject {
 }
 
 extension MusicPlayable {
+  public func didSeek() {}
   public func didLyricsTimeChange(time: CMTime) {} // make it an optional method
   public func didNowPlayingInfoChange() {}
 }

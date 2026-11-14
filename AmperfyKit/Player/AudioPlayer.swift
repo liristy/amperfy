@@ -446,6 +446,11 @@ public class AudioPlayer: NSObject, BackendAudioPlayerNotifiable {
     }
   }
 
+  func didSeek() {
+    for notifier in notifierList { notifier.value?.didSeek() }
+    didElapsedTimeChange()
+  }
+
   // BackendAudioPlayerNotifiable
   func didLyricsTimeChange(time: CMTime) {
     notifyLyricsTimeChanged(time: time)
@@ -510,6 +515,7 @@ public class AudioPlayer: NSObject, BackendAudioPlayerNotifiable {
   }
 
   func notifyItemPaused() {
+    if let currentlyPlaying { savePlayInformation(of: currentlyPlaying) }
     notifierList = notifierList.filter { $0.value != nil }
     for notifier in notifierList {
       notifier.value?.didPause()

@@ -22,6 +22,20 @@
 import Foundation
 import MediaPlayer
 
+// iOS extrapolates elapsed time from the last published position/rate. Keep
+// an anchor on a monotonic clock so wall-clock changes cannot force updates.
+struct NowPlayingTimingAnchor {
+  let elapsed: Double
+  let duration: Double
+  let rate: Double
+  let uptime: TimeInterval
+
+  func needsUpdate(elapsed: Double, duration: Double, rate: Double, uptime: TimeInterval) -> Bool {
+    let expected = self.elapsed + max(0, uptime - self.uptime) * self.rate
+    return abs(expected - elapsed) > 0.75 || abs(self.duration - duration) > 0.1 || self.rate != rate
+  }
+}
+
 // MARK: - NowPlayingInfoCenterHandler
 
 @MainActor
@@ -37,6 +51,7 @@ public class NowPlayingInfoCenterHandler {
   private var artworkPath: String?
   private var artworkImage: UIImage?
   private var artworkTask: Task<Void, Never>?
+  private var timingAnchor: NowPlayingTimingAnchor?
 
   init(
     musicPlayer: AudioPlayer,
@@ -133,7 +148,7 @@ public class NowPlayingInfoCenterHandler {
 
       MPNowPlayingInfoPropertyDefaultPlaybackRate: NSNumber(value: 1.0),
       MPNowPlayingInfoPropertyPlaybackRate: NSNumber(
-        value: musicPlayer.isPlaying ? backendAudioPlayer.playbackRate.asDouble : 0
+        value: backendAudioPlayer.nowPlayingPlaybackRate
       ),
 
       MPMediaItemPropertyArtwork: MPMediaItemArtwork(
@@ -145,6 +160,7 @@ public class NowPlayingInfoCenterHandler {
       ),
     ]
     publishedPlayableID = playable.uniqueID
+    rememberPlaybackTiming()
   }
 
   // This handler lives independently of the player UI, including while locked.
@@ -167,13 +183,28 @@ public class NowPlayingInfoCenterHandler {
     }
   }
 
-  private func updatePlaybackTiming() {
+  private func rememberPlaybackTiming() {
+    timingAnchor = NowPlayingTimingAnchor(elapsed: backendAudioPlayer.elapsedTime,
+      duration: backendAudioPlayer.duration,
+      rate: backendAudioPlayer.nowPlayingPlaybackRate,
+      uptime: ProcessInfo.processInfo.systemUptime)
+  }
+
+  private func updatePlaybackTiming(force: Bool = false) {
     guard publishedPlayableID == currentPlayableID,
           var info = nowPlayingInfoCenter.nowPlayingInfo else { return }
-    info[MPMediaItemPropertyPlaybackDuration] = backendAudioPlayer.duration
-    info[MPNowPlayingInfoPropertyElapsedPlaybackTime] = backendAudioPlayer.elapsedTime
-    info[MPNowPlayingInfoPropertyPlaybackRate] = musicPlayer.isPlaying ? backendAudioPlayer.playbackRate.asDouble : 0
+    let elapsed = backendAudioPlayer.elapsedTime
+    let duration = backendAudioPlayer.duration
+    let rate = backendAudioPlayer.nowPlayingPlaybackRate
+    guard elapsed.isFinite, duration.isFinite else { return }
+    if !force, let timingAnchor,
+       !timingAnchor.needsUpdate(elapsed: elapsed, duration: duration, rate: rate,
+                                uptime: ProcessInfo.processInfo.systemUptime) { return }
+    info[MPMediaItemPropertyPlaybackDuration] = duration
+    info[MPNowPlayingInfoPropertyElapsedPlaybackTime] = elapsed
+    info[MPNowPlayingInfoPropertyPlaybackRate] = rate
     nowPlayingInfoCenter.nowPlayingInfo = info
+    rememberPlaybackTiming()
   }
 
   private func displayNowPlayingInfo(for playable: AbstractPlayable) -> RadioNowPlayingInfo {
@@ -223,6 +254,7 @@ extension NowPlayingInfoCenterHandler: MusicPlayable {
     artworkImage = nil
     currentPlayableID = nil
     publishedPlayableID = nil
+    timingAnchor = nil
     nowPlayingInfoCenter.nowPlayingInfo = nil
     nowPlayingInfoCenter.playbackState = .stopped
   }
@@ -251,5 +283,7 @@ extension NowPlayingInfoCenterHandler: MusicPlayable {
 
   public func didRepeatChange() {}
 
-  public func didPlaybackRateChange() { updatePlaybackTiming() }
+  public func didSeek() { updatePlaybackTiming(force: true) }
+
+  public func didPlaybackRateChange() { updatePlaybackTiming(force: true) }
 }

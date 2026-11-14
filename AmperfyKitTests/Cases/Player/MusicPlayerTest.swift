@@ -455,6 +455,51 @@ class MusicPlayerTest: XCTestCase {
     XCTAssertEqual(testPlayer.currentlyPlaying, songToDownload)
   }
 
+  func testInactiveEqualizerBypassesIdentityBandsAndRestoresSelectedGains() {
+    backendPlayer.updateEqualizerEnabled(isEnabled: true)
+    backendPlayer.updateEqualizerSetting(eqSetting: .off)
+    XCTAssertEqual(backendPlayer.activeEqualizerBandCount, 0)
+    let custom = EqualizerSetting(name: "Two bands", gains: [2, 0, 0, -3, 0, 0, 0, 0, 0, 0])
+    backendPlayer.updateEqualizerSetting(eqSetting: custom)
+    XCTAssertEqual(backendPlayer.activeEqualizerBandCount, 2)
+    backendPlayer.updateEqualizerEnabled(isEnabled: false)
+    XCTAssertEqual(backendPlayer.activeEqualizerBandCount, 0)
+    backendPlayer.updateEqualizerEnabled(isEnabled: true)
+    XCTAssertEqual(backendPlayer.activeEqualizerBandCount, 2)
+  }
+
+  func testSystemProgressAnchorSkipsLinearPlaybackButDetectsSeekBufferingAndRateChanges() {
+    let anchor = NowPlayingTimingAnchor(elapsed: 30, duration: 200, rate: 1, uptime: 100)
+    for second in 1...120 {
+      XCTAssertFalse(anchor.needsUpdate(elapsed: 30 + Double(second), duration: 200, rate: 1, uptime: 100 + Double(second)))
+    }
+    XCTAssertTrue(anchor.needsUpdate(elapsed: 80, duration: 200, rate: 1, uptime: 105))
+    XCTAssertTrue(anchor.needsUpdate(elapsed: 30, duration: 200, rate: 0, uptime: 101))
+    XCTAssertTrue(anchor.needsUpdate(elapsed: 35, duration: 200, rate: 1.5, uptime: 105))
+    XCTAssertTrue(anchor.needsUpdate(elapsed: 35, duration: 220, rate: 1, uptime: 105))
+  }
+
+  func testLockScreenShortSeekAndBufferingUpdateWithoutPollingDelay() async throws {
+    try await startCachedSong(at: 37)
+    let center = MPNowPlayingInfoCenter.default()
+    let handler = NowPlayingInfoCenterHandler(musicPlayer: testMusicPlayer, backendAudioPlayer: backendPlayer,
+      nowPlayingInfoCenter: center, storage: storage, notificationHandler: EventNotificationHandler(),
+      getArtworkDownloaderCB: { _ in self.songDownloader }, getPlayableDownloaderCB: { _ in self.songDownloader })
+    testPlayer.addNotifier(notifier: handler)
+    defer { handler.didStopPlaying() }
+    handler.didStartPlaying()
+    testPlayer.seek(toSecond: 37.25)
+    XCTAssertEqual(center.nowPlayingInfo?[MPNowPlayingInfoPropertyElapsedPlaybackTime] as? Double, 37.25)
+    mockAudioStreamingPlayer.buffering.withLock { $0 = true }
+    backendPlayer.audioPlayerStateChanged(player: mockAudioStreamingPlayer, with: .bufferring, previous: .playing)
+    for _ in 0..<10 { await Task.yield() }
+    XCTAssertEqual(center.nowPlayingInfo?[MPNowPlayingInfoPropertyPlaybackRate] as? Double, 0)
+    mockAudioStreamingPlayer.buffering.withLock { $0 = false }
+    backendPlayer.audioPlayerStateChanged(player: mockAudioStreamingPlayer, with: .playing, previous: .bufferring)
+    for _ in 0..<10 { await Task.yield() }
+    XCTAssertEqual(center.nowPlayingInfo?[MPNowPlayingInfoPropertyPlaybackRate] as? Double, 1)
+  }
+
   func testBackgroundStopsLyricsButKeepsPlaybackAndProgress() async throws {
     NotificationCenter.default.post(name: UIApplication.didBecomeActiveNotification, object: nil)
     try await startScrobbleStream()
@@ -468,7 +513,11 @@ class MusicPlayerTest: XCTestCase {
     let backgroundLyricsCount = mockMusicPlayable.lyricsTimes.count
     let progressCount = mockMusicPlayable.elapsedTimeChangeCount
     mockAudioStreamingPlayer.mockElapsedTime = 21
-    for _ in 0..<150 {
+    XCTAssertEqual(backendPlayer.elapsedUpdateInterval, 5)
+    try await Task.sleep(for: .milliseconds(1250))
+    XCTAssertEqual(mockMusicPlayable.elapsedTimeChangeCount, progressCount,
+                   "Hidden playback must not keep the foreground 1Hz bookkeeping timer")
+    for _ in 0..<275 {
       if mockMusicPlayable.elapsedTimeChangeCount > progressCount { break }
       try await Task.sleep(for: .milliseconds(20))
     }
@@ -510,8 +559,10 @@ class MusicPlayerTest: XCTestCase {
     for index in 0..<256 { data[index] = 0.5 }
     let time = AVAudioTime(sampleTime: 0, atRate: 16_000)
 
+    XCTAssertTrue(analyzer.isTapInstalled)
     analyzer.calculate(buffer: buffer, audioTime: time)
     backendPlayer.setVisualUpdatesEnabled(false)
+    XCTAssertFalse(analyzer.isTapInstalled, "Background playback must not copy visualization samples")
     await Task.yield()
     XCTAssertEqual(analyzer.rms, 0, "A queued foreground result must not publish in the background")
     analyzer.calculate(buffer: buffer, audioTime: time)
@@ -520,6 +571,7 @@ class MusicPlayerTest: XCTestCase {
     XCTAssertTrue(analyzer.isActive, "Backgrounding must preserve the selected visualizer")
 
     backendPlayer.setVisualUpdatesEnabled(true)
+    XCTAssertTrue(analyzer.isTapInstalled)
     analyzer.calculate(buffer: buffer, audioTime: time)
     for _ in 0..<10 {
       if analyzer.rms > 0 { break }

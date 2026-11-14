@@ -23,35 +23,15 @@ public final class AudioAnalyzer: ObservableObject, AudioAnalyzerProtocol {
 
   private let fftSize: Int
 
-  nonisolated(unsafe) private var _isActive = false
-  private let _isActiveLock = NSLock()
-  nonisolated public var isActive: Bool {
-    get {
-      _isActiveLock.withLock { _isActive }
-    }
-    set {
-      _isActiveLock.withLock { _isActive = newValue }
-    }
-  }
-
-  nonisolated(unsafe) private var _isPlaying = false
-  private let _isPlayingLock = NSLock()
-  nonisolated private var isPlaying: Bool {
-    get {
-      _isPlayingLock.withLock { _isPlaying }
-    }
-    set {
-      _isPlayingLock.withLock { _isPlaying = newValue }
-    }
-  }
-
-  // Preserve the user's selected visualizer while suspending its work in
-  // the background. The audio tap continues to serve uninterrupted playback.
-  nonisolated(unsafe) private var _isInForeground = true
-  private let _isInForegroundLock = NSLock()
-  nonisolated var isInForeground: Bool {
-    get { _isInForegroundLock.withLock { _isInForeground } }
-    set { _isInForegroundLock.withLock { _isInForeground = newValue } }
+  public var isActive = false { didSet { updateTap() } }
+  private var isPlaying = false { didSet { updateTap() } }
+  var isInForeground = true { didSet { updateTap() } }
+  private weak var tappedNode: AVAudioNode?
+  public private(set) var isTapInstalled = false
+  nonisolated(unsafe) private var _shouldAnalyze = false
+  private let analysisLock = NSLock()
+  nonisolated private var shouldAnalyze: Bool {
+    analysisLock.withLock { _shouldAnalyze }
   }
 
   nonisolated(unsafe) private var _sampleRate: Float = 0.0
@@ -83,12 +63,27 @@ public final class AudioAnalyzer: ObservableObject, AudioAnalyzerProtocol {
   }
 
   public func install(on audioNode: AVAudioNode) {
-    audioNode.installTap(
-      onBus: .zero,
-      bufferSize: AVAudioFrameCount(fftSize),
-      format: nil,
-      block: calculate
-    )
+    if isTapInstalled { tappedNode?.removeTap(onBus: 0) }
+    isTapInstalled = false
+    tappedNode = audioNode
+    updateTap()
+  }
+
+  private func updateTap() {
+    let enabled = isInForeground && isActive && isPlaying
+    analysisLock.withLock { _shouldAnalyze = enabled }
+    guard let tappedNode, enabled != isTapInstalled else { return }
+    if enabled {
+      tappedNode.installTap(onBus: 0, bufferSize: AVAudioFrameCount(fftSize),
+                           format: nil) { [weak self] buffer, time in
+        self?.calculate(buffer: buffer, audioTime: time)
+      }
+    } else {
+      // The tap only copies samples for the visualizer. Removing it leaves
+      // the playback/equalizer graph and transport envelope untouched.
+      tappedNode.removeTap(onBus: 0)
+    }
+    isTapInstalled = enabled
   }
 
   public func playing(sampleRate: Float) {
@@ -105,7 +100,7 @@ public final class AudioAnalyzer: ObservableObject, AudioAnalyzerProtocol {
   }
 
   nonisolated func calculate(buffer: AVAudioPCMBuffer, audioTime: AVAudioTime) {
-    if isInForeground, isActive, isPlaying, let data = buffer.floatChannelData {
+    if shouldAnalyze, let data = buffer.floatChannelData {
       let magnitudesCalculated = fft.compute(sampleRate: sampleRate, audioData: data.pointee)
       let rmsCalculated = fft.rms(audioData: data.pointee)
 

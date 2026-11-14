@@ -1182,6 +1182,7 @@ extension MiniPlayerView: MusicPlayable {
   }
 
   func didElapsedTimeChange() {
+    guard window != nil, UIApplication.shared.applicationState == .active else { return }
     playerHandler?.refreshTimeInfo(
       timeSlider: timeSlider,
       elapsedTimeLabel: elapsedTimeLabel,
