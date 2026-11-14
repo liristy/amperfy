@@ -203,6 +203,16 @@ final class PlayerTransportButton: UIButton {
     let trailing = direction > 0 ? pieces.1 : pieces.0
     let distance = trailing.frame.midX - leading.frame.midX
     func makeLayer(_ piece: (image: CGImage, frame: CGRect)) -> CALayer {
+      if usesCompactStyle {
+        // Keep template-image vibrancy inside Liquid Glass. A pre-tinted CGImage
+        // cannot follow the glass's automatic contrast change over dark artwork.
+        let glyph = UIImageView(image: UIImage(cgImage: piece.image).withRenderingMode(.alwaysTemplate))
+        glyph.tintColor = symbolColor
+        glyph.contentMode = .scaleToFill
+        glyph.frame = piece.frame
+        activationView.addSubview(glyph)
+        return glyph.layer
+      }
       let layer = CALayer()
       layer.contents = piece.image
       layer.contentsScale = CGFloat(piece.image.width) / piece.frame.width
@@ -245,6 +255,7 @@ final class PlayerTransportButton: UIButton {
   private func finishActivation() {
     activationTask?.cancel()
     activationTask = nil
+    activationView.subviews.forEach { $0.removeFromSuperview() }
     activationView.layer.sublayers?.forEach { $0.removeFromSuperlayer() }
     symbolView.isHidden = false
   }
