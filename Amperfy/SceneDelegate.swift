@@ -1226,6 +1226,8 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
               guard try await audibleLyricMatches(row: 3) else { return }
               self.appDelegate.player.seek(toSecond: 42)
               smokeLog("Single, rapid and paused lyric selection matched rendered PCM audio markers and highlights")
+              popup.restoreLyricsControls()
+              try await Task.sleep(for: .milliseconds(400))
               let heightWithControls = popup.largePlayerPlaceholderView.bounds.height
               try await compositorScreenshot("player-lyrics-controls.png")
               try await Task.sleep(for: .seconds(5))
