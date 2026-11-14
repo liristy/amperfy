@@ -78,6 +78,7 @@ jobs:
           if-no-files-found: error
           retention-days: 7
       - name: Profile player resources on simulator (not battery power)
+        if: ${{ !cancelled() }}
         run: |
           if [[ "${{ inputs.profile_player_resources || contains(github.event.pull_request.body, '<!-- profile-player-resources -->') }}" == "true" ]]; then
             python3 BuildTools/profile-player-resources.py

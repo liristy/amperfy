@@ -168,6 +168,7 @@ class AlbumDetailVC: SingleSnapshotFetchedResultsTableViewController<SongMO> {
 
   override func viewWillDisappear(_ animated: Bool) {
     super.viewWillDisappear(animated)
+    guard isMovingFromParent || isBeingDismissed || navigationController?.isBeingDismissed == true else { return }
     let bar = navigationController?.navigationBar
     let restore = { [previousNavStyle, previousNavTint] in
       bar?.overrideUserInterfaceStyle = previousNavStyle ?? .unspecified
@@ -296,6 +297,7 @@ final class MusicArtworkHeader: UIView {
   var secondaryAction: (() -> Void)?
   var artistAction: (() -> Void)?
   var paletteChanged: ((UIColor) -> Void)?
+  var playableCount: Int?
 
   init(entity: AbstractLibraryEntity & PlayableContainable) {
     self.entity = entity
@@ -379,7 +381,7 @@ final class MusicArtworkHeader: UIView {
     }
     artistButton.isHidden = artistHero
     metadataLabel.isHidden = artistHero
-    playButton.isEnabled = !entity.playables.isEmpty
+    playButton.isEnabled = (playableCount ?? entity.playables.count) > 0
     shuffleButton.isEnabled = playButton.isEnabled
     setNeedsLayout()
     guard let path = entity.artwork?.imagePath, path != paletteKey else { return }

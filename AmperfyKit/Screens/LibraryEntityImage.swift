@@ -62,6 +62,11 @@ public class LibraryEntityImage: RoundedImage {
   private var imageLoadTask: Task<Void, Never>?
   private var requestedImagePath: String?
   private static let paletteCache = NSCache<NSString, NSArray>()
+  // The host supplies lifecycle state; this framework is also used by extensions.
+  public private(set) static var areVisualUpdatesEnabled = false
+  public static func setVisualUpdatesEnabled(_ enabled: Bool) {
+    areVisualUpdatesEnabled = enabled
+  }
 
   #if DEBUG
     public private(set) static var paletteComputationCount = 0
@@ -69,9 +74,9 @@ public class LibraryEntityImage: RoundedImage {
 
   public static func loadArtworkPalette(at path: String) async -> [UIColor] {
     if let cached = paletteCache.object(forKey: path as NSString) as? [UIColor] { return cached }
-    guard !Task.isCancelled, UIApplication.shared.applicationState == .active,
+    guard !Task.isCancelled, areVisualUpdatesEnabled,
           let image = await loadPreparedImage(at: path), !Task.isCancelled,
-          UIApplication.shared.applicationState == .active else { return [] }
+          areVisualUpdatesEnabled else { return [] }
     #if DEBUG
       paletteComputationCount += 1
     #endif
@@ -259,7 +264,7 @@ public class LibraryEntityImage: RoundedImage {
   @objc private func resumeImageDisplay() { if window != nil { refresh() } }
 
   private func refresh() {
-    guard UIApplication.shared.applicationState == .active else { return }
+    guard Self.areVisualUpdatesEnabled else { return }
     // Albums and playlist covers may be portrait or landscape images.
     if let preferredArtworkContentMode {
       contentMode = preferredArtworkContentMode

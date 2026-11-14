@@ -121,6 +121,7 @@ class ArtistDetailVC: MultiSourceTableViewController {
   }
   override func viewWillDisappear(_ animated: Bool) {
     super.viewWillDisappear(animated)
+    guard isMovingFromParent || isBeingDismissed || navigationController?.isBeingDismissed == true else { return }
     let bar = navigationController?.navigationBar
     let restore = { [previousNavStyle, previousNavTint] in
       bar?.overrideUserInterfaceStyle = previousNavStyle ?? .unspecified
@@ -171,6 +172,7 @@ class ArtistDetailVC: MultiSourceTableViewController {
     albums = appDelegate.storage.main.library.getAlbums(for: account, whichContainsSongsWithArtist: artist, onlyCached: offline).sorted {
       $0.year == $1.year ? $0.name.localizedStandardCompare($1.name) == .orderedAscending : $0.year > $1.year
     }
+    artworkHeader.playableCount = rankedSongs.count
     artworkHeader.refresh()
     tableView.reloadData()
   }
