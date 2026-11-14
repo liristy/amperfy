@@ -256,6 +256,9 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
     didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?
   )
     -> Bool {
+    LibraryEntityImage.visualUpdatesAllowed = {
+      UIApplication.shared.applicationState == .active
+    }
     AmperKit.shared.playerVisualUpdatesEnabledAtCreation = {
       UIApplication.shared.applicationState != .background
     }

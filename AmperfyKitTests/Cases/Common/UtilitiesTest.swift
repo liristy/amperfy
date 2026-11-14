@@ -25,6 +25,29 @@ import UIKit
 
 class UtilitiesTest: XCTestCase {
   @MainActor
+  func testBackgroundArtworkDoesNotDecodeOrExtractPalette() async throws {
+    let previous = LibraryEntityImage.visualUpdatesAllowed
+    let path = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".png")
+    defer {
+      LibraryEntityImage.visualUpdatesAllowed = previous
+      try? FileManager.default.removeItem(at: path)
+    }
+    let image = UIGraphicsImageRenderer(size: CGSize(width: 64, height: 64)).image { context in
+      UIColor.red.setFill()
+      context.fill(CGRect(x: 0, y: 0, width: 64, height: 64))
+    }
+    try XCTUnwrap(image.pngData()).write(to: path)
+    LibraryEntityImage.visualUpdatesAllowed = { false }
+    let hidden = await LibraryEntityImage.loadArtworkPalette(at: path.path)
+    XCTAssertTrue(hidden.isEmpty)
+    XCTAssertNil(LibraryEntityImage.preparedImage(at: path.path))
+    LibraryEntityImage.visualUpdatesAllowed = { true }
+    let visible = await LibraryEntityImage.loadArtworkPalette(at: path.path)
+    XCTAssertFalse(visible.isEmpty)
+    XCTAssertNotNil(LibraryEntityImage.preparedImage(at: path.path))
+  }
+
+  @MainActor
   func testArtworkPalettePreservesDominantRegionsAndIgnoresTransparency() throws {
     let image = UIGraphicsImageRenderer(size: CGSize(width: 512, height: 512)).image { context in
       UIColor.red.setFill()

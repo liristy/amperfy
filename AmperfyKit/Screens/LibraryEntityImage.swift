@@ -63,10 +63,8 @@ public class LibraryEntityImage: RoundedImage {
   private var requestedImagePath: String?
   private static let paletteCache = NSCache<NSString, NSArray>()
   // The host supplies lifecycle state; this framework is also used by extensions.
-  public private(set) static var areVisualUpdatesEnabled = false
-  public static func setVisualUpdatesEnabled(_ enabled: Bool) {
-    areVisualUpdatesEnabled = enabled
-  }
+  public static var visualUpdatesAllowed: @MainActor () -> Bool = { false }
+  private static var areVisualUpdatesEnabled: Bool { visualUpdatesAllowed() }
 
   #if DEBUG
     public private(set) static var paletteComputationCount = 0
