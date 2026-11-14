@@ -74,8 +74,11 @@ public final class AudioAnalyzer: ObservableObject, AudioAnalyzerProtocol {
     analysisLock.withLock { _shouldAnalyze = enabled }
     guard let tappedNode, enabled != isTapInstalled else { return }
     if enabled {
+      // AVAudioEngine delivers this callback on its audio service queue. An
+      // ordinary closure created here inherits MainActor and traps on delivery
+      // under Swift 6. Only the published result is sent back to MainActor.
       tappedNode.installTap(onBus: 0, bufferSize: AVAudioFrameCount(fftSize),
-                           format: nil) { [weak self] buffer, time in
+                           format: nil) { @Sendable [weak self] buffer, time in
         self?.calculate(buffer: buffer, audioTime: time)
       }
     } else {
