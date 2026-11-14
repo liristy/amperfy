@@ -386,7 +386,7 @@ final class PlaylistArtworkHeader: UIView {
       name: UIApplication.didBecomeActiveNotification, object: nil)
     [artwork, nameLabel, subtitle, playButton, shuffleButton, downloadButton].forEach { addSubview($0) }
     artwork.accessibilityIdentifier = "playlist-header-artwork"
-    nameLabel.font = .preferredFont(forTextStyle: .title2)
+    nameLabel.font = UIFontMetrics(forTextStyle: .title2).scaledFont(for: .systemFont(ofSize: 22, weight: .bold))
     nameLabel.textAlignment = .center
     nameLabel.textColor = .white
     nameLabel.numberOfLines = 2

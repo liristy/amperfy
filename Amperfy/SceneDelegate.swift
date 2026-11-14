@@ -173,7 +173,7 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
                   URL.documentsDirectory.appendingPathComponent("player-smoke-failed"))
               }
             }
-            @MainActor @Sendable func smokeLog(_ message: String) {
+            func smokeLog(_ message: String) {
               FileHandle.standardOutput.write(Data((message + "\n").utf8))
             }
             do {
@@ -1720,7 +1720,7 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
                 }
                 try image.pngData()?.write(to: URL.documentsDirectory.appendingPathComponent("player-library-defaults.png"))
                 guard try await self.verifyLibraryLayout(libraryTab: libraryTab,
-                  compositorScreenshot: compositorScreenshot, smokeLog: smokeLog) else { return }
+                  compositorScreenshot: compositorScreenshot) else { return }
 
               }
               if let tabHost = vc as? TabBarVC, let dock = tabHost.playerDock {
@@ -1982,8 +1982,10 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
 #if DEBUG && targetEnvironment(simulator)
   extension SceneDelegate {
     @MainActor private func verifyLibraryLayout(libraryTab: UITab,
-      compositorScreenshot: @MainActor (String) async throws -> Void,
-      smokeLog: @MainActor (String) -> Void) async throws -> Bool {
+      compositorScreenshot: @MainActor (String) async throws -> Void) async throws -> Bool {
+      func smokeLog(_ message: String) {
+        FileHandle.standardOutput.write(Data((message + "\n").utf8))
+      }
       guard let group = libraryTab as? UITabGroup,
             let libraryVC = group.managingNavigationController?.topViewController as? LibraryVC else {
         smokeLog("Library tab did not present the collection layout"); return false
