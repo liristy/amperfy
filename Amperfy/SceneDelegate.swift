@@ -2016,6 +2016,9 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
       // Read PCM-derived frequency, not the engine's seek/progress
       // property, which can report the requested time before audio moves.
       for _ in 0..<60 {
+        // Lyrics refreshes legitimately hide the visualizer. This temporary
+        // PCM probe must retain sampling throughout its validation window.
+        if !analyzer.isActive { analyzer.isActive = true }
         try await Task.sleep(for: .milliseconds(50))
         let bins = analyzer.magnitudes
         guard bins.count > 1, let peak = bins.max(by: { $0.value < $1.value }) else { continue }
@@ -2023,10 +2026,16 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
         measured = peak.hertz-width
         if peak.value > 0.001, abs(measured-Float(500+row*500)) < width*0.6 {
           matchingBuffers += 1
-          if matchingBuffers >= 3 { return true }
+          if matchingBuffers >= 3 {
+            FileHandle.standardOutput.write(Data("Lyric audio marker: row \(row), rendered \(measured) Hz, RMS \(analyzer.rms)\n".utf8))
+            return true
+          }
         } else { matchingBuffers = 0 }
       }
-      FileHandle.standardOutput.write(Data("Lyric audio marker mismatch: row \(row), rendered \(measured) Hz\n".utf8))
+      let binWidth = analyzer.magnitudes.count > 1 ? analyzer.magnitudes[1].hertz-analyzer.magnitudes[0].hertz : 0
+      let player = self.appDelegate.player
+      let diagnostic = "Lyric audio marker mismatch: row \(row), rendered \(measured) Hz, bin \(binWidth), RMS \(analyzer.rms), active \(analyzer.isActive), tap \(analyzer.isTapInstalled), playing \(player.isPlaying), elapsed \(player.elapsedTime), same analyzer \(analyzer === player.audioAnalyzer)\n"
+      FileHandle.standardOutput.write(Data(diagnostic.utf8))
       return false
     }
 
