@@ -21,6 +21,7 @@
 
 import AmperfyKit
 import CoreData
+import DominantColors
 import UIKit
 
 // MARK: - PlaylistDetailDiffableDataSource
@@ -243,7 +244,7 @@ class PlaylistDetailVC: SingleSnapshotFetchedResultsTableViewController<Playlist
     }
   }
 
-  func scrollViewDidScroll(_ scrollView: UIScrollView) {
+  override func scrollViewDidScroll(_ scrollView: UIScrollView) {
     let headerHeight = detailOperationsView?.frame.height ?? 0
     navigationItem.title = scrollView.contentOffset.y + scrollView.adjustedContentInset.top > headerHeight - 80 ? playlist.name : nil
   }
@@ -379,6 +380,10 @@ final class PlaylistArtworkHeader: UIView {
   init(playlist: Playlist) {
     self.playlist = playlist
     super.init(frame: .zero)
+    NotificationCenter.default.addObserver(self, selector: #selector(downloadFinished(_:)),
+      name: .downloadFinishedSuccess, object: nil)
+    NotificationCenter.default.addObserver(self, selector: #selector(refreshVisibleHeader),
+      name: UIApplication.didBecomeActiveNotification, object: nil)
     [artwork, nameLabel, subtitle, playButton, shuffleButton, downloadButton].forEach { addSubview($0) }
     artwork.accessibilityIdentifier = "playlist-header-artwork"
     nameLabel.font = .preferredFont(forTextStyle: .title2)
@@ -411,6 +416,15 @@ final class PlaylistArtworkHeader: UIView {
     downloadButton.addAction(UIAction { [weak self] _ in self?.downloadAction?() }, for: .touchUpInside)
   }
   required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
+  @objc private func refreshVisibleHeader() {
+    if window != nil, UIApplication.shared.applicationState == .active { refresh() }
+  }
+  @objc private func downloadFinished(_ note: Notification) {
+    guard let download = DownloadNotification.fromNotification(note),
+          download.id == playlist.artwork?.uniqueID ||
+            playlist.playables.contains(where: { $0.uniqueID == download.id || $0.artwork?.uniqueID == download.id }) else { return }
+    refreshVisibleHeader()
+  }
   private func artworkSide(width: CGFloat) -> CGFloat { min(340, width * 0.694) }
   private func titleHeight(width: CGFloat) -> CGFloat {
     max(28, nameLabel.sizeThatFits(CGSize(width: max(1, width - 48), height: 100)).height)
