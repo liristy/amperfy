@@ -218,8 +218,8 @@ class PlayableTableCell: BasicTableCell {
     #else
       singleTapGestureRecognizer.isEnabled = (displayMode == .normal)
     #endif
-    backgroundColor = rootView is PopupPlayerVC ? .clear : .systemBackground
-    if rootView is PopupPlayerVC {
+    backgroundColor = (rootView is PopupPlayerVC || rootView is PlaylistDetailVC) ? .clear : .systemBackground
+    if rootView is PopupPlayerVC || rootView is PlaylistDetailVC {
       configurePlayerBackground()
     } else {
       backgroundConfiguration = nil
@@ -235,7 +235,7 @@ class PlayableTableCell: BasicTableCell {
 
   override func updateConfiguration(using state: UICellConfigurationState) {
     super.updateConfiguration(using: state)
-    if rootView is PopupPlayerVC {
+    if rootView is PopupPlayerVC || rootView is PlaylistDetailVC {
       configurePlayerBackground()
     }
   }
@@ -305,6 +305,7 @@ class PlayableTableCell: BasicTableCell {
       playable: playable,
       newStyle: isDislayAlbumTrackNumberStyle ? .trackNumber : .artwork
     )
+    entityImage.imageContentMode = rootView is PlaylistDetailVC ? .scaleAspectFill : .scaleAspectFit
     entityImage.display(
       theme: appDelegate.storage.settings.accounts.getSetting(playable.account?.info).read
         .themePreference,
@@ -435,6 +436,20 @@ class PlayableTableCell: BasicTableCell {
     durationLabel.isHidden = !isDurationVisible
     if isDurationVisible {
       durationLabel.text = playable.duration.asColonDurationString
+    }
+    if rootView is PlaylistDetailVC {
+      contentView.preservesSuperviewLayoutMargins = false
+      contentView.layoutMargins = UIEdgeInsets(top: 6, left: 20, bottom: 6, right: 20)
+      entityImage.constraints.first { $0.firstAttribute == .width && $0.secondItem == nil }?.constant = 44
+      favoriteIconImage.superview?.constraints.first { $0.firstAttribute == .width && $0.secondItem == nil }?.constant = 0
+      favoriteIconImage.transform = CGAffineTransform(translationX: -8, y: 0)
+      titleContainerLeadingConstraint.constant = 56
+      labelTrailingCellConstraint.constant = 36
+      titleLabel.font = .systemFont(ofSize: 16)
+      artistLabel.font = .systemFont(ofSize: 13)
+      durationLabel.isHidden = true
+      cacheIconImage.isHidden = true
+      optionsButton.tintColor = .white.withAlphaComponent(0.65)
     }
     if rootView is PopupPlayerVC {
       // Queue rows have their own compact geometry; library rows retain their

@@ -62,6 +62,10 @@ public class LibraryEntityImage: RoundedImage {
   private var imageLoadTask: Task<Void, Never>?
   private var requestedImagePath: String?
 
+  public static func preparedImage(at imagePath: String) -> UIImage? {
+    cache.object(forKey: imagePath as NSString)
+  }
+
   // Mini player, full player and visible cells share one disk read and decode.
   public static func loadPreparedImage(at imagePath: String) async -> UIImage? {
     if let image = cache.object(forKey: imagePath as NSString) { return image }
@@ -103,6 +107,12 @@ public class LibraryEntityImage: RoundedImage {
   private var entity: AbstractLibraryEntity?
   private var backupArtworkType: ArtworkType?
   private var accountNotificationHandler: AccountNotificationHandler?
+
+  public var preferredArtworkContentMode: UIView.ContentMode? {
+    didSet {
+      if let preferredArtworkContentMode { contentMode = preferredArtworkContentMode }
+    }
+  }
 
   required public init?(coder: NSCoder) {
     self.appDelegate = AmperKit.shared
@@ -217,7 +227,11 @@ public class LibraryEntityImage: RoundedImage {
 
   private func refresh() {
     // Albums and playlist covers may be portrait or landscape images.
-    if !(entity is Artist) { contentMode = .scaleAspectFit }
+    if let preferredArtworkContentMode {
+      contentMode = preferredArtworkContentMode
+    } else if !(entity is Artist) {
+      contentMode = .scaleAspectFit
+    }
     let imagePathToDisplay = entityImagePathToDisplay
 
     if let imagePathToDisplay,

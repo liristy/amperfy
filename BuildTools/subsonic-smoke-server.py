@@ -7,6 +7,7 @@ import wave
 import json
 import struct
 import zlib
+import math
 
 
 def rectangular_cover(second=False):
@@ -37,7 +38,21 @@ def silent_audio(seconds):
     return audio_buffer.getvalue()
 
 
-AUDIO = silent_audio(180)
+def seek_marker_audio(seconds):
+    """Each lyric's ten-second interval has a distinct audible frequency."""
+    audio_buffer = io.BytesIO()
+    with wave.open(audio_buffer, 'wb') as audio:
+        audio.setnchannels(1)
+        audio.setsampwidth(2)
+        audio.setframerate(16000)
+        for second in range(seconds):
+            frequency = 500 + ((second // 10) % 10) * 500
+            samples = [int(4000 * math.sin(2 * math.pi * frequency * i / 16000)) for i in range(16000)]
+            audio.writeframes(struct.pack('<16000h', *samples))
+    return audio_buffer.getvalue()
+
+
+AUDIO = seek_marker_audio(180)
 SCROBBLE_AUDIO = silent_audio(8)
 LYRICS = '<lyricsList><structuredLyrics lang="zh" synced="true">' + ''.join(
     f'<line start="{i * 10000}">{text}</line>' for i, text in enumerate([
@@ -52,7 +67,8 @@ SONG = '<song id="song-1" title="测试歌曲" album="测试专辑" albumId="alb
 SONG = SONG.replace('suffix="mp3"', 'suffix="wav"').replace('audio/mpeg', 'audio/wav')
 SECOND_SONG = SONG.replace('song-1', 'song-2').replace('测试歌曲', '下一首歌曲').replace('al-1', 'al-2')
 SCROBBLE_SONG = SONG.replace('song-1', 'song-scrobble').replace('测试歌曲', 'Scrobble probe').replace('duration="180"', 'duration="8"')
-PLAYLIST = '<playlist id="playlist-1" name="测试歌单" songCount="1" duration="180" coverArt="pl-1_hash" owner="smoke" public="false"/>'
+SECOND_ALBUM = ALBUM.replace('album-1', 'album-2').replace('测试专辑', '第二张专辑').replace('al-1', 'al-2')
+PLAYLIST = '<playlist id="playlist-1" name="测试歌单" songCount="16" duration="2880" coverArt="pl-1_hash" owner="smoke" public="false"/>'
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -100,7 +116,7 @@ class Handler(BaseHTTPRequestHandler):
             body = COVERS[1 if query.get('id') == ['al-2'] else 0]
             mime = 'image/png'
         else:
-            album_list = ALBUM if query.get('offset', ['0'])[0] == '0' else ''
+            album_list = ALBUM + SECOND_ALBUM if query.get('offset', ['0'])[0] == '0' else ''
             responses = {
                 'ping': '',
                 'getOpenSubsonicExtensions': '<openSubsonicExtensions name="songLyrics"><versions>1</versions></openSubsonicExtensions>',
@@ -114,7 +130,7 @@ class Handler(BaseHTTPRequestHandler):
                 'getAlbumList': f'<albumList>{album_list}</albumList>',
                 'getAlbum': f'<album id="album-1" name="测试专辑" artist="测试歌手" artistId="artist-1" songCount="2" coverArt="al-1">{SONG}{SECOND_SONG}</album>',
                 'getPlaylists': f'<playlists>{PLAYLIST}</playlists>',
-                'getPlaylist': PLAYLIST.replace('/>', '>') + SONG.replace('<song ', '<entry ') + '</playlist>',
+                'getPlaylist': PLAYLIST.replace('/>', '>') + (SONG + SECOND_SONG).replace('<song ', '<entry ') * 8 + '</playlist>',
                 'getPodcasts': '<podcasts/>',
                 'getStarred2': '<starred2/>',
                 'getStarred': '<starred/>',

@@ -5,6 +5,7 @@ cd "$(dirname "$0")/.."
 mkdir -p build/validation
 # Older caches were touched by the project's recursive formatting build phase.
 # Restore only dependency checkout files; keep compiled products for reuse.
+echo "Checking cached package sources"
 for package in build/validation/DerivedData/SourcePackages/checkouts/*; do
   if [[ -d "$package/.git" || -f "$package/.git" ]]; then
     if ! git -C "$package" diff --quiet; then
@@ -12,9 +13,12 @@ for package in build/validation/DerivedData/SourcePackages/checkouts/*; do
     fi
   fi
 done
-device_id=$(xcrun simctl list devices available -j | python3 -c '
-import json, sys
-devices = json.load(sys.stdin)["devices"]
+echo "Selecting an iOS 26 simulator"
+device_id=$(python3 -c '
+import json, subprocess, sys
+devices = json.loads(subprocess.check_output(
+    ["xcrun", "simctl", "list", "devices", "available", "-j"], timeout=120,
+))["devices"]
 for runtime, entries in devices.items():
     if "iOS-26" not in runtime:
         continue
@@ -34,6 +38,7 @@ test_arguments=(
   test
   -resultBundlePath build/validation/PlaylistTests.xcresult
   -parallel-testing-enabled NO
+  -test-timeouts-enabled YES
   -only-testing:AmperfyKitTests/SsPlaylistsParserTest
   -only-testing:AmperfyKitTests/SsPlaylistSongsParserTest
   -only-testing:AmperfyKitTests/PlaylistTest
@@ -43,6 +48,8 @@ test_arguments=(
 )
 # Run the regression suite for every deliverable. A preceding library-changing
 # push may have been cancelled by workflow concurrency before its tests ran.
+# Report a source location for pathological type inference instead of spending
+# the entire simulator job in one expression. This does not affect the IPA build.
 
 xcodebuild "${test_arguments[@]}" \
   -project Amperfy.xcodeproj \
@@ -52,6 +59,7 @@ xcodebuild "${test_arguments[@]}" \
   -onlyUsePackageVersionsFromResolvedFile \
   -skipPackageUpdates \
   ONLY_ACTIVE_ARCH=YES COMPILER_INDEX_STORE_ENABLE=NO \
+  'OTHER_SWIFT_FLAGS=$(inherited) -Xfrontend -solver-expression-time-threshold=30 -Xfrontend -warn-long-function-bodies=1000 -Xfrontend -warn-long-expression-type-checking=1000' \
   CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO \
   2>&1 | tee build/validation/test.log
 

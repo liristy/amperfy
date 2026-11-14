@@ -21,6 +21,7 @@
 
 import AmperfyKit
 import CoreData
+import DominantColors
 import UIKit
 
 // MARK: - PlaylistDetailDiffableDataSource
@@ -93,11 +94,13 @@ class PlaylistDetailVC: SingleSnapshotFetchedResultsTableViewController<Playlist
 
   private var editButton: UIBarButtonItem!
   private var optionsButton: UIBarButtonItem!
-  var detailOperationsView: GenericDetailTableHeader?
+  var detailOperationsView: PlaylistArtworkHeader?
+  private var previousNavStyle: UIUserInterfaceStyle?
+  private var previousNavTint: UIColor?
 
   init(account: Account, playlist: Playlist) {
     self.playlist = playlist
-    super.init(style: .grouped, account: account)
+    super.init(style: .plain, account: account)
   }
 
   required init?(coder: NSCoder) {
@@ -141,13 +144,22 @@ class PlaylistDetailVC: SingleSnapshotFetchedResultsTableViewController<Playlist
     singleFetchedResultsController?.fetch()
 
     tableView.register(nibName: PlayableTableCell.typeName)
-    tableView.rowHeight = PlayableTableCell.rowHeight
-    tableView.estimatedRowHeight = PlayableTableCell.rowHeight
+    tableView.rowHeight = 56
+    tableView.estimatedRowHeight = 56
     tableView.sectionFooterHeight = 0.0
     tableView.estimatedSectionFooterHeight = 0.0
     tableView.sectionHeaderHeight = 0.0
     tableView.estimatedSectionHeaderHeight = 0.0
-    tableView.backgroundColor = .backgroundColor
+    overrideUserInterfaceStyle = .dark
+    tableView.backgroundColor = UIColor(white: 0.12, alpha: 1)
+    tableView.separatorColor = .white.withAlphaComponent(0.13)
+    tableView.separatorInset = UIEdgeInsets(top: 0, left: 76, bottom: 0, right: 20)
+    navigationItem.largeTitleDisplayMode = .never
+    let appearance = UINavigationBarAppearance()
+    appearance.configureWithTransparentBackground()
+    appearance.titleTextAttributes = [.foregroundColor: UIColor.white]
+    navigationItem.standardAppearance = appearance
+    navigationItem.scrollEdgeAppearance = appearance
 
     // Use a single button, two buttons don't work on catalyst
     editButton = UIBarButtonItem(
@@ -161,32 +173,28 @@ class PlaylistDetailVC: SingleSnapshotFetchedResultsTableViewController<Playlist
       EntityPreviewActionBuilder(container: self.playlist, on: self).createMenuActions()
     }
 
-    let playShuffleInfoConfig = PlayShuffleInfoConfiguration(
-      infoCB: { CommonString.songs(self.playlist.songCount) },
-      playContextCb: { () in PlayContext(
-        containable: self.playlist,
-        playables: self.fetchedResultsController
-          .getContextSongs(onlyCachedSongs: self.appDelegate.storage.settings.user.isOfflineMode) ??
-          []
-      ) },
-      player: appDelegate.player,
-      isInfoAlwaysHidden: true
-    )
-    let detailHeaderConfig = DetailHeaderConfiguration(
-      entityContainer: playlist,
-      rootView: self,
-      tableView: tableView,
-      playShuffleInfoConfig: playShuffleInfoConfig
-    )
-    detailOperationsView = GenericDetailTableHeader
-      .createTableHeader(configuration: detailHeaderConfig)
+    let header = PlaylistArtworkHeader(playlist: playlist)
+    header.playAction = { [weak self] shuffled in
+      guard let self else { return }
+      let songs = fetchedResultsController.getContextSongs(onlyCachedSongs: appDelegate.storage.settings.user.isOfflineMode) ?? []
+      let context = PlayContext(containable: playlist, playables: songs)
+      if shuffled { appDelegate.player.playShuffled(context: context) } else { appDelegate.player.play(context: context) }
+    }
+    header.downloadAction = { [weak self] in self?.downloadPlaylist() }
+    header.paletteChanged = { [weak self] color in
+      guard let self else { return }
+      tableView.backgroundColor = color
+    }
+    detailOperationsView = header
+    tableView.tableHeaderView = header
+    header.refresh()
     refreshControl?.addTarget(
       self,
       action: #selector(Self.handleRefresh),
       for: UIControl.Event.valueChanged
     )
 
-    snapshotDidChange = detailOperationsView?.refresh
+    snapshotDidChange = { [weak self] in self?.detailOperationsView?.refresh() }
 
     containableAtIndexPathCallback = { indexPath in
       self.fetchedResultsController.getWrappedEntity(at: indexPath).playable
@@ -207,6 +215,77 @@ class PlaylistDetailVC: SingleSnapshotFetchedResultsTableViewController<Playlist
   override func viewWillAppear(_ animated: Bool) {
     super.viewWillAppear(animated)
     navigationController?.navigationBar.prefersLargeTitles = false
+    if previousNavStyle == nil {
+      previousNavStyle = navigationController?.navigationBar.overrideUserInterfaceStyle
+      previousNavTint = navigationController?.navigationBar.tintColor
+    }
+    navigationController?.navigationBar.overrideUserInterfaceStyle = .dark
+    navigationController?.navigationBar.tintColor = .white
+  }
+
+  override func viewWillDisappear(_ animated: Bool) {
+    super.viewWillDisappear(animated)
+    let bar = navigationController?.navigationBar
+    let restore = { [previousNavStyle, previousNavTint] in
+      bar?.overrideUserInterfaceStyle = previousNavStyle ?? .unspecified
+      bar?.tintColor = previousNavTint
+    }
+    // Keep the current page's contrast while an interactive pop can still cancel.
+    if let coordinator = transitionCoordinator {
+      coordinator.animate(alongsideTransition: nil) { context in
+        if !context.isCancelled { restore() }
+      }
+    } else {
+      restore()
+    }
+  }
+
+  var scrollCompatibleZoomOptions: UIViewController.Transition.ZoomOptions {
+    let options = UIViewController.Transition.ZoomOptions()
+    // Vertical drags belong to the list and pull-to-refresh. Allow the native
+    // horizontal back gesture without starting a competing zoom dismissal.
+    options.interactiveDismissShouldBegin = { context in
+      abs(context.velocity.dx) > abs(context.velocity.dy)
+    }
+    return options
+  }
+
+  override func viewDidLayoutSubviews() {
+    super.viewDidLayoutSubviews()
+    guard let header = detailOperationsView else { return }
+    let size = CGSize(width: tableView.bounds.width, height: header.preferredHeight(width: tableView.bounds.width))
+    if header.frame.size != size {
+      header.frame.size = size
+      tableView.tableHeaderView = header
+    }
+    updateNavigationTitle()
+  }
+
+  override func scrollViewDidScroll(_ scrollView: UIScrollView) {
+    updateNavigationTitle()
+  }
+
+  private func updateNavigationTitle() {
+    let headerHeight = detailOperationsView?.frame.height ?? 0
+    let collapsed = headerHeight > 0 && tableView.contentOffset.y + tableView.adjustedContentInset.top > headerHeight - 80
+    // nil falls back to the controller title, duplicating the header title.
+    // Avoid rebuilding navigation contents for every scroll event.
+    let title = collapsed ? playlist.name : ""
+    if navigationItem.title != title { navigationItem.title = title }
+  }
+
+  private func downloadPlaylist() {
+    guard appDelegate.storage.settings.user.isOnlineMode else { return }
+    Task { @MainActor [weak self] in
+      guard let self else { return }
+      do {
+        try await playlist.fetch(storage: appDelegate.storage,
+          librarySyncer: appDelegate.getMeta(account.info).librarySyncer,
+          playableDownloadManager: appDelegate.getMeta(account.info).playableDownloadManager)
+        appDelegate.getMeta(account.info).playableDownloadManager.download(objects: playlist.playables.filter { $0.isDownloadAvailable && !$0.isCached })
+        detailOperationsView?.refresh()
+      } catch { appDelegate.eventLogger.report(topic: "Playlist Download", error: error) }
+    }
   }
 
   override func viewIsAppearing(_ animated: Bool) {
@@ -304,5 +383,115 @@ class PlaylistDetailVC: SingleSnapshotFetchedResultsTableViewController<Playlist
       self.detailOperationsView?.refresh()
       self.refreshControl?.endRefreshing()
     }
+  }
+}
+
+
+@MainActor
+final class PlaylistArtworkHeader: UIView {
+  let artwork = EntityImageView(frame: .zero)
+  private let nameLabel = UILabel()
+  private let subtitle = UILabel()
+  private let playButton = UIButton(type: .system)
+  private let shuffleButton = UIButton(type: .system)
+  private let downloadButton = UIButton(type: .system)
+  private let playlist: Playlist
+  private var paletteTask: Task<Void, Never>?
+  private var paletteKey: String?
+  var playAction: ((Bool) -> Void)?
+  var downloadAction: (() -> Void)?
+  var paletteChanged: ((UIColor) -> Void)?
+
+  init(playlist: Playlist) {
+    self.playlist = playlist
+    super.init(frame: .zero)
+    NotificationCenter.default.addObserver(self, selector: #selector(downloadFinished(_:)),
+      name: .downloadFinishedSuccess, object: nil)
+    NotificationCenter.default.addObserver(self, selector: #selector(refreshVisibleHeader),
+      name: UIApplication.didBecomeActiveNotification, object: nil)
+    [artwork, nameLabel, subtitle, playButton, shuffleButton, downloadButton].forEach { addSubview($0) }
+    artwork.accessibilityIdentifier = "playlist-header-artwork"
+    artwork.imageContentMode = .scaleAspectFill
+    nameLabel.font = UIFontMetrics(forTextStyle: .title2).scaledFont(for: .systemFont(ofSize: 22, weight: .bold))
+    nameLabel.textAlignment = .center
+    nameLabel.textColor = .white
+    nameLabel.numberOfLines = 2
+    nameLabel.adjustsFontForContentSizeCategory = true
+    subtitle.font = .preferredFont(forTextStyle: .body)
+    subtitle.textAlignment = .center
+    subtitle.textColor = .white.withAlphaComponent(0.75)
+    var play = UIButton.Configuration.filled()
+    play.title = "Play".localized
+    play.image = UIImage(systemName: "play.fill")
+    play.imagePadding = 6
+    play.baseForegroundColor = .black
+    play.baseBackgroundColor = .white
+    play.cornerStyle = .capsule
+    playButton.configuration = play
+    playButton.addAction(UIAction { [weak self] _ in self?.playAction?(false) }, for: .touchUpInside)
+    for (button, symbol, label) in [(shuffleButton, "shuffle", "Shuffle"), (downloadButton, "arrow.down", "Download")] {
+      var config = UIButton.Configuration.filled()
+      config.image = UIImage(systemName: symbol)
+      config.baseForegroundColor = .white
+      config.baseBackgroundColor = .white.withAlphaComponent(0.12)
+      config.cornerStyle = .capsule
+      button.configuration = config
+      button.accessibilityLabel = label.localized
+    }
+    shuffleButton.addAction(UIAction { [weak self] _ in self?.playAction?(true) }, for: .touchUpInside)
+    downloadButton.addAction(UIAction { [weak self] _ in self?.downloadAction?() }, for: .touchUpInside)
+  }
+  required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
+  @objc private func refreshVisibleHeader() {
+    if window != nil, UIApplication.shared.applicationState == .active { refresh() }
+  }
+  @objc private func downloadFinished(_ note: Notification) {
+    guard let download = DownloadNotification.fromNotification(note),
+          download.id == playlist.artwork?.uniqueID ||
+            playlist.playables.contains(where: { $0.uniqueID == download.id || $0.artwork?.uniqueID == download.id }) else { return }
+    refreshVisibleHeader()
+  }
+  private func artworkSide(width: CGFloat) -> CGFloat { min(340, width * 0.694) }
+  private func titleHeight(width: CGFloat) -> CGFloat {
+    max(28, nameLabel.sizeThatFits(CGSize(width: max(1, width - 48), height: 100)).height)
+  }
+  func preferredHeight(width: CGFloat) -> CGFloat {
+    12 + artworkSide(width: width) + 20 + titleHeight(width: width) + 26 + 16 + 44 + 22
+  }
+  func refresh() {
+    let settings = appDelegate.storage.settings.accounts.getSetting(playlist.account?.info).read
+    artwork.display(theme: settings.themePreference, container: playlist, cornerRadius: .small)
+    nameLabel.text = playlist.name
+    // The server model has no playlist owner field; don't invent an owner.
+    subtitle.text = CommonString.songs(playlist.songCount)
+    playButton.isEnabled = playlist.songCount > 0
+    shuffleButton.isEnabled = playButton.isEnabled
+    downloadButton.isEnabled = appDelegate.storage.settings.user.isOnlineMode && !playlist.isCached
+    downloadButton.configuration?.image = UIImage(systemName: playlist.isCached ? "checkmark" : "arrow.down")
+    downloadButton.accessibilityLabel = playlist.isCached ? "Downloaded".localized : "Download".localized
+    setNeedsLayout()
+    guard let path = playlist.artwork?.imagePath ?? playlist.getPlayable(at: 0)?.imagePath(setting: settings.artworkDisplayPreference), path != paletteKey else { return }
+    paletteKey = path
+    paletteTask?.cancel()
+    paletteTask = Task { @MainActor [weak self] in
+      guard let image = await LibraryEntityImage.loadPreparedImage(at: path), !Task.isCancelled else { return }
+      let colors = await Task.detached(priority: .utility) { (try? image.dominantColors(max: 1)) ?? [] }.value
+      guard let self, !Task.isCancelled, paletteKey == path, let color = colors.first else { return }
+      var r: CGFloat = 0, g: CGFloat = 0, b: CGFloat = 0, a: CGFloat = 0
+      color.getRed(&r, green: &g, blue: &b, alpha: &a)
+      paletteChanged?(UIColor(red: r * 0.28 + 0.04, green: g * 0.28 + 0.04, blue: b * 0.28 + 0.04, alpha: 1))
+    }
+  }
+  override func layoutSubviews() {
+    super.layoutSubviews()
+    let width = bounds.width, side = artworkSide(width: bounds.width)
+    artwork.frame = CGRect(x: (width-side)/2, y: 12, width: side, height: side)
+    let titleY = artwork.frame.maxY + 20, height = titleHeight(width: width)
+    nameLabel.frame = CGRect(x: 24, y: titleY, width: width-48, height: height)
+    subtitle.frame = CGRect(x: 24, y: nameLabel.frame.maxY, width: width-48, height: 26)
+    let y = subtitle.frame.maxY + 16, playWidth = min(156, width * 0.365)
+    playButton.frame = CGRect(x: (width-playWidth)/2, y: y, width: playWidth, height: 44)
+    shuffleButton.frame = CGRect(x: playButton.frame.minX-58, y: y, width: 44, height: 44)
+    downloadButton.frame = CGRect(x: playButton.frame.maxX+14, y: y, width: 44, height: 44)
   }
 }

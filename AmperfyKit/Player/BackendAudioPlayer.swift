@@ -30,6 +30,7 @@ import UIKit
 @MainActor
 protocol BackendAudioPlayerNotifiable {
   func didElapsedTimeChange()
+  func didSeek()
   func didLyricsTimeChange(time: CMTime) // high refresh count
   func stop()
   func playPrevious()
@@ -81,10 +82,7 @@ class BackendAudioPlayer: NSObject {
   private let createAudioStreamingPlayerCB: CreateAudioStreamingPlayerCallback
   private let eventLogger: EventLogger
   private let networkMonitor: NetworkMonitorFacade
-  private let updateElapsedTimeInterval = CMTime(
-    seconds: 1.0,
-    preferredTimescale: CMTimeScale(NSEC_PER_SEC)
-  )
+  var elapsedUpdateInterval: TimeInterval { isVisualUpdatesEnabled ? 1 : 5 }
   private let updateLyricsTimeInterval = CMTime(
     seconds: 0.1,
     preferredTimescale: CMTimeScale(NSEC_PER_SEC)
@@ -98,7 +96,15 @@ class BackendAudioPlayer: NSObject {
   private var currentPlayUrl: String = ""
   private var nextPreloadedPlayable: AbstractPlayable?
   private var nextPreloadedUrl: String = ""
-  private var isPreviousPlaylableFinshed = true
+  private var advancingAtEndOfItem = false
+  private var sourceTask: Task<Void, Never>?
+  private var preloadTask: Task<Void, Never>?
+  private var volumeRampTask: Task<Void, Never>?
+  private var pauseTask: Task<Void, Never>?
+  private var envelope: QMPlaybackEnvelope?
+  private var transitionGain: Float = 1 {
+    didSet { player?.volume = volumePlayer * transitionGain }
+  }
   private var isAutoStartPlayback = true
   private var seekTimeWhenStarted: Double?
   private var lastKnownPlaybackTime: Double = 0
@@ -174,7 +180,7 @@ class BackendAudioPlayer: NSObject {
     }
     set {
       volumePlayer = newValue
-      player?.volume = newValue
+      player?.volume = newValue * transitionGain
     }
   }
 
@@ -183,16 +189,23 @@ class BackendAudioPlayer: NSObject {
   }
 
   var elapsedTime: Double {
-    player?.elapsedTime() ?? 0.0
+    // The engine may still be rendering the tail of the previous selection.
+    currentPlayUrl.isEmpty ? (seekTimeWhenStarted ?? 0) : (player?.elapsedTime() ?? 0)
   }
 
   var duration: Double {
-    player?.duration ?? 0.0
+    currentPlayUrl.isEmpty ? 0 : (player?.duration ?? 0)
   }
 
   var playbackRate: PlaybackRate {
     userDefinedPlaybackRate
   }
+
+  var nowPlayingPlaybackRate: Double {
+    isPlaying && player?.getState() == .playing ? userDefinedPlaybackRate.asDouble : 0
+  }
+
+  var activeEqualizerBandCount: Int { equalizer?.bands.filter { !$0.bypass }.count ?? 0 }
 
   var canBeContinued: Bool {
     currentPlayUrl != "" &&
@@ -250,7 +263,10 @@ class BackendAudioPlayer: NSObject {
     guard isVisualUpdatesEnabled != enabled else { return }
     isVisualUpdatesEnabled = enabled
     audioAnalyzer.isInForeground = enabled
-    stopLyricsTimer()
+    // Save the exact position at the lifecycle boundary, then coalesce hidden
+    // bookkeeping. Audio rendering and end-of-track callbacks are independent.
+    responder?.didElapsedTimeChange()
+    if isPlaying { startTimers() } else { stopTimers() }
     if enabled {
       // Refresh once even when paused: the playhead may have changed while
       // the app was hidden. Only playing starts the high-frequency timer.
@@ -268,7 +284,7 @@ class BackendAudioPlayer: NSObject {
   private func startTimers() {
     stopTimers()
     timerElapsedTimeInterval = Timer.scheduledTimer(
-      withTimeInterval: updateElapsedTimeInterval.seconds,
+      withTimeInterval: elapsedUpdateInterval,
       repeats: true
     ) { [weak self] timer in
       Task { @MainActor in
@@ -284,8 +300,7 @@ class BackendAudioPlayer: NSObject {
         self.responder?.didElapsedTimeChange()
       }
     }
-    // Keep playback bookkeeping, preload and lock-screen updates at 1 Hz.
-    timerElapsedTimeInterval?.tolerance = 0.1
+    timerElapsedTimeInterval?.tolerance = isVisualUpdatesEnabled ? 0.1 : 0.5
     startLyricsTimerIfNeeded()
   }
 
@@ -319,25 +334,29 @@ class BackendAudioPlayer: NSObject {
   }
 
   private func checkForPreloadNextPlayerItem() {
-    guard isAutoStartPlayback else { return }
+    guard isAutoStartPlayback, !currentPlayUrl.isEmpty else { return }
     if nextPreloadedPlayable == nil, elapsedTime.isFinite, elapsedTime > 0, duration.isFinite,
        duration > 0 {
       let remainingTime = duration - elapsedTime
-      if remainingTime > 0, remainingTime < 10 {
+      // Account for the longer background bookkeeping interval without
+      // shortening the decoder's preparation window near the end of a song.
+      if remainingTime > 0, remainingTime <= (isVisualUpdatesEnabled ? 10 : 15.5) {
         nextPreloadedPlayable = nextPlayablePreloadCB?()
         guard let nextPreloadedPlayable = nextPreloadedPlayable else { return }
         os_log(.default, "Preloading: %s", nextPreloadedPlayable.displayString)
         if nextPreloadedPlayable.isCached {
           insertCachedPlayable(playable: nextPreloadedPlayable, queueType: .queue)
         } else if !isOfflineMode {
-          Task { @MainActor in
+          preloadTask = Task { @MainActor in
             do {
               try await insertStreamPlayable(playable: nextPreloadedPlayable, queueType: .queue)
+              guard !Task.isCancelled else { return }
               if self.isAutoCachePlayedItems, nextPreloadedPlayable.isDownloadAvailable,
                  let accountInfo = nextPreloadedPlayable.account?.info {
                 self.getPlayableDownloaderCB(accountInfo).download(object: nextPreloadedPlayable)
               }
             } catch {
+              guard !Task.isCancelled else { return }
               self.nextPreloadedPlayable = nil
               self.eventLogger.report(topic: "Player", error: error)
             }
@@ -350,7 +369,6 @@ class BackendAudioPlayer: NSObject {
   @MainActor
   private func itemFinishedPlaying() {
     isTriggerReinsertPlayableAllowed = true
-    isPreviousPlaylableFinshed = true
     if nextPreloadedPlayable != nil {
       isPlaying = true
       startTimers()
@@ -358,6 +376,8 @@ class BackendAudioPlayer: NSObject {
       isPlaying = false
       stopTimers()
     }
+    advancingAtEndOfItem = true
+    defer { advancingAtEndOfItem = false }
     responder?.didItemFinishedPlaying()
   }
 
@@ -367,7 +387,7 @@ class BackendAudioPlayer: NSObject {
     pause(preservingRecoveryPlayback: true)
     nextPreloadedPlayable = nil
     nextPreloadedUrl = ""
-    isPreviousPlaylableFinshed = true
+    cancelPendingSourceChange()
     activeStreamingBitrate = nil
     perloadedStreamingBitrate = nil
     activeTranscodingFormat = nil
@@ -382,30 +402,68 @@ class BackendAudioPlayer: NSObject {
   }
 
   func continuePlay() {
+    pauseTask?.cancel()
+    pauseTask = nil
     isAutoStartPlayback = true
     isPlaying = true
     player?.resume()
+    fadeInWhenPlaying()
     startTimers()
     player?.rate = Float(userDefinedPlaybackRate.asDouble)
     audioAnalyzer.play()
   }
 
-  func pause(preservingRecoveryPlayback: Bool = false) {
+  func pause(preservingRecoveryPlayback: Bool = false, immediately: Bool = false) {
     // A delayed engine-start callback must honor a pause requested while the
     // cached file or stream is still being prepared.
     isAutoStartPlayback = false
     if !preservingRecoveryPlayback { wasPlayingBeforeErrorOccurred = false }
     lastKnownPlaybackTime = resumePlaybackTime
     isPlaying = false
-    player?.pause()
+    if !currentPlayUrl.isEmpty {
+      volumeRampTask?.cancel()
+      volumeRampTask = nil
+    }
     stopTimers()
     audioAnalyzer.stop()
+    // A selection already fading out will arrive muted. Its start callback
+    // observes isAutoStartPlayback and pauses the newly prepared entry.
+    if !immediately, !preservingRecoveryPlayback, currentPlayUrl.isEmpty, volumeRampTask != nil { return }
+    finishPause(immediately: immediately || preservingRecoveryPlayback) { self.player?.pause() }
   }
 
-  func stop() {
+  func stop(afterFade: Bool = false) {
     isPlaying = false
-    clearPlayer()
-    audioAnalyzer.stop()
+    if afterFade {
+      // Radio resumes by reconnecting, including a resume during the fade.
+      cancelPendingSourceChange()
+      isAutoStartPlayback = false
+      currentPreparedUrl = ""
+      currentPlayUrl = ""
+      stopTimers()
+      audioAnalyzer.stop()
+      finishPause(immediately: false) { self.clearPlayer() }
+    } else {
+      clearPlayer()
+    }
+  }
+
+  private func finishPause(immediately: Bool, action: @escaping @MainActor () -> Void) {
+    if !immediately, pauseTask != nil { return }
+    if immediately || !mayHaveAudibleOutput {
+      pauseTask?.cancel()
+      pauseTask = nil
+      envelope?.resetToSilence()
+      transitionGain = 0
+      action()
+      return
+    }
+    pauseTask = Task { @MainActor in
+      do { try await drainOutput() } catch { return }
+      guard !Task.isCancelled else { return }
+      pauseTask = nil
+      action()
+    }
   }
 
   func setPlaybackRate(_ newValue: PlaybackRate) {
@@ -416,12 +474,18 @@ class BackendAudioPlayer: NSObject {
   func seek(toSecond: Double) {
     guard toSecond.isFinite, toSecond >= 0 else { return }
     lastKnownPlaybackTime = toSecond
-    if currentPlayUrl != "", player?.getState() == .playing || player?.getState() == .paused {
+    if currentPlayUrl != "", let player,
+       [.playing, .paused, .bufferring].contains(player.getState()) {
+      // A second lyric tap commonly arrives while the first seek is buffering.
+      // This entry has already started; it will not send didStartPlaying again.
+      // Pass the latest request to the engine instead of parking it forever.
       seekTimeWhenStarted = nil
-      player?.seek(to: toSecond)
+      player.seek(to: toSecond)
     } else {
       seekTimeWhenStarted = toSecond
     }
+    responder?.didSeek()
+    if isVisualUpdatesEnabled { notifyLyricsTimeChanged() }
   }
 
   private func restartPlayer() {
@@ -437,21 +501,23 @@ class BackendAudioPlayer: NSObject {
     equalizer = AVAudioUnitEQ(numberOfBands: 10)
     replayGainNode = AVAudioMixerNode()
     audioAnalyzer = AudioAnalyzer()
+    audioAnalyzer.isInForeground = isVisualUpdatesEnabled
 
     guard let player,
           let eq = equalizer,
           let replayGain = replayGainNode
     else { return }
 
-    player.volume = volumePlayer
+    player.volume = volumePlayer * transitionGain
     player.delegate = self
 
     player.attach(nodes: [eq, replayGain])
+    envelope = QMPlaybackEnvelope(node: eq)
 
     audioAnalyzer.install(on: equalizer!)
 
     setupEqualizerBands()
-    applyEqualizerSetting(eqSetting: currentEqualizerSetting)
+    applyEqualizerSetting(eqSetting: isEqualizerEnabled ? currentEqualizerSetting : .off)
     applyReplayGain()
     os_log(.debug, "Player setup completed with EQ and ReplayGain support")
   }
@@ -465,20 +531,21 @@ class BackendAudioPlayer: NSObject {
     playbackRate: PlaybackRate,
     autoStartPlayback: Bool
   ) {
+    cancelPendingSourceChange()
+    currentPreparedUrl = ""
+    currentPlayUrl = ""
     userDefinedPlaybackRate = playbackRate
     lastKnownPlaybackTime = 0
     seekTimeWhenStarted = nil
-    player?.rate = Float(userDefinedPlaybackRate.asDouble)
     isAutoStartPlayback = autoStartPlayback
     handleRequest(playable: playable)
   }
 
   private func handleRequest(playable: AbstractPlayable) {
-    if isPreviousPlaylableFinshed, let nextPreloadedPlayable = nextPreloadedPlayable,
+    if advancingAtEndOfItem, !nextPreloadedUrl.isEmpty, let nextPreloadedPlayable = nextPreloadedPlayable,
        nextPreloadedPlayable == playable {
       // Do nothing next preloaded playable has already been queued to player
       os_log(.default, "Play Preloaded: %s", nextPreloadedPlayable.displayString)
-      currentPreparedUrl = ""
       currentPlayUrl = nextPreloadedUrl
       playType = perloadedPlayType
       perloadedPlayType = nil
@@ -486,15 +553,15 @@ class BackendAudioPlayer: NSObject {
       perloadedStreamingBitrate = nil
       activeTranscodingFormat = preloadTranscodingFormat
       preloadTranscodingFormat = nil
-      isPreviousPlaylableFinshed = false
+      player?.rate = Float(userDefinedPlaybackRate.asDouble)
       currentReplayGainValue = nextPreloadedPlayable.replayGainTrackGain
       applyReplayGain()
+      fadeInWhenPlaying()
       self.nextPreloadedPlayable = nil
       nextPreloadedUrl = ""
       responder?.notifyItemPreparationFinished()
     } else if let relFilePath = playable.relFilePath,
               fileManager.fileExits(relFilePath: relFilePath) {
-      currentPlayUrl = ""
       nextPreloadedPlayable = nil
       nextPreloadedUrl = ""
       activeStreamingBitrate = nil
@@ -508,13 +575,10 @@ class BackendAudioPlayer: NSObject {
         )
         return
       }
-      currentReplayGainValue = playable.replayGainTrackGain
-      applyReplayGain()
       insertCachedPlayable(playable: playable)
       isPlaying = shouldPlaybackStart
       responder?.notifyItemPreparationFinished()
     } else if !isOfflineMode {
-      currentPlayUrl = ""
       nextPreloadedPlayable = nil
       nextPreloadedUrl = ""
       activeStreamingBitrate = nil
@@ -538,11 +602,10 @@ class BackendAudioPlayer: NSObject {
         }
       }
 
-      Task { @MainActor in
+      sourceTask = Task { @MainActor in
         do {
-          currentReplayGainValue = playable.replayGainTrackGain
-          applyReplayGain()
           try await insertStreamPlayable(playable: playable)
+          guard !Task.isCancelled else { return }
           isPlaying = shouldPlaybackStart
           if self.isAutoCachePlayedItems, !playable.isRadio,
              let accountInfo = playable.account?.info {
@@ -550,6 +613,8 @@ class BackendAudioPlayer: NSObject {
           }
           self.responder?.notifyItemPreparationFinished()
         } catch {
+          guard !Task.isCancelled else { return }
+          clearPlayer()
           self.responder?.notifyErrorOccurred(error: error)
           self.responder?.notifyItemPreparationFinished()
           self.eventLogger.report(topic: "Player", error: error)
@@ -584,8 +649,8 @@ class BackendAudioPlayer: NSObject {
   }
 
   private func clearPlayer() {
+    cancelPendingSourceChange()
     lastKnownPlaybackTime = 0
-    isPreviousPlaylableFinshed = true
     currentPreparedUrl = ""
     currentPlayUrl = ""
     nextPreloadedPlayable = nil
@@ -603,6 +668,7 @@ class BackendAudioPlayer: NSObject {
     stopTimers()
     audioAnalyzer.stop()
     player?.stop()
+    transitionGain = 1
   }
 
   private func insertCachedPlayable(
@@ -629,47 +695,29 @@ class BackendAudioPlayer: NSObject {
     playable: AbstractPlayable,
     queueType: BackendAudioQueueType = .play
   ) async throws {
+    try Task.checkCancellation()
     let streamingMaxBitrate: StreamingMaxBitratePreference = .noLimit
     let streamingTranscodingFormat: StreamingFormatPreference = .raw
     var httpHeaders: [String: String] = [:]
-    @MainActor
-    func provideUrl() async throws -> URL {
-      if let radio = playable.asRadio {
-        guard let streamUrlString = radio.url,
-              let streamUrl = URL(string: streamUrlString)
-        else {
-          throw BackendError.invalidUrl
-        }
-        playType = .stream
-        return streamUrl
-      } else {
-        if queueType == .play {
-          playType = .stream
-          perloadedPlayType = nil
-          activeStreamingBitrate = streamingMaxBitrate
-          perloadedStreamingBitrate = nil
-          activeTranscodingFormat = streamingTranscodingFormat
-          preloadTranscodingFormat = nil
-        } else {
-          perloadedPlayType = .stream
-          perloadedStreamingBitrate = streamingMaxBitrate
-          preloadTranscodingFormat = streamingTranscodingFormat
-        }
-        guard let accountInfo = playable.account?.info else {
-          throw BackendError.noCredentials
-        }
-        let backendApi = getBackendApiCB(accountInfo)
-        httpHeaders = backendApi.httpHeaders
-        return try await backendApi.generateUrl(
-          forStreamingPlayable: playable.info,
-          maxBitrate: streamingMaxBitrate,
-          formatPreference: streamingTranscodingFormat
-        )
-      }
+    let streamUrl: URL
+    if let radio = playable.asRadio {
+      guard let address = radio.url, let url = URL(string: address) else { throw BackendError.invalidUrl }
+      streamUrl = url
+    } else {
+      guard let accountInfo = playable.account?.info else { throw BackendError.noCredentials }
+      let backendApi = getBackendApiCB(accountInfo)
+      httpHeaders = backendApi.httpHeaders
+      streamUrl = try await backendApi.generateUrl(
+        forStreamingPlayable: playable.info, maxBitrate: streamingMaxBitrate,
+        formatPreference: streamingTranscodingFormat
+      )
     }
-    let streamUrl = try await provideUrl()
+    try Task.checkCancellation()
 
     if queueType == .play {
+      playType = .stream
+      activeStreamingBitrate = playable.isRadio ? nil : streamingMaxBitrate
+      activeTranscodingFormat = playable.isRadio ? nil : streamingTranscodingFormat
       os_log(
         .default,
         "Play Stream: %s (%s)",
@@ -677,6 +725,9 @@ class BackendAudioPlayer: NSObject {
         streamingMaxBitrate.description
       )
     } else {
+      perloadedPlayType = .stream
+      perloadedStreamingBitrate = playable.isRadio ? nil : streamingMaxBitrate
+      preloadTranscodingFormat = playable.isRadio ? nil : streamingTranscodingFormat
       os_log(
         .default,
         "Insert Stream: %s (%s)",
@@ -688,7 +739,6 @@ class BackendAudioPlayer: NSObject {
     insert(
       playable: playable,
       withUrl: streamUrl,
-      streamingMaxBitrate: streamingMaxBitrate,
       queueType: queueType,
       httpHeaders: httpHeaders
     )
@@ -697,50 +747,117 @@ class BackendAudioPlayer: NSObject {
   private func insert(
     playable: AbstractPlayable,
     withUrl url: URL,
-    streamingMaxBitrate: StreamingMaxBitratePreference = .noLimit,
     queueType: BackendAudioQueueType,
     httpHeaders: [String: String] = [:]
   ) {
-    if queueType == .play {
-      seekTimeWhenStarted = nil
-      player?.pause()
-      audioSessionHandler.configureBackgroundPlayback()
-    }
-
-    var asset: AVURLAsset?
-    if let mimeType = playable.iOsCompatibleContentType {
-      asset = AVURLAsset(url: url, options: ["AVURLAssetOutOfBandMIMETypeKey": mimeType])
-    } else {
-      asset = AVURLAsset(url: url)
-    }
-    playInPlayer(asset: asset, queueType: queueType, httpHeaders: httpHeaders)
-  }
-
-  private func playInPlayer(
-    asset: AVURLAsset?,
-    queueType: BackendAudioQueueType,
-    httpHeaders: [String: String] = [:]
-  ) {
-    guard let asset = asset else {
-      clearPlayer()
+    if queueType == .queue {
+      nextPreloadedUrl = url.absoluteString
+      if httpHeaders.isEmpty {
+        player?.queue(url: url)
+      } else {
+        player?.queue(url: url, headers: httpHeaders)
+      }
       return
     }
 
-    switch queueType {
-    case .play:
-      currentPreparedUrl = asset.url.absoluteString
-      if httpHeaders.isEmpty {
-        player?.play(url: asset.url)
+    @MainActor func replaceSource() {
+      pauseTask?.cancel()
+      pauseTask = nil
+      envelope?.resetToSilence()
+      transitionGain = 0
+      // AudioStreaming resets the PCM ring and allocates/starts its output unit
+      // inside play(url:). Quiesce the old render callback while it is muted.
+      // Keep the active audio session and its Bluetooth route across this pause.
+      let state = player?.getState()
+      if state == .playing || state == .bufferring {
+        player?.pause()
       } else {
-        player?.play(url: asset.url, headers: httpHeaders)
+        audioSessionHandler.configureBackgroundPlayback()
       }
-    case .queue:
-      nextPreloadedUrl = asset.url.absoluteString
+      currentReplayGainValue = playable.replayGainTrackGain
+      applyReplayGain()
+      player?.rate = Float(userDefinedPlaybackRate.asDouble)
+      currentPreparedUrl = url.absoluteString
       if httpHeaders.isEmpty {
-        player?.queue(url: asset.url)
+        player?.play(url: url)
       } else {
-        player?.queue(url: asset.url, headers: httpHeaders)
+        player?.play(url: url, headers: httpHeaders)
       }
+    }
+
+    guard mayHaveAudibleOutput else {
+      replaceSource()
+      return
+    }
+    volumeRampTask = Task { @MainActor in
+      do { try await drainOutput() } catch { return }
+      guard !Task.isCancelled else { return }
+      volumeRampTask = nil
+      replaceSource()
+    }
+  }
+
+  private func cancelPendingSourceChange() {
+    pauseTask?.cancel()
+    pauseTask = nil
+    sourceTask?.cancel()
+    sourceTask = nil
+    preloadTask?.cancel()
+    preloadTask = nil
+    volumeRampTask?.cancel()
+    volumeRampTask = nil
+  }
+
+  private var mayHaveAudibleOutput: Bool {
+    let state = player?.getState()
+    return transitionGain > 0 && (state == .playing || state == .bufferring)
+  }
+
+  private func drainOutput() async throws {
+    if let envelope {
+      envelope.isOpen = false
+      // An interrupted device can stop rendering before it acknowledges silence.
+      let deadline = ContinuousClock.now + .milliseconds(180)
+      while !envelope.hasRenderedSilence, ContinuousClock.now < deadline {
+        try await Task.sleep(for: .milliseconds(3))
+      }
+      try Task.checkCancellation()
+      transitionGain = 0
+    } else {
+      try await rampOutput(to: 0)
+    }
+    let session = AVAudioSession.sharedInstance()
+    let bluetooth = session.currentRoute.outputs.contains {
+      [.bluetoothA2DP, .bluetoothLE, .bluetoothHFP].contains($0.portType)
+    }
+    let latency = bluetooth ? session.outputLatency : 0
+    try await Task.sleep(for: .seconds(min(0.4, max(0, latency) + session.ioBufferDuration)))
+  }
+
+  private func rampOutput(to target: Float) async throws {
+    let start = transitionGain
+    for step in 1...12 {
+      try await Task.sleep(for: .milliseconds(2))
+      try Task.checkCancellation()
+      transitionGain = start + (target - start) * (Float(step) / 12)
+    }
+  }
+
+  private func fadeInWhenPlaying() {
+    // didStartPlaying identifies the entry, but can precede its first decoded
+    // buffer. Wait for both the matching entry and actual rendering.
+    guard isPlaying, !currentPlayUrl.isEmpty, player?.getState() == .playing,
+          volumeRampTask == nil else { return }
+    if let envelope {
+      transitionGain = 1
+      envelope.isOpen = true
+      return
+    }
+    guard transitionGain < 1 else { return }
+    volumeRampTask = Task { @MainActor in
+      do { try await rampOutput(to: 1) } catch { return }
+      guard !Task.isCancelled else { return }
+      volumeRampTask = nil
     }
   }
 
@@ -784,7 +901,7 @@ class BackendAudioPlayer: NSObject {
       band.bandwidth = 1.0
       band.filterType = .parametric
       band.gain = 0.0
-      band.bypass = false
+      band.bypass = true
     }
   }
 
@@ -800,7 +917,9 @@ class BackendAudioPlayer: NSObject {
       band.filterType = .parametric
       band.bandwidth = 1.0
       band.gain = gain
-      band.bypass = false
+      // A zero-gain parametric band is an identity operation. Bypass its DSP
+      // while keeping the node/render envelope connected for pop-free skips.
+      band.bypass = gain == 0
     }
 
     equalizerVolumeCompensation = isEqualizerEnabled ? eqSetting.compensatedVolume : 1.0
@@ -885,6 +1004,8 @@ extension BackendAudioPlayer: AudioStreaming.AudioPlayerDelegate {
       if let seekTimeWhenStarted {
         player?.seek(to: seekTimeWhenStarted)
         self.seekTimeWhenStarted = nil
+        responder?.didElapsedTimeChange()
+        if isVisualUpdatesEnabled { notifyLyricsTimeChanged() }
       }
       isErrorOccurred = false
     }
@@ -899,7 +1020,17 @@ extension BackendAudioPlayer: AudioStreaming.AudioPlayerDelegate {
     player: AudioStreaming.AudioPlayer,
     with newState: AudioStreaming.AudioPlayerState,
     previous: AudioStreaming.AudioPlayerState
-  ) {}
+  ) {
+    let isPlayingState = newState == .playing
+    let identity = ObjectIdentifier(player)
+    Task { @MainActor in
+      guard self.player.map(ObjectIdentifier.init) == identity else { return }
+      if isPlayingState { fadeInWhenPlaying() }
+      // Buffering/paused -> playing changes the system's elapsed-time clock.
+      // Publish this event immediately instead of polling lock-screen state.
+      responder?.didElapsedTimeChange()
+    }
+  }
 
   nonisolated func audioPlayerDidFinishPlaying(
     player: AudioStreaming.AudioPlayer,
@@ -915,7 +1046,7 @@ extension BackendAudioPlayer: AudioStreaming.AudioPlayerDelegate {
     let identity = ObjectIdentifier(player)
     Task { @MainActor in
       guard self.player.map(ObjectIdentifier.init) == identity else { return }
-      if self.currentPlayUrl == entryID {
+      if self.currentPlayUrl == entryID, self.isPlaying {
         self.currentPlayUrl = ""
         self.itemFinishedPlaying()
       }

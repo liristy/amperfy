@@ -114,6 +114,7 @@ class LibraryNavigatorConfigurator: NSObject {
   private var librarySettings = LibraryDisplaySettings.defaultSettings
   private var libraryInUse = [LibraryNavigatorItem]()
   private var libraryNotUsed = [LibraryNavigatorItem]()
+  var editingDidFinish: (() -> Void)?
 
   init(
     account: Account,
@@ -184,7 +185,7 @@ class LibraryNavigatorConfigurator: NSObject {
   }
 
   @MainActor @objc
-  private func editingPressed() {
+  func editingPressed() {
     let isInEditMode = !collectionView.isEditing
     editButton.title = isInEditMode ? "Done".localized : "Edit".localized
     editButton.style = isInEditMode ? .prominent : .plain
@@ -243,6 +244,7 @@ class LibraryNavigatorConfigurator: NSObject {
       #endif
 
       NotificationCenter.default.post(name: .LibraryItemsChanged, object: nil, userInfo: nil)
+      editingDidFinish?()
     }
   }
 

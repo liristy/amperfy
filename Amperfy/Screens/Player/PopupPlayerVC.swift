@@ -137,7 +137,9 @@ class PopupPlayerVC: UIViewController, UIScrollViewDelegate, UIGestureRecognizer
       createdPlayerControlView.prepare(toWorkOnRootView: self)
       controlPlaceholderView.addSubview(createdPlayerControlView)
     }
-    controlPlaceholderView.clipsToBounds = true
+    // Pressed tracks and their labels expand beyond the resting rail margins.
+    // Only clip while collapsing the controls for immersive lyrics.
+    controlPlaceholderView.clipsToBounds = false
     let restoreControls = UITapGestureRecognizer(target: self, action: #selector(restoreLyricsControls))
     restoreControls.delegate = self
     view.addGestureRecognizer(restoreControls)
@@ -319,6 +321,7 @@ class PopupPlayerVC: UIViewController, UIScrollViewDelegate, UIGestureRecognizer
     view.layoutIfNeeded()
     controlPlaceholderView.isUserInteractionEnabled = !hidden
     controlPlaceholderView.accessibilityElementsHidden = hidden
+    controlPlaceholderView.clipsToBounds = hidden
     controlPlaceholderHeightConstraint.constant = hidden && !usesLandscapeLayout ? 0 :
       PlayerControlView.frameHeight + safetyMarginOnBottom
     let changes = {
@@ -345,6 +348,7 @@ class PopupPlayerVC: UIViewController, UIScrollViewDelegate, UIGestureRecognizer
         if isDismissPan, current is DragOnlySystemVolumeView { return false }
       #endif
       if isDismissPan, current is MPVolumeView { return false }
+      if current is PlayerTrackSlider { return false }
       if isDismissPan ? (current is UISlider) : (current is UIControl) { return false }
       if !isDismissPan, current === largeCurrentlyPlayingView?.transitionArtwork { return false }
       touchedView = current.superview
@@ -424,6 +428,8 @@ class PopupPlayerVC: UIViewController, UIScrollViewDelegate, UIGestureRecognizer
     let shouldFinish = !cancelled && velocity > -100 &&
       (translation > 90 || (translation > 12 && velocity > 650))
     surfaceTransition.finishArtwork(completed: shouldFinish)
+    // Continue the released drag immediately, then decelerate into the capsule.
+    interaction.completionCurve = shouldFinish ? .easeOut : .easeInOut
     if shouldFinish { interaction.finish() } else { interaction.cancel() }
     surfaceTransition.interaction = nil
     if !shouldFinish { scheduleLyricsControlsHide() }

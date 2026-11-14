@@ -30,7 +30,7 @@ jobs:
   tests:
     if: github.event.repository.private == false
     runs-on: macos-26
-    timeout-minutes: 35
+    timeout-minutes: 40
     env:
       DEVELOPER_DIR: /Applications/Xcode_26.3.app/Contents/Developer
     steps:
@@ -51,6 +51,8 @@ jobs:
           python3 -m unittest discover -s BuildTools -p test_build_cache_mtimes.py
           python3 BuildTools/build-cache-mtimes.py restore build/validation/DerivedData/source-mtimes.json
       - name: Validate iPhone UI and affected library tests
+        # Leave time to upload diagnostics if the simulator stalls.
+        timeout-minutes: 30
         env:
           BASE_SHA: ${{ github.event.before }}
         run: bash BuildTools/test-iphone-changes.sh
@@ -76,10 +78,14 @@ jobs:
           if-no-files-found: error
           retention-days: 7
       - name: Profile player resources on simulator (not battery power)
-        if: inputs.profile_player_resources || contains(github.event.pull_request.body, '<!-- profile-player-resources -->')
-        run: python3 BuildTools/profile-player-resources.py
+        run: |
+          if [[ "${{ inputs.profile_player_resources || contains(github.event.pull_request.body, '<!-- profile-player-resources -->') }}" == "true" ]]; then
+            python3 BuildTools/profile-player-resources.py
+          else
+            python3 BuildTools/profile-player-resources.py --background-only
+          fi
       - name: Upload simulator resource measurements
-        if: always() && (inputs.profile_player_resources || contains(github.event.pull_request.body, '<!-- profile-player-resources -->'))
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: Amperfy-resource-profile-${{ github.run_number }}
@@ -98,6 +104,9 @@ jobs:
             build/validation/player-queue-glass-*.png
             build/validation/player-queue-history.png
             build/validation/player-statistics-detail.png
+            build/validation/player-library-*.png
+            build/validation/player-playlist*.png
+            build/validation/player-mini-*.png
           retention-days: 7
       - name: Save simulator build cache even after a UI failure
         if: always() && !cancelled() && steps.simulator-cache.outputs.cache-hit != 'true'
@@ -123,7 +132,9 @@ jobs:
   build:
     # Standard hosted runners are free for public repositories only.
     if: github.event.repository.private == false
-    runs-on: macos-26
+    # Device archives cross-compile to arm64; keep them off the capacity-limited
+    # ARM simulator pool. This is the standard Intel label, not a larger runner.
+    runs-on: macos-26-intel
     timeout-minutes: 45
     env:
       DEVELOPER_DIR: /Applications/Xcode_26.3.app/Contents/Developer

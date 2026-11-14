@@ -70,6 +70,32 @@ public class AudioPlayer: NSObject, BackendAudioPlayerNotifiable {
 
   var autoplayQueue: [Song] { canAutoplay ? preparedAutoplaySongs : [] }
 
+  var isOfflineMode: Bool { backendAudioPlayer.isOfflineMode }
+
+  // Read the same order used by playNext(), without advancing or reshuffling it.
+  func upcomingPlayablesForPreparation(limit: Int) -> [AbstractPlayable] {
+    guard currentlyPlaying != nil, limit > 0 else { return [] }
+    var items = [AbstractPlayable]()
+    var seen = Set<String>()
+    func append(count: Int, item: (Int) -> AbstractPlayable?) {
+      for index in 0..<count {
+        guard items.count < limit else { return }
+        if let playable = item(index), seen.insert(playable.uniqueID).inserted {
+          items.append(playable)
+        }
+      }
+    }
+    append(count: queueHandler.userQueueCount, item: { queueHandler.getUserQueueItem(at: $0) })
+    append(count: queueHandler.nextQueueCount, item: { queueHandler.getNextQueueItem(at: $0) })
+    if playerStatus.repeatMode == .all {
+      append(count: queueHandler.prevQueueCount, item: { queueHandler.getPrevQueueItem(at: $0) })
+    } else {
+      let autoplay = autoplayQueue
+      append(count: autoplay.count, item: { autoplay[$0] })
+    }
+    return items
+  }
+
   private var autoplayExcludedItems: Set<NSManagedObjectID> {
     var items = queueHandler.getAllNextQueueItems() + queueHandler.getAllUserQueueItems()
     if let currentlyPlaying { items.append(currentlyPlaying) }
@@ -366,13 +392,13 @@ public class AudioPlayer: NSObject, BackendAudioPlayerNotifiable {
     }
   }
 
-  func pause() {
+  func pause(immediately: Bool = false) {
     cancelAutoplayRequest()
     if let currentlyPlaying = currentlyPlaying,
        currentlyPlaying.isRadio {
-      stopButRemainIndex()
+      stopButRemainIndex(afterFade: !immediately)
     } else {
-      backendAudioPlayer.pause()
+      backendAudioPlayer.pause(immediately: immediately)
       notifyItemPaused()
     }
   }
@@ -385,9 +411,9 @@ public class AudioPlayer: NSObject, BackendAudioPlayerNotifiable {
     notifyPlayerStopped()
   }
 
-  func stopButRemainIndex() {
+  func stopButRemainIndex(afterFade: Bool = false) {
     cancelAutoplayRequest(clearQueue: true)
-    backendAudioPlayer.stop()
+    backendAudioPlayer.stop(afterFade: afterFade)
     notifyPlayerStopped()
   }
 
@@ -418,6 +444,11 @@ public class AudioPlayer: NSObject, BackendAudioPlayerNotifiable {
     if let currentItem = currentlyPlaying {
       savePlayInformation(of: currentItem)
     }
+  }
+
+  func didSeek() {
+    for notifier in notifierList { notifier.value?.didSeek() }
+    didElapsedTimeChange()
   }
 
   // BackendAudioPlayerNotifiable
@@ -484,6 +515,7 @@ public class AudioPlayer: NSObject, BackendAudioPlayerNotifiable {
   }
 
   func notifyItemPaused() {
+    if let currentlyPlaying { savePlayInformation(of: currentlyPlaying) }
     notifierList = notifierList.filter { $0.value != nil }
     for notifier in notifierList {
       notifier.value?.didPause()

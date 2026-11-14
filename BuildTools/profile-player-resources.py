@@ -82,6 +82,7 @@ def wait_for(path, predicate, documents, timeout=75):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--background-only", action="store_true")
     parser.add_argument("--seconds", type=int, default=20)
     parser.add_argument("--output", type=Path, default=Path("build/resource-profile"))
     args = parser.parse_args()
@@ -127,9 +128,11 @@ def main():
         wait_for_server(server)
         launch = command("xcrun", "simctl", "launch", "--terminate-running-process",
                          "--stdout=" + str(output / "app.stdout.log"), "--stderr=" + str(output / "app.stderr.log"),
-                         device_id, bundle_id, "-AppleLanguages", "(zh-Hans)", "--smoke-resource-profile")
+                         device_id, bundle_id, "-AppleLanguages", "(zh-Hans)", "--smoke-resource-profile",
+                         *(["--smoke-background-profile"] if args.background_only else []))
         pid = int(launch.rsplit(":", 1)[1].strip())
-        for index, name in enumerate(PHASES):
+        phases = ["playing_background", "paused_background"] if args.background_only else PHASES
+        for index, name in enumerate(phases):
             staged = wait_for(documents / "player-resource-phase.json", lambda value: value.get("index") == index, documents)
             if staged.get("phase") != name or staged.get("pid") != pid or staged.get("state") != 0:
                 raise RuntimeError(f"Unexpected staging state: {staged}")
@@ -138,6 +141,8 @@ def main():
                 command("xcrun", "simctl", "launch", device_id, "com.apple.Preferences")
                 background_event = wait_for(documents / "player-resource-background.json",
                                             lambda value: value.get("phase") == name, documents, timeout=15)
+                if background_event.get("audio_tap_installed") is not False:
+                    raise RuntimeError("Audio visualization tap remained installed in background")
                 if background_event["playing"] != staged["playing"]:
                     raise RuntimeError("Background playback state changed before sampling")
             time.sleep(3)

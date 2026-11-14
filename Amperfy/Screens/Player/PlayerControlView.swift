@@ -30,15 +30,35 @@ import UIKit
 final class PlayerTransportButton: UIButton {
   private let pressDisc = UIView()
   private let symbolContainer = UIView()
-  private let symbolView = UIImageView()
+  private let symbolView = UIView()
+  private let retiringSymbolView = UIView()
+  private let symbolImageView = UIImageView()
+  private let retiringSymbolImageView = UIImageView()
+  private let activationView = UIView()
+  private var activationTask: Task<Void, Never>?
   private var symbolIdentifier: String?
-  private var symbolAnimator: UIViewPropertyAnimator?
-  private var symbolTransitionID = UUID()
-  private var skipOverlay: UIView?
-  private var skipAnimationID = UUID()
+  private var symbolTransitionTask: Task<Void, Never>?
+  private static let symbolTransitionKey = "player-symbol-replacement"
+  private static let activationAnimationKey = "player-transport-activation"
 
-  override func awakeFromNib() {
-    super.awakeFromNib()
+  var usesCompactStyle = false {
+    didSet { updateSymbolColor() }
+  }
+  private var symbolColor: UIColor { usesCompactStyle ? tintColor : .white }
+  private var replacementDuration: TimeInterval { usesCompactStyle ? 0.40 : 0.36 }
+  private var activationDuration: TimeInterval { usesCompactStyle ? 0.36 : 0.32 }
+
+  override init(frame: CGRect) {
+    super.init(frame: frame)
+    configureTransport()
+  }
+
+  required init?(coder: NSCoder) {
+    super.init(coder: coder)
+    configureTransport()
+  }
+
+  private func configureTransport() {
     pressDisc.backgroundColor = .white.withAlphaComponent(0.12)
     pressDisc.alpha = 0
     for view in [pressDisc, symbolContainer] {
@@ -46,14 +66,37 @@ final class PlayerTransportButton: UIButton {
       addSubview(view)
     }
     symbolContainer.addSubview(symbolView)
-    symbolView.contentMode = .center
-    symbolView.tintColor = .white
+    symbolContainer.addSubview(retiringSymbolView)
+    symbolContainer.addSubview(activationView)
+    symbolView.addSubview(symbolImageView)
+    retiringSymbolView.addSubview(retiringSymbolImageView)
+    retiringSymbolImageView.contentMode = .center
+    retiringSymbolView.alpha = 0
+    activationView.isUserInteractionEnabled = false
+    symbolImageView.contentMode = .center
+    updateSymbolColor()
+    registerForTraitChanges([UITraitUserInterfaceStyle.self]) { (button: PlayerTransportButton, _: UITraitCollection) in
+      // Temporary raster pieces must not keep the previous page's contrast.
+      button.finishActivation()
+      button.updateSymbolColor()
+    }
+  }
+
+  override func tintColorDidChange() {
+    super.tintColorDidChange()
+    updateSymbolColor()
+  }
+
+  private func updateSymbolColor() {
+    symbolImageView.tintColor = symbolColor
+    retiringSymbolImageView.tintColor = symbolColor
+    pressDisc.isHidden = usesCompactStyle
   }
 
   override func layoutSubviews() {
     super.layoutSubviews()
     imageView?.isHidden = true
-    let side = min(56, min(bounds.width, bounds.height))
+    let side = min(60, min(bounds.width, bounds.height))
     pressDisc.bounds = CGRect(x: 0, y: 0, width: side, height: side)
     pressDisc.center = CGPoint(x: bounds.midX, y: bounds.midY)
     pressDisc.layer.cornerRadius = side / 2
@@ -63,112 +106,263 @@ final class PlayerTransportButton: UIButton {
     symbolContainer.center = pressDisc.center
     symbolView.bounds = symbolContainer.bounds
     symbolView.center = CGPoint(x: symbolContainer.bounds.midX, y: symbolContainer.bounds.midY)
-    skipOverlay?.center = pressDisc.center
+    retiringSymbolView.bounds = symbolView.bounds
+    retiringSymbolView.center = symbolView.center
+    symbolImageView.frame = symbolView.bounds
+    retiringSymbolImageView.frame = retiringSymbolView.bounds
+    activationView.frame = symbolContainer.bounds
   }
 
   override var isHighlighted: Bool {
     didSet {
       guard oldValue != isHighlighted else { return }
       let pressed = isHighlighted
-      UIView.animate(withDuration: pressed ? 0.09 : 0.18, delay: 0,
-        usingSpringWithDamping: pressed ? 1 : 0.9, initialSpringVelocity: 0,
+      UIView.animate(withDuration: pressed ? 0.12 : 0.32, delay: 0,
+        usingSpringWithDamping: pressed ? 1 : 0.75, initialSpringVelocity: 0,
         options: [.beginFromCurrentState, .allowUserInteraction]) {
-        self.pressDisc.alpha = pressed ? 1 : 0
+        self.pressDisc.alpha = pressed && !self.usesCompactStyle ? 1 : 0
         self.symbolContainer.transform = pressed && !UIAccessibility.isReduceMotionEnabled ?
-          CGAffineTransform(scaleX: 0.94, y: 0.94) : .identity
+          CGAffineTransform(scaleX: 0.90, y: 0.90) : .identity
       }
     }
   }
 
   func renderSymbol(_ image: UIImage, identifier: String) {
     guard symbolIdentifier != identifier else { return }
-    let animated = symbolIdentifier != nil && window != nil && !UIAccessibility.isReduceMotionEnabled
+    finishActivation()
+    symbolView.layer.removeAnimation(forKey: Self.activationAnimationKey)
+    let animated = symbolIdentifier != nil && window != nil &&
+      UIApplication.shared.applicationState == .active && !UIAccessibility.isReduceMotionEnabled
     symbolIdentifier = identifier
-    let transitionID = UUID()
-    symbolTransitionID = transitionID
-    // Finish at the rendered position so rapid taps don't restart from full size
-    // or allow an older completion to install an outdated play/pause symbol.
-    if let animator = symbolAnimator {
-      animator.stopAnimation(false)
-      animator.finishAnimation(at: .current)
-      symbolAnimator = nil
-    }
-    guard animated else {
-      symbolView.image = image
-      symbolView.transform = .identity
-      symbolView.alpha = 1
-      setNeedsLayout()
-      return
-    }
-    let shrink = UIViewPropertyAnimator(duration: 0.07, curve: .easeIn) {
-      self.symbolView.transform = CGAffineTransform(scaleX: 0.15, y: 0.15)
-      self.symbolView.alpha = 0
-    }
-    shrink.addCompletion { [weak self] _ in
-      guard let self, symbolTransitionID == transitionID else { return }
-      symbolView.image = image
-      let expand = UIViewPropertyAnimator(duration: 0.2, dampingRatio: 0.9) {
-        self.symbolView.transform = .identity
-        self.symbolView.alpha = 1
+    let current = symbolView.layer.presentation() ?? symbolView.layer
+    let retiring = retiringSymbolView.layer.presentation() ?? retiringSymbolView.layer
+    let outgoingView = current.opacity >= retiring.opacity ? symbolView : retiringSymbolView
+    let outgoing = outgoingView.layer.presentation() ?? outgoingView.layer
+    let outgoingImage = outgoingView === symbolView ? symbolImageView.image : retiringSymbolImageView.image
+    let outgoingScale = outgoing.transform.m11
+    let outgoingOpacity = outgoing.opacity
+    finishSymbolTransition()
+    symbolImageView.image = image
+    symbolView.transform = .identity
+    symbolView.alpha = 1
+    setNeedsLayout()
+    guard animated else { return }
+
+    // Use compositor animations directly. A nested UIView keyframe animator can
+    // finish the replacement during layout, leaving a hard cut in real recordings.
+    retiringSymbolImageView.image = outgoingImage
+    retiringSymbolView.transform = .identity
+    // Leave the model visible until cleanup. Glass can discard content when
+    // UIView.alpha is zero before the compositor's fade has actually run.
+    retiringSymbolView.alpha = 1
+    func animate(_ layer: CALayer, scale: [CGFloat], opacity: [Float], times: [NSNumber]) {
+      let size = CAKeyframeAnimation(keyPath: "transform.scale")
+      size.values = scale
+      size.keyTimes = times
+      let fade = CAKeyframeAnimation(keyPath: "opacity")
+      fade.values = opacity
+      fade.keyTimes = times
+      for animation in [size, fade] {
+        animation.duration = replacementDuration
+        animation.timingFunctions = Array(repeating: CAMediaTimingFunction(name: .easeInEaseOut),
+          count: times.count - 1)
       }
-      expand.addCompletion { [weak self] _ in
-        guard let self, symbolTransitionID == transitionID else { return }
-        symbolAnimator = nil
-      }
-      symbolAnimator = expand
-      expand.startAnimation()
+      let group = CAAnimationGroup()
+      group.animations = [size, fade]
+      group.duration = replacementDuration
+      group.fillMode = .forwards
+      group.isRemovedOnCompletion = false
+      layer.add(group, forKey: Self.symbolTransitionKey)
     }
-    symbolAnimator = shrink
-    shrink.startAnimation()
+    // 0.94–1.30 s: overlap the outgoing shrink with the incoming growth.
+    animate(retiringSymbolView.layer, scale: [outgoingScale, 0.12, 0.12],
+      opacity: [outgoingOpacity, 0, 0], times: [0, 0.36, 1])
+    animate(symbolView.layer, scale: [0.12, 0.12, 1], opacity: [0, 0, 1], times: [0, 0.12, 1])
+    let cleanupDelay = replacementDuration + 0.01
+    symbolTransitionTask = Task { @MainActor [weak self] in
+      try? await Task.sleep(for: .seconds(cleanupDelay))
+      guard !Task.isCancelled else { return }
+      self?.finishSymbolTransition()
+    }
+  }
+
+  private func finishSymbolTransition() {
+    symbolTransitionTask?.cancel()
+    symbolTransitionTask = nil
+    symbolView.layer.removeAnimation(forKey: Self.symbolTransitionKey)
+    retiringSymbolView.layer.removeAnimation(forKey: Self.symbolTransitionKey)
+    retiringSymbolImageView.image = nil
+    retiringSymbolView.alpha = 0
   }
 
   func animateActivation(direction: CGFloat = 0) {
     // Play/pause touch highlighting already fades on release. Re-triggering it
     // here would flash the circle a second time after every successful tap.
     guard direction != 0 else { return }
-    pressDisc.layer.removeAllAnimations()
-    pressDisc.alpha = 1
-    UIView.animate(withDuration: 0.3, delay: 0.05, options: [.allowUserInteraction, .beginFromCurrentState]) {
-      self.pressDisc.alpha = 0
-    }
-    guard direction != 0, !UIAccessibility.isReduceMotionEnabled,
-          let image = symbolView.image else { return }
-    skipOverlay?.removeFromSuperview()
-    let animationID = UUID()
-    skipAnimationID = animationID
-    let overlay = UIView(frame: CGRect(origin: .zero, size: image.size))
-    overlay.center = pressDisc.center
-    overlay.clipsToBounds = true
-    overlay.isUserInteractionEnabled = false
-    let slotWidth = image.size.width / 2
-    var triangles: [UIImageView] = []
-    for slot in -1...1 {
-      let triangle = UIImageView(image: UIImage(systemName: "play.fill"))
-      triangle.tintColor = .white
-      triangle.contentMode = .scaleAspectFit
-      triangle.frame = CGRect(x: CGFloat(slot) * slotWidth, y: 0, width: slotWidth, height: image.size.height)
-      if direction < 0 {
-        triangle.frame.origin.x = CGFloat(slot + 1) * slotWidth
-        triangle.transform = CGAffineTransform(rotationAngle: .pi)
+    if !usesCompactStyle {
+      pressDisc.layer.removeAllAnimations()
+      pressDisc.alpha = 1
+      UIView.animate(withDuration: 0.3, delay: 0.05, options: [.allowUserInteraction, .beginFromCurrentState]) {
+        self.pressDisc.alpha = 0
       }
-      overlay.addSubview(triangle)
-      triangles.append(triangle)
     }
-    addSubview(overlay)
-    skipOverlay = overlay
-    symbolView.alpha = 0
-    UIView.animate(withDuration: 0.26, delay: 0, options: [.curveEaseOut, .allowUserInteraction]) {
-      for triangle in triangles { triangle.center.x += direction * slotWidth }
-    } completion: { [weak self, weak overlay] _ in
-      overlay?.removeFromSuperview()
-      guard let self, skipAnimationID == animationID else { return }
-      skipOverlay = nil
-      symbolView.alpha = 1
+    guard activationTask == nil, window != nil, !UIAccessibility.isReduceMotionEnabled,
+          let image = symbolImageView.image else { return }
+    guard let pieces = transportPieces(image, direction: direction) else { return }
+    let leading = direction > 0 ? pieces.0 : pieces.1
+    let trailing = direction > 0 ? pieces.1 : pieces.0
+    let distance = trailing.frame.midX - leading.frame.midX
+    func makeLayer(_ piece: (image: CGImage, frame: CGRect)) -> CALayer {
+      if usesCompactStyle {
+        // Keep template-image vibrancy inside Liquid Glass. A pre-tinted CGImage
+        // cannot follow the glass's automatic contrast change over dark artwork.
+        let glyph = UIImageView(image: UIImage(cgImage: piece.image).withRenderingMode(.alwaysTemplate))
+        glyph.tintColor = symbolColor
+        glyph.contentMode = .scaleToFill
+        let carrier = UIView(frame: piece.frame)
+        glyph.frame = carrier.bounds
+        glyph.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+        carrier.addSubview(glyph)
+        activationView.addSubview(carrier)
+        // UIKit may move the image's layer into a vibrancy container. Animate
+        // the ordinary parent so its position never gains that internal offset.
+        return carrier.layer
+      }
+      let layer = CALayer()
+      layer.contents = piece.image
+      layer.contentsScale = CGFloat(piece.image.width) / piece.frame.width
+      layer.frame = piece.frame
+      activationView.layer.addSublayer(layer)
+      return layer
+    }
+    let incoming = makeLayer(leading)
+    let travelling = makeLayer(leading)
+    let outgoing = makeLayer(trailing)
+    incoming.opacity = 0
+    incoming.transform = CATransform3DMakeScale(0.001, 0.001, 1)
+    symbolView.isHidden = true
+    func animate(_ layer: CALayer, key: String, values: [Any], times: [NSNumber]) {
+      let animation = CAKeyframeAnimation(keyPath: key)
+      animation.values = values
+      animation.keyTimes = times
+      animation.duration = activationDuration
+      animation.timingFunctions = Array(repeating: CAMediaTimingFunction(name: .easeInEaseOut), count: times.count - 1)
+      animation.fillMode = .forwards
+      animation.isRemovedOnCompletion = false
+      layer.add(animation, forKey: key)
+    }
+    // 9.00–9.32 s: front triangle shrinks in place, rear triangle takes its
+    // position, and a new rear triangle grows. Reuse the exact SF Symbol pixels.
+    animate(outgoing, key: "transform.scale", values: [1, 0.001, 0.001], times: [0, 0.48, 1])
+    animate(outgoing, key: "opacity", values: [1, 0, 0], times: [0, 0.48, 1])
+    animate(travelling, key: "position.x", values: [leading.frame.midX, leading.frame.midX + distance, leading.frame.midX + distance], times: [0, 0.78, 1])
+    animate(incoming, key: "transform.scale", values: [0.001, 0.001, 1, 1], times: [0, 0.08, 0.80, 1])
+    animate(incoming, key: "opacity", values: [0, 0, 1, 1], times: [0, 0.08, 0.80, 1])
+    // Rapid taps keep the running handoff continuous; playback actions are not delayed.
+    let cleanupDelay = activationDuration + 0.01
+    activationTask = Task { @MainActor [weak self] in
+      try? await Task.sleep(for: .seconds(cleanupDelay))
+      guard !Task.isCancelled else { return }
+      self?.finishActivation()
+    }
+  }
+
+  private func finishActivation() {
+    activationTask?.cancel()
+    activationTask = nil
+    activationView.subviews.forEach { $0.removeFromSuperview() }
+    activationView.layer.sublayers?.forEach { $0.removeFromSuperlayer() }
+    symbolView.isHidden = false
+  }
+
+  private func transportPieces(_ image: UIImage, direction: CGFloat)
+    -> ((image: CGImage, frame: CGRect), (image: CGImage, frame: CGRect))? {
+    let rendered = UIGraphicsImageRenderer(size: image.size).image { _ in
+      image.withTintColor(symbolColor.resolvedColor(with: traitCollection), renderingMode: .alwaysOriginal)
+        .draw(at: .zero)
+    }
+    guard let cg = rendered.cgImage else { return nil }
+    let width = cg.width, height = cg.height
+    var rgba = [UInt8](repeating: 0, count: width * height * 4)
+    let decoded = rgba.withUnsafeMutableBytes { bytes -> Bool in
+      guard let context = CGContext(data: bytes.baseAddress, width: width, height: height,
+        bitsPerComponent: 8, bytesPerRow: width * 4, space: CGColorSpaceCreateDeviceRGB(),
+        bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue | CGBitmapInfo.byteOrder32Big.rawValue) else { return false }
+      context.draw(cg, in: CGRect(x: 0, y: 0, width: CGFloat(width), height: CGFloat(height)))
+      return true
+    }
+    guard decoded else { return nil }
+    var left = width, right = 0, top = height, bottom = 0
+    for y in 0..<height {
+      for x in 0..<width where rgba[(y * width + x) * 4 + 3] > 0 {
+        left = min(left, x); right = max(right, x); top = min(top, y); bottom = max(bottom, y)
+      }
+    }
+    guard right - left > 3, bottom > top else { return nil }
+    // SF Symbols can meet off the bounding box midpoint. Split at the narrow
+    // join so the moving triangle never carries the other triangle's vertical edge.
+    let midpoint = (left + right + 1) / 2
+    let searchRadius = max(1, (right - left) / 10)
+    let candidates = max(left + 1, midpoint - searchRadius)...min(right - 1, midpoint + searchRadius)
+    let join = candidates.min { first, second in
+      func coverage(_ x: Int) -> Int {
+        (top...bottom).reduce(0) { $0 + Int(rgba[($1 * width + x) * 4 + 3]) }
+      }
+      let firstCoverage = coverage(first), secondCoverage = coverage(second)
+      return firstCoverage == secondCoverage ? abs(first - midpoint) < abs(second - midpoint) :
+        firstCoverage < secondCoverage
+    } ?? midpoint
+    let middle = direction > 0 ? join : join + 1
+    let scale = rendered.scale
+    let origin = CGPoint(x: (symbolView.bounds.width - image.size.width) / 2,
+                         y: (symbolView.bounds.height - image.size.height) / 2)
+    func piece(_ x: Int, _ w: Int) -> (image: CGImage, frame: CGRect)? {
+      let crop = CGRect(x: CGFloat(x), y: CGFloat(top), width: CGFloat(w), height: CGFloat(bottom - top + 1))
+      guard let bitmap = cg.cropping(to: crop) else { return nil }
+      // Give each piece independent storage and a transparent texel border.
+      // Filtering a tight CGImage crop can sample the adjacent glyph and draw a hairline.
+      let padding = 1 / scale
+      let size = CGSize(width: (CGFloat(w) + 2) / scale, height: (crop.height + 2) / scale)
+      let format = UIGraphicsImageRendererFormat()
+      format.scale = scale
+      format.opaque = false
+      let isolated = UIGraphicsImageRenderer(size: size, format: format).image { _ in
+        UIImage(cgImage: bitmap, scale: scale, orientation: .up)
+          .draw(at: CGPoint(x: padding, y: padding))
+      }
+      guard let isolatedBitmap = isolated.cgImage else { return nil }
+      return (isolatedBitmap, CGRect(x: origin.x + CGFloat(x) / scale - padding,
+        y: origin.y + CGFloat(top) / scale - padding, width: size.width, height: size.height))
+    }
+    guard let first = piece(left, middle - left), let second = piece(middle, right + 1 - middle) else { return nil }
+    return (first, second)
+  }
+
+  override func didMoveToWindow() {
+    super.didMoveToWindow()
+    if window == nil {
+      finishActivation()
+      finishSymbolTransition()
+      pressDisc.layer.removeAllAnimations()
+      pressDisc.alpha = 0
+      symbolContainer.layer.removeAllAnimations()
+      symbolContainer.transform = .identity
     }
   }
 
   #if DEBUG && targetEnvironment(simulator)
-    var isRenderedSymbolSettled: Bool {
+    private func transportSnapshotForSmoke() -> UIImage {
+      UIGraphicsImageRenderer(size: bounds.size).image { context in
+        guard let window else { return }
+        let origin = convert(bounds, to: window).origin
+        context.cgContext.translateBy(x: -origin.x, y: -origin.y)
+        // Glass content is composed by its ancestors; drawing the button alone
+        // produces an empty image even though its glyph is visible onscreen.
+        window.drawHierarchy(in: window.bounds, afterScreenUpdates: false)
+      }
+    }
+
+    private var isCurrentSymbolImage: Bool {
       func pixels(_ image: UIImage?) -> Data? {
         guard let image else { return nil }
         return UIGraphicsImageRenderer(size: bounds.size).image { _ in
@@ -176,12 +370,102 @@ final class PlayerTransportButton: UIButton {
             y: (bounds.height - image.size.height) / 2))
         }.pngData()
       }
-      guard let rendered = pixels(symbolView.image), let expected = pixels(image(for: .normal)) else { return false }
-      return rendered == expected && symbolAnimator == nil &&
+      guard let rendered = pixels(symbolImageView.image), let expected = pixels(image(for: .normal)) else { return false }
+      return rendered == expected
+    }
+
+    var isRenderedSymbolSettled: Bool {
+      isCurrentSymbolImage && symbolTransitionTask == nil && activationTask == nil && !symbolView.isHidden &&
+        symbolView.layer.animation(forKey: Self.activationAnimationKey) == nil &&
         symbolView.alpha == 1 && symbolView.transform == .identity &&
         symbolContainer.transform == .identity &&
         abs(symbolView.center.x - symbolContainer.bounds.midX) < 0.5 &&
         abs(symbolView.center.y - symbolContainer.bounds.midY) < 0.5
+    }
+
+    func verifyReplacementForSmoke(filename: String) async throws -> Bool {
+      let originalBounds = bounds
+      var frames = [UIImage]()
+      var sawShrink = false
+      for _ in 0..<20 {
+        try await Task.sleep(for: .milliseconds(25))
+        let rendered = symbolView.layer.presentation() ?? symbolView.layer
+        sawShrink = sawShrink || (rendered.opacity > 0 && rendered.transform.m11 < 0.9)
+        guard bounds == originalBounds, isCurrentSymbolImage,
+              abs(rendered.position.x - bounds.midX) < 0.5,
+              abs(rendered.position.y - bounds.midY) < 0.5,
+              abs(rendered.transform.m11 - rendered.transform.m22) < 0.01,
+              abs(rendered.transform.m12) < 0.01 else { return false }
+        frames.append(transportSnapshotForSmoke())
+      }
+      guard UIAccessibility.isReduceMotionEnabled || sawShrink, isRenderedSymbolSettled else { return false }
+      let gridSize = CGSize(width: bounds.width * 10, height: bounds.height * 2)
+      let grid = UIGraphicsImageRenderer(size: gridSize).image { context in
+        UIColor.secondarySystemBackground.resolvedColor(with: traitCollection).setFill()
+        context.fill(CGRect(origin: .zero, size: gridSize))
+        for (index, frame) in frames.enumerated() {
+          frame.draw(at: CGPoint(x: CGFloat(index % 10) * bounds.width,
+            y: CGFloat(index / 10) * bounds.height))
+        }
+      }
+      try grid.pngData()?.write(to: URL.documentsDirectory.appendingPathComponent(filename))
+      return true
+    }
+
+    func verifyActivationForSmoke(direction: CGFloat, filename: String) async throws -> Bool {
+      let originalBounds = bounds
+      var frames = [UIImage]()
+      var sawMotion = false
+      for _ in 0..<16 {
+        try await Task.sleep(for: .milliseconds(25))
+        let rendered = (symbolView.layer.presentation() ?? symbolView.layer).transform
+        let animatedLayers = activationView.subviews.isEmpty ?
+          (activationView.layer.sublayers ?? []) : activationView.subviews.map(\.layer)
+        // Liquid Glass may insert composition layers above template image views.
+        // Inspect the animated glyph layers, not those intermediate containers.
+        sawMotion = sawMotion || animatedLayers.contains(where: {
+          let current = $0.presentation() ?? $0
+          return current.opacity > 0 && abs(current.transform.m11 - 1) > 0.01
+        })
+        if let image = symbolImageView.image {
+          let left = (bounds.width - image.size.width) / 2 - 1
+          let right = (bounds.width + image.size.width) / 2 + 1
+          guard animatedLayers.allSatisfy({ layer in
+            let current = layer.presentation() ?? layer
+            return current.opacity < 0.01 ||
+              (current.frame.minX >= left && current.frame.maxX <= right)
+          }) else {
+            FileHandle.standardOutput.write(Data(("Transport glyph escaped original symbol width: \(filename)\n").utf8))
+            return false
+          }
+        }
+        guard bounds == originalBounds, isCurrentSymbolImage, symbolView.alpha == 1,
+              abs(rendered.m42) < 0.1, abs(rendered.m11 - rendered.m22) < 0.01 else {
+          FileHandle.standardOutput.write(Data(("Transport sample failed: \(filename), bounds=\(bounds), expected=\(originalBounds), image=\(isCurrentSymbolImage), alpha=\(symbolView.alpha), transform=\(rendered)\n").utf8))
+          return false
+        }
+        frames.append(transportSnapshotForSmoke())
+      }
+      guard UIAccessibility.isReduceMotionEnabled || sawMotion, isRenderedSymbolSettled else {
+        FileHandle.standardOutput.write(Data(("Transport did not settle: \(filename), motion=\(sawMotion), image=\(isCurrentSymbolImage), activation=\(activationTask != nil), replacement=\(symbolTransitionTask != nil), hidden=\(symbolView.isHidden), container=\(symbolContainer.transform), center=\(symbolView.center), bounds=\(symbolContainer.bounds)\n").utf8))
+        return false
+      }
+      let gridSize = CGSize(width: bounds.width * 8, height: bounds.height * 2)
+      let grid = UIGraphicsImageRenderer(size: gridSize).image { context in
+        UIColor.darkGray.setFill()
+        context.fill(CGRect(origin: .zero, size: gridSize))
+        for (index, frame) in frames.enumerated() {
+          frame.draw(at: CGPoint(x: CGFloat(index % 8) * bounds.width,
+                                y: CGFloat(index / 8) * bounds.height))
+        }
+      }
+      try grid.pngData()?.write(to: URL.documentsDirectory.appendingPathComponent(filename))
+      for _ in 0..<6 {
+        animateActivation(direction: direction)
+        try await Task.sleep(for: .milliseconds(35))
+      }
+      try await Task.sleep(for: .milliseconds(400))
+      return isRenderedSymbolSettled
     }
   #endif
 }
@@ -234,7 +518,7 @@ class PlayerControlView: UIView {
   weak var skipForwardButton: UIButton!
 
   @IBOutlet
-  weak var timeSlider: UISlider!
+  weak var timeSlider: PlayerTrackSlider!
   @IBOutlet
   weak var elapsedTimeLabel: UILabel!
   @IBOutlet
@@ -286,12 +570,22 @@ class PlayerControlView: UIView {
     playerHandler = PlayerUIHandler(player: player, style: .popupPlayer)
     configureIconControls()
     configureVolumeSlider()
-    timeSlider.minimumTrackTintColor = .white.withAlphaComponent(0.8)
-    timeSlider.maximumTrackTintColor = .white.withAlphaComponent(0.18)
+    timeSlider.minimumTrackTintColor = .white.withAlphaComponent(0.7)
+    timeSlider.maximumTrackTintColor = .white.withAlphaComponent(0.26)
     timeSlider.accessibilityLabel = "Playback position".localized
     for label in [elapsedTimeLabel, remainingTimeLabel, audioInfoLabel] {
       label?.font = .monospacedDigitSystemFont(ofSize: 12, weight: .medium)
       label?.textColor = .white.withAlphaComponent(0.65)
+    }
+    for label in [elapsedTimeLabel, remainingTimeLabel] {
+      label?.textColor = .white
+      label?.alpha = 0.4
+    }
+    timeSlider.onExpansionChanged = { [weak self] expanded in
+      guard let self else { return }
+      let distance = timeSlider.bounds.width * 0.025
+      animateSliderFeedback(on: elapsedTimeLabel, translation: -distance, expanded: expanded, restingAlpha: 0.4)
+      animateSliderFeedback(on: remainingTimeLabel, translation: distance, expanded: expanded, restingAlpha: 0.4)
     }
     airplayButton.accessibilityLabel = "AirPlay"
     displayPlaylistButton.accessibilityLabel = "Playing next".localized
@@ -326,11 +620,12 @@ class PlayerControlView: UIView {
     loudSpeaker.isAccessibilityElement = false
     volumeSlider.translatesAutoresizingMaskIntoConstraints = false
     #if targetEnvironment(macCatalyst)
+      volumeSlider.activeTrackHeight = 17
       volumeSlider.minimumValue = 0
       volumeSlider.maximumValue = 1
       volumeSlider.value = player.volume
       volumeSlider.minimumTrackTintColor = .white.withAlphaComponent(0.7)
-      volumeSlider.maximumTrackTintColor = .white.withAlphaComponent(0.18)
+      volumeSlider.maximumTrackTintColor = .white.withAlphaComponent(0.26)
       volumeSlider.preferredBehavioralStyle = .pad
       volumeSlider.sliderStyle = .thumbless
       volumeSlider.accessibilityLabel = "Volume".localized
@@ -343,8 +638,10 @@ class PlayerControlView: UIView {
       volumeSlider.showsVolumeSlider = true
       volumeSlider.isTrackExpansionEnabled = true
       volumeSlider.tintColor = .white.withAlphaComponent(0.7)
-      volumeSlider.setMinimumVolumeSliderImage(volumeTrackImage(alpha: 0.7), for: .normal)
-      volumeSlider.setMaximumVolumeSliderImage(volumeTrackImage(alpha: 0.18), for: .normal)
+      // Keep MPVolumeView in charge of system values and accessibility. The
+      // shared capsule renderer supplies the measured press/release geometry.
+      volumeSlider.setMinimumVolumeSliderImage(volumeTrackImage(alpha: 0), for: .normal)
+      volumeSlider.setMaximumVolumeSliderImage(volumeTrackImage(alpha: 0), for: .normal)
       let invisibleThumb = UIGraphicsImageRenderer(size: CGSize(width: 1, height: 1)).image { _ in }
       volumeSlider.setVolumeThumbImage(invisibleThumb, for: .normal)
     #endif
@@ -355,6 +652,16 @@ class PlayerControlView: UIView {
     quietSpeaker.contentMode = .scaleAspectFit
     quietSpeaker.tintColor = .white.withAlphaComponent(0.5)
     addSubview(quietSpeaker)
+    for speaker in [quietSpeaker, loudSpeaker].compactMap({ $0 }) {
+      speaker.tintColor = .white
+      speaker.alpha = 0.5
+    }
+    volumeSlider.onExpansionChanged = { [weak self, weak quietSpeaker] expanded in
+      guard let self, let quietSpeaker else { return }
+      let distance = volumeSlider.bounds.width * 0.025
+      animateSliderFeedback(on: quietSpeaker, translation: -distance, expanded: expanded, restingAlpha: 0.5)
+      animateSliderFeedback(on: loudSpeaker, translation: distance, expanded: expanded, restingAlpha: 0.5)
+    }
     NSLayoutConstraint.activate([
       quietSpeaker.leadingAnchor.constraint(equalTo: layoutMarginsGuide.leadingAnchor),
       quietSpeaker.centerYAnchor.constraint(equalTo: loudSpeaker.centerYAnchor),
@@ -365,6 +672,32 @@ class PlayerControlView: UIView {
       volumeSlider.centerYAnchor.constraint(equalTo: loudSpeaker.centerYAnchor),
       volumeSlider.heightAnchor.constraint(equalToConstant: 32),
     ])
+  }
+
+  private func animateSliderFeedback(on view: UIView, translation: CGFloat, expanded: Bool,
+                                     restingAlpha: CGFloat) {
+    let rendered = view.layer.presentation() ?? view.layer
+    let fromTransform = rendered.transform
+    let fromOpacity = rendered.opacity
+    let target = CATransform3DMakeTranslation(expanded ? translation : 0, 0, 0)
+    let opacity: Float = expanded ? 1 : Float(restingAlpha)
+    view.layer.removeAnimation(forKey: "slider-label-feedback")
+    CATransaction.begin()
+    CATransaction.setDisableActions(true)
+    view.layer.transform = target
+    view.layer.opacity = opacity
+    CATransaction.commit()
+    guard view.window != nil, !UIAccessibility.isReduceMotionEnabled else { return }
+    let movement = PlayerSliderTrackView.spring(keyPath: "transform", expanded: expanded,
+      from: NSValue(caTransform3D: fromTransform), to: NSValue(caTransform3D: target))
+    let brightness = CABasicAnimation(keyPath: "opacity")
+    brightness.fromValue = fromOpacity
+    brightness.toValue = opacity
+    brightness.duration = expanded ? 0.12 : 0.2
+    let group = CAAnimationGroup()
+    group.animations = [movement, brightness]
+    group.duration = PlayerSliderTrackView.animationDuration
+    view.layer.add(group, forKey: "slider-label-feedback")
   }
 
   #if !targetEnvironment(macCatalyst)
@@ -847,6 +1180,7 @@ extension PlayerControlView: MusicPlayable {
   }
 
   func didElapsedTimeChange() {
+    guard window != nil, UIApplication.shared.applicationState == .active else { return }
     playerHandler?.refreshTimeInfo(
       timeSlider: timeSlider,
       elapsedTimeLabel: elapsedTimeLabel,

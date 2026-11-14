@@ -85,7 +85,7 @@ class PlaylistsVC: SingleSnapshotFetchedResultsTableViewController<PlaylistMO> {
   private var sortType: PlaylistSortType = .name
 
   init(account: Account) {
-    super.init(style: .grouped, account: account)
+    super.init(style: .plain, account: account)
   }
 
   required init?(coder: NSCoder) {
@@ -133,14 +133,15 @@ class PlaylistsVC: SingleSnapshotFetchedResultsTableViewController<PlaylistMO> {
       scopeButtonTitles: searchTiles
     )
     setNavBarTitle(title: "Playlists".localized)
-    tableView.register(nibName: PlaylistTableCell.typeName)
-    tableView.rowHeight = PlaylistTableCell.rowHeight
-    tableView.estimatedRowHeight = PlaylistTableCell.rowHeight
+    tableView.register(MusicPlaylistListCell.self, forCellReuseIdentifier: "playlist-row")
+    tableView.rowHeight = 76
+    tableView.estimatedRowHeight = 76
     tableView.sectionFooterHeight = 0.0
     tableView.estimatedSectionFooterHeight = 0.0
     tableView.sectionHeaderHeight = 0.0
     tableView.estimatedSectionHeaderHeight = 0.0
-    tableView.backgroundColor = .backgroundColor
+    tableView.backgroundColor = .systemBackground
+    tableView.separatorInset = UIEdgeInsets(top: 0, left: 88, bottom: 0, right: 20)
 
     #if !targetEnvironment(macCatalyst)
       refreshControl = UIRefreshControl()
@@ -206,9 +207,9 @@ class PlaylistsVC: SingleSnapshotFetchedResultsTableViewController<PlaylistMO> {
     fetchedResultsController = PlaylistFetchedResultsController(
       coreDataCompanion: appDelegate.storage.main, account: account,
       sortType: sortType,
-      isGroupedInAlphabeticSections: sortType.asSectionIndexType != .none
+      isGroupedInAlphabeticSections: false
     )
-    fetchedResultsController.fetchResultsController.sectionIndexType = sortType.asSectionIndexType
+    fetchedResultsController.fetchResultsController.sectionIndexType = .none
     singleFetchedResultsController = fetchedResultsController
     singleFetchedResultsController?.delegate = self
     singleFetchedResultsController?.fetch()
@@ -244,11 +245,15 @@ class PlaylistsVC: SingleSnapshotFetchedResultsTableViewController<PlaylistMO> {
     actions.append(createSortButtonMenu())
     actions.append(createOptionsButtonMenu())
     optionsButton = UIBarButtonItem.createOptionsBarButton()
+    actions.append(UIMenu(options: .displayInline, children: [UIAction(title: "Edit".localized, image: UIImage(systemName: "pencil")) { [weak self] _ in
+      guard let self else { return }
+      setEditing(!isEditing, animated: true)
+    }]))
     optionsButton.menu = UIMenu(children: actions)
     var barButtons = [UIBarButtonItem]()
     barButtons.append(optionsButton)
     if appDelegate.storage.settings.user.isOnlineMode {
-      barButtons.append(editButtonItem)
+      barButtons.append(UIBarButtonItem(image: UIImage(systemName: "plus"), primaryAction: UIAction { [weak self] _ in self?.createPlaylist() }))
     }
     navigationItem.rightBarButtonItems = barButtons
   }
@@ -259,17 +264,36 @@ class PlaylistsVC: SingleSnapshotFetchedResultsTableViewController<PlaylistMO> {
     playlist: Playlist
   )
     -> UITableViewCell {
-    let cell: PlaylistTableCell = dequeueCell(for: tableView, at: indexPath)
-    cell.display(playlist: playlist, rootView: self)
+    let cell = tableView.dequeueReusableCell(withIdentifier: "playlist-row", for: indexPath) as! MusicPlaylistListCell
+    cell.display(playlist: playlist)
     return cell
   }
 
   override func tableView(_ tableView: UITableView, didSelectRowAt indexPath: IndexPath) {
     guard let playlist = playlistAt(indexPath: indexPath) else { return }
-    navigationController?.pushViewController(
-      AppStoryboard.Main.segueToPlaylistDetail(account: account, playlist: playlist),
-      animated: true
-    )
+    let detail = AppStoryboard.Main.segueToPlaylistDetail(account: account, playlist: playlist)
+    let objectID = playlist.managedObject.objectID
+    detail.preferredTransition = .zoom(options: (detail as? PlaylistDetailVC)?.scrollCompatibleZoomOptions) { [weak self] _ in
+      guard let self, let path = diffableDataSource?.indexPath(for: objectID) else { return nil }
+      return (tableView.cellForRow(at: path) as? MusicPlaylistListCell)?.artwork
+    }
+    navigationController?.pushViewController(detail, animated: true)
+  }
+
+
+  private func createPlaylist() {
+    let alert = UIAlertController(title: "New playlist name".localized, message: nil, preferredStyle: .alert)
+    alert.addTextField { $0.placeholder = "New playlist name".localized }
+    alert.addAction(UIAlertAction(title: "Cancel".localized, style: .cancel))
+    alert.addAction(UIAlertAction(title: "Create".localized, style: .default) { [weak self, weak alert] _ in
+      guard let self, let name = alert?.textFields?.first?.text?.trimmingCharacters(in: .whitespacesAndNewlines), !name.isEmpty else { return }
+      let playlist = appDelegate.storage.main.library.createPlaylist(account: account)
+      playlist.name = name
+      appDelegate.storage.main.saveContext()
+      let editor = AppStoryboard.Main.segueToPlaylistEdit(account: account, playlist: playlist)
+      present(UINavigationController(rootViewController: editor), animated: true)
+    })
+    present(alert, animated: true)
   }
 
   private func createSortButtonMenu() -> UIMenu {
@@ -398,5 +422,35 @@ class PlaylistsVC: SingleSnapshotFetchedResultsTableViewController<PlaylistMO> {
     )
     tableView.reloadData()
     updateContentUnavailable()
+  }
+}
+
+
+@MainActor
+final class MusicPlaylistListCell: UITableViewCell {
+  let artwork = EntityImageView(frame: .zero)
+  private let nameLabel = UILabel()
+  override init(style: UITableViewCell.CellStyle, reuseIdentifier: String?) {
+    super.init(style: style, reuseIdentifier: reuseIdentifier)
+    contentView.addSubview(artwork)
+    artwork.imageContentMode = .scaleAspectFill
+    contentView.addSubview(nameLabel)
+    nameLabel.font = .preferredFont(forTextStyle: .body)
+    nameLabel.adjustsFontForContentSizeCategory = true
+    accessoryType = .disclosureIndicator
+  }
+  required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
+  func display(playlist: Playlist) {
+    nameLabel.text = playlist.name
+    artwork.display(theme: appDelegate.storage.settings.accounts.getSetting(playlist.account?.info).read.themePreference,
+      container: playlist)
+    accessibilityIdentifier = "library-playlist-row"
+    accessibilityLabel = playlist.name
+  }
+  override func layoutSubviews() {
+    super.layoutSubviews()
+    let side: CGFloat = 60
+    artwork.frame = CGRect(x: 20, y: (bounds.height-side)/2, width: side, height: side)
+    nameLabel.frame = CGRect(x: 92, y: 0, width: max(0, contentView.bounds.width-104), height: bounds.height)
   }
 }

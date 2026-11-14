@@ -27,47 +27,111 @@ import Foundation
 public class PlayerDownloadPreparationHandler {
   static public let preDownloadCount = 3
 
-  private var playerStatus: PlayerStatusPersistent
-  private var queueHandler: PlayQueueHandler
-  private var getPlayableDownloaderCB: GetPlayableDownloadManagerCallback
+  private let playerStatus: PlayerStatusPersistent
+  private let musicPlayer: AudioPlayer
+  private let settings: AmperfySettings
+  private let getPlayableDownloaderCB: GetPlayableDownloadManagerCallback
+  private let getArtworkDownloaderCB: GetArtworkDownloadManagerCallback
+  private let getLibrarySyncerCB: GetLibrarySyncerCallback
+  private var accountNotificationHandler: AccountNotificationHandler?
+  private var upcomingItems = [AbstractPlayable]()
+  private var metadataTasks = [String: Task<Void, Never>]()
+  private var preparedMetadata = Set<String>()
+  private var artworkTasks = [String: Task<Void, Never>]()
 
   init(
     playerStatus: PlayerStatusPersistent,
-    queueHandler: PlayQueueHandler,
-    getPlayableDownloaderCB: @escaping GetPlayableDownloadManagerCallback
+    musicPlayer: AudioPlayer,
+    storage: PersistentStorage,
+    notificationHandler: EventNotificationHandler,
+    getPlayableDownloaderCB: @escaping GetPlayableDownloadManagerCallback,
+    getArtworkDownloaderCB: @escaping GetArtworkDownloadManagerCallback,
+    getLibrarySyncerCB: @escaping GetLibrarySyncerCallback
   ) {
     self.playerStatus = playerStatus
-    self.queueHandler = queueHandler
+    self.musicPlayer = musicPlayer
+    self.settings = storage.settings
     self.getPlayableDownloaderCB = getPlayableDownloaderCB
+    self.getArtworkDownloaderCB = getArtworkDownloaderCB
+    self.getLibrarySyncerCB = getLibrarySyncerCB
+    accountNotificationHandler = AccountNotificationHandler(storage: storage, notificationHandler: notificationHandler)
+    accountNotificationHandler?.registerCallbackForAllAccounts { [weak self] accountInfo in
+      guard let self else { return }
+      for downloader in [getArtworkDownloaderCB(accountInfo), getPlayableDownloaderCB(accountInfo)] {
+        notificationHandler.register(self, selector: #selector(downloadFinishedSuccessful(notification:)),
+          name: .downloadFinishedSuccess, object: downloader)
+      }
+    }
   }
 
   private func preDownloadNextItems() {
-    let upcomingItemsCount = min(
-      queueHandler.userQueueCount + queueHandler.nextQueueCount,
-      Self.preDownloadCount
-    )
-    guard upcomingItemsCount > 0 else { return }
-
-    let userQueueRangeEnd = min(queueHandler.userQueueCount, Self.preDownloadCount)
-    if userQueueRangeEnd > 0 {
-      for i in 0 ... userQueueRangeEnd - 1 {
-        let playable = queueHandler.getUserQueueItem(at: i)!
-        if !playable.isCached, !playable.isRadio, let accountInfo = playable.account?.info {
-          getPlayableDownloaderCB(accountInfo).download(object: playable)
+    upcomingItems = musicPlayer.upcomingPlayablesForPreparation(limit: Self.preDownloadCount)
+    let ids = Set(upcomingItems.map { $0.uniqueID })
+    for id in Array(metadataTasks.keys) where !ids.contains(id) || musicPlayer.isOfflineMode {
+      metadataTasks.removeValue(forKey: id)?.cancel()
+    }
+    preparedMetadata.formIntersection(ids)
+    for playable in upcomingItems {
+      prepareArtwork(for: playable)
+      guard !musicPlayer.isOfflineMode, let accountInfo = playable.account?.info else { continue }
+      // Downloads still honor the existing auto-cache, network and disk-limit policies.
+      if playerStatus.isAutoCachePlayedItems, !playable.isCached, playable.isDownloadAvailable {
+        getPlayableDownloaderCB(accountInfo).download(object: playable)
+      }
+      guard let song = playable.asSong, !song.id.isEmpty,
+            song.playableManagedObject.title?.isEmpty != false ||
+              song.artist == nil || song.album == nil || song.artwork == nil,
+            !preparedMetadata.contains(song.uniqueID), metadataTasks[song.uniqueID] == nil else { continue }
+      let id = song.uniqueID
+      let syncer = getLibrarySyncerCB(accountInfo)
+      metadataTasks[id] = Task { @MainActor [weak self] in
+        do {
+          // Queue/offline changes can cancel the task before it first runs.
+          guard !Task.isCancelled else { return }
+          try await syncer.sync(song: song)
+          guard !Task.isCancelled, let self else { return }
+          preparedMetadata.insert(id)
+          metadataTasks[id] = nil
+          prepareArtwork(for: song)
+        } catch {
+          guard !Task.isCancelled else { return }
+          // Speculative metadata failure must not interrupt the playing track.
+          self?.metadataTasks[id] = nil
         }
       }
     }
-    let nextQueueRangeEnd = min(
-      queueHandler.nextQueueCount,
-      Self.preDownloadCount - userQueueRangeEnd
-    )
-    if nextQueueRangeEnd > 0 {
-      for i in 0 ... nextQueueRangeEnd - 1 {
-        let playable = queueHandler.getNextQueueItem(at: i)!
-        if !playable.isCached, !playable.isRadio, let accountInfo = playable.account?.info {
-          getPlayableDownloaderCB(accountInfo).download(object: playable)
-        }
-      }
+    let paths = Set(upcomingItems.compactMap { playable -> String? in
+      guard let account = playable.account?.info else { return nil }
+      return playable.imagePath(setting: settings.accounts.getSetting(account).read.artworkDisplayPreference)
+    })
+    for path in Array(artworkTasks.keys) where !paths.contains(path) {
+      artworkTasks.removeValue(forKey: path)?.cancel()
+    }
+  }
+
+  private func prepareArtwork(for playable: AbstractPlayable) {
+    guard let accountInfo = playable.account?.info else { return }
+    let preference = settings.accounts.getSetting(accountInfo).read.artworkDisplayPreference
+    if !musicPlayer.isOfflineMode, preference != .id3TagOnly,
+       let artwork = playable.artwork, !artwork.isCached {
+      getArtworkDownloaderCB(accountInfo).download(object: artwork)
+    }
+    guard let path = playable.imagePath(setting: preference),
+          LibraryEntityImage.preparedImage(at: path) == nil, artworkTasks[path] == nil else { return }
+    artworkTasks[path] = Task { @MainActor [weak self] in
+      guard !Task.isCancelled else { return }
+      // Decode before advancing: Now Playing and both player views share this cache.
+      _ = await LibraryEntityImage.loadPreparedImage(at: path)
+      guard !Task.isCancelled else { return }
+      self?.artworkTasks[path] = nil
+    }
+  }
+
+  @objc private func downloadFinishedSuccessful(notification: Notification) {
+    guard let download = DownloadNotification.fromNotification(notification) else { return }
+    for playable in upcomingItems where playable.uniqueID == download.id || playable.artwork?.uniqueID == download.id {
+      // Audio completion can also supply an embedded cover.
+      prepareArtwork(for: playable)
     }
   }
 }
@@ -75,19 +139,21 @@ public class PlayerDownloadPreparationHandler {
 // MARK: MusicPlayable
 
 extension PlayerDownloadPreparationHandler: MusicPlayable {
-  public func didStartPlayingFromBeginning() {
-    if playerStatus.isAutoCachePlayedItems {
-      preDownloadNextItems()
-    }
-  }
-
-  public func didStartPlaying() {}
+  public func didStartPlayingFromBeginning() { preDownloadNextItems() }
+  public func didStartPlaying() { preDownloadNextItems() }
   public func didPause() {}
-  public func didStopPlaying() {}
+  public func didStopPlaying() {
+    metadataTasks.values.forEach { $0.cancel() }
+    artworkTasks.values.forEach { $0.cancel() }
+    metadataTasks.removeAll()
+    artworkTasks.removeAll()
+    preparedMetadata.removeAll()
+    upcomingItems.removeAll()
+  }
   public func didElapsedTimeChange() {}
-  public func didPlaylistChange() {}
-  public func didArtworkChange() {}
+  public func didPlaylistChange() { preDownloadNextItems() }
+  public func didArtworkChange() { preDownloadNextItems() }
   public func didPlaybackRateChange() {}
-  public func didRepeatChange() {}
-  public func didShuffleChange() {}
+  public func didRepeatChange() { preDownloadNextItems() }
+  public func didShuffleChange() { preDownloadNextItems() }
 }

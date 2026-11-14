@@ -423,12 +423,12 @@ class PlayerUIHandler: NSObject {
     return nil
   }
 
-  func timeSliderChanged(timeSlider: UISlider) {
+  func timeSliderChanged(timeSlider: PlayerTrackSlider) {
     player.seek(toSecond: Double(timeSlider.value))
   }
 
   func timeSliderIsChanging(
-    timeSlider: UISlider,
+    timeSlider: PlayerTrackSlider,
     elapsedTimeLabel: UILabel,
     remainingTimeLabel: UILabel
   ) {
@@ -440,7 +440,7 @@ class PlayerUIHandler: NSObject {
   }
 
   func refreshTimeInfo(
-    timeSlider: UISlider,
+    timeSlider: PlayerTrackSlider,
     elapsedTimeLabel: UILabel,
     remainingTimeLabel: UILabel,
     audioInfoLabel: UILabel,

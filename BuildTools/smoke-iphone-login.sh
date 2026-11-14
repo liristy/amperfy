@@ -129,6 +129,18 @@ for screenshot in player-transport-play-pause-frames player-transport-pressed pl
     sips -s format jpeg -s formatOptions 80 -Z 1000 "$source" --out "build/validation/$screenshot-preview.jpg" >/dev/null
   fi
 done
+# Keep the visual animation probes even when a later player check fails.
+for screenshot in player-seek-dragging player-seek-released \
+  player-seek-pixels-resting player-seek-pixels-active \
+  player-seek-pixels-releasing player-seek-pixels-released \
+  player-transport-previous-frames player-transport-next-frames; do
+  source="$container/Documents/$screenshot.png"
+  if [[ -f "$source" ]]; then
+    cp "$source" "build/validation/$screenshot.png"
+    sips -s format jpeg -s formatOptions 90 -Z 1400 "$source" \
+      --out "build/validation/$screenshot-preview.jpg" >/dev/null
+  fi
+done
 if [[ "$ready" != true ]]; then
   echo "Streaming/seek/lyrics smoke test failed"
   cat build/validation/player.stdout.log
@@ -138,7 +150,7 @@ fi
 echo "Original audio streaming, seek and synchronized lyrics smoke test passed"
 cat build/validation/player.stdout.log
 
-for screenshot in player-library-defaults player-mini-drag player-mini-drag-previous player-mini-spacing player-native-library player-mini-collapsed player-search-keyboard player-opening player-lyrics-upward player-artwork-landscape player-next-song player-lyrics-controls player-lyrics-immersive player-lyrics-restored player-queue-from-lyrics player-queue-multiple player-lyrics-from-queue; do
+for screenshot in player-library-layout player-library-recent player-playlists-layout player-playlist-detail player-playlist-scrolled player-library-defaults player-mini-drag player-mini-drag-previous player-mini-spacing player-native-library player-mini-collapsed player-search-keyboard player-opening player-lyrics-upward player-artwork-landscape player-next-song player-lyrics-controls player-lyrics-immersive player-lyrics-restored player-queue-from-lyrics player-queue-multiple player-lyrics-from-queue; do
   cp "$container/Documents/$screenshot.png" "build/validation/$screenshot.png"
 done
 
