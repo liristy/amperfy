@@ -264,10 +264,11 @@ class TabBarVC: UITabBarController {
     }
     let navigationTop = dockNavigationTop ??
       (view.bounds.height - view.safeAreaInsets.bottom - 8 - FloatingPlayerDock.navigationHeight)
-    dock.frame = CGRect(x: view.safeAreaInsets.left + (availableWidth - dockWidth) / 2,
+    let dockFrame = CGRect(x: view.safeAreaInsets.left + (availableWidth - dockWidth) / 2,
       y: navigationTop - FloatingPlayerDock.gap - FloatingPlayerDock.playerHeight,
       width: dockWidth,
       height: FloatingPlayerDock.expandedHeight)
+    if dock.frame != dockFrame { dock.frame = dockFrame }
     view.bringSubviewToFront(dock)
     updateDockSelection()
     let top = (selectedViewController as? UINavigationController)?.topViewController
@@ -314,13 +315,19 @@ class TabBarVC: UITabBarController {
     let top = (selectedViewController as? UINavigationController)?.topViewController
     // The native search field moves into the tab bar above the keyboard.
     // Hiding that bar would detach its first responder and dismiss the keyboard.
-    let hidden = dock.isCollapsed || top?.hidesBottomBarWhenPushed == true
-    if isTabBarHidden != hidden { setTabBarHidden(hidden, animated: animated) }
+    let hiddenForNavigation = top?.hidesBottomBarWhenPushed == true
+    if isTabBarHidden != hiddenForNavigation {
+      setTabBarHidden(hiddenForNavigation, animated: animated)
+    }
     // The real system tab bar owns the glass lens, touch tracking and tab
-    // selection. The player dock must never cover it with a replica.
-    tabBar.alpha = 1
-    tabBar.isUserInteractionEnabled = true
-    tabBar.accessibilityElementsHidden = false
+    // selection. During scroll collapse keep its layout reservation: changing
+    // isTabBarHidden also changes the child's safe area and scroll offset, then
+    // moves the dock again in the next layout pass. Only fade its surface.
+    let visible = !dock.isCollapsed
+    let alpha: CGFloat = visible ? 1 : 0
+    if tabBar.alpha != alpha { tabBar.alpha = alpha }
+    tabBar.isUserInteractionEnabled = visible
+    tabBar.accessibilityElementsHidden = !visible
   }
 
   private func updateDockSelection() {
@@ -515,6 +522,8 @@ final class FloatingPlayerDock: UIView {
     searchSlot.addSubview(searchButton)
     navigationSlot.isHidden = true
     searchSlot.isHidden = true
+    navigationSlot.alpha = 0
+    searchSlot.alpha = 0
     searchButton.accessibilityLabel = TabNavigatorItem.search.title
     compactNavigationButton.accessibilityLabel = "Show navigation".localized
     searchButton.addAction(UIAction { [weak self] _ in self?.onSearch?() }, for: .touchUpInside)
@@ -547,15 +556,32 @@ final class FloatingPlayerDock: UIView {
     guard isCollapsed != collapsed else { return }
     layoutIfNeeded()
     isCollapsed = collapsed
-    onCollapseChanged?(animated)
-    miniPlayer.setCompactPresentation(collapsed)
-    setNeedsLayout()
-    let changes = { self.layoutIfNeeded() }
+    if collapsed {
+      navigationSlot.isHidden = false
+      searchSlot.isHidden = false
+    }
+    navigationSlot.isUserInteractionEnabled = collapsed
+    searchSlot.isUserInteractionEnabled = collapsed
+    let changes = {
+      self.miniPlayer.setCompactPresentation(collapsed)
+      self.setNeedsLayout()
+      // The native bar, player and compact buttons share this transaction.
+      // A separate UIKit hide/show animation would resize the scrolling page.
+      self.onCollapseChanged?(false)
+      self.layoutIfNeeded()
+    }
+    let finish = {
+      self.navigationSlot.isHidden = !self.isCollapsed
+      self.searchSlot.isHidden = !self.isCollapsed
+    }
     if animated && !UIAccessibility.isReduceMotionEnabled {
       UIView.animate(withDuration: 0.44, delay: 0, usingSpringWithDamping: 0.86,
-        initialSpringVelocity: 0, options: [.beginFromCurrentState, .allowUserInteraction], animations: changes)
+        initialSpringVelocity: 0, options: [.beginFromCurrentState, .allowUserInteraction], animations: changes) { finished in
+          if finished { finish() }
+        }
     } else {
       UIView.performWithoutAnimation(changes)
+      finish()
     }
   }
 
@@ -575,15 +601,16 @@ final class FloatingPlayerDock: UIView {
     miniPlayer.glassContainer.layoutIfNeeded()
     searchButton.frame = CGRect(x: 0, y: 0, width: side, height: side)
     compactNavigationButton.frame = CGRect(x: 0, y: 0, width: side, height: side)
-    navigationSlot.isHidden = !isCollapsed
-    searchSlot.isHidden = !isCollapsed
+    navigationSlot.alpha = isCollapsed ? 1 : 0
+    searchSlot.alpha = isCollapsed ? 1 : 0
   }
 
   override func point(inside point: CGPoint, with event: UIEvent?) -> Bool {
     // In the expanded layout, every navigation touch passes through to the
     // system tab bar underneath, including its native press-and-drag gesture.
     [miniPlayer.glassContainer, navigationSlot, searchSlot].contains {
-      !$0.isHidden && $0.point(inside: convert(point, to: $0), with: event)
+      !$0.isHidden && $0.isUserInteractionEnabled && $0.alpha > 0.01 &&
+        $0.point(inside: convert(point, to: $0), with: event)
     }
   }
 }

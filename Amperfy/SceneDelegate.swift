@@ -539,7 +539,9 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
             tabHost.updatePlayerDockForScroll(delta: -40, atTop: false)
             try await Task.sleep(for: .milliseconds(650))
             let compactFrame = miniPlayer.glassContainer.frame
-            guard dock.isCollapsed, tabHost.isTabBarHidden, abs(compactFrame.height - 48) < 0.5,
+            guard dock.isCollapsed, !tabHost.isTabBarHidden, tabHost.tabBar.alpha == 0,
+                  !tabHost.tabBar.isUserInteractionEnabled, tabHost.tabBar.accessibilityElementsHidden,
+                  abs(compactFrame.height - 48) < 0.5,
                   abs(compactFrame.midY - dock.navigationSlot.frame.midY) < 0.5,
                   abs(compactFrame.minX - dock.navigationSlot.frame.maxX - 12) < 0.5,
                   abs(dock.searchSlot.frame.minX - compactFrame.maxX - 12) < 0.5,
@@ -561,6 +563,9 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
               return
             }
             smokeLog("Custom dock: 56pt player, 12pt external gap, 48pt sinking, reversal and gap hit testing passed")
+            if let scroll = dockScrollView(in: tabHost.selectedViewController?.view ?? tabHost.view) {
+              guard try await verifyDockScrollStability(tabHost: tabHost, scroll: scroll) else { return }
+            }
           }
           func descendants(of view: UIView) -> [UIView] {
             view.subviews + view.subviews.flatMap { descendants(of: $0) }
@@ -2007,6 +2012,60 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
       try? "ready".write(to: marker, atomically: true, encoding: .utf8)
     }
 
+    @MainActor private func dockScrollView(in view: UIView) -> UIScrollView? {
+      if let scroll = view as? UIScrollView, scroll.isScrollEnabled,
+         scroll.bounds.height > (view.window?.bounds.height ?? 800) * 0.35 { return scroll }
+      for child in view.subviews {
+        if let scroll = dockScrollView(in: child) { return scroll }
+      }
+      return nil
+    }
+
+    @MainActor private func verifyDockScrollStability(tabHost: TabBarVC, scroll: UIScrollView) async throws -> Bool {
+      guard let dock = tabHost.playerDock else { return false }
+      dock.setCollapsed(false, animated: false)
+      tabHost.view.layoutIfNeeded()
+      let originalOffset = scroll.contentOffset
+      defer {
+        dock.setCollapsed(false, animated: false)
+        scroll.setContentOffset(originalOffset, animated: false)
+      }
+      let top = -scroll.adjustedContentInset.top
+      let bottom = max(top, scroll.contentSize.height + scroll.adjustedContentInset.bottom - scroll.bounds.height)
+      scroll.setContentOffset(CGPoint(x: originalOffset.x, y: min(bottom, top + 60)), animated: false)
+      try await Task.sleep(for: .milliseconds(250))
+      let offset = scroll.contentOffset
+      let inset = scroll.adjustedContentInset
+      let viewport = scroll.convert(scroll.bounds, to: tabHost.view)
+      let dockFrame = dock.frame
+      let nativeFrame = tabHost.tabBar.frame
+      // Check the visible content on every frame, including interrupted springs.
+      // Endpoint-only player geometry checks missed the safe-area feedback loop.
+      let phases: [(CGFloat, Int)] = [(-40, 8), (25, 5), (-40, 5), (25, 35)]
+      for (delta, frames) in phases {
+        tabHost.updatePlayerDockForScroll(delta: delta, atTop: false)
+        for _ in 0..<frames {
+          try await Task.sleep(for: .milliseconds(16))
+          tabHost.view.layoutIfNeeded()
+          let currentViewport = scroll.convert(scroll.bounds, to: tabHost.view)
+          guard !tabHost.isTabBarHidden, dock.frame == dockFrame,
+                tabHost.tabBar.frame == nativeFrame,
+                abs(scroll.contentOffset.y - offset.y) < 0.5,
+                abs(scroll.adjustedContentInset.bottom - inset.bottom) < 0.5,
+                abs(currentViewport.minY - viewport.minY) < 0.5,
+                abs(currentViewport.height - viewport.height) < 0.5 else {
+            FileHandle.standardOutput.write(Data("Dock collapse moved the list viewport, inset, offset or anchor\n".utf8))
+            return false
+          }
+        }
+      }
+      guard !dock.isCollapsed, tabHost.tabBar.alpha == 1,
+            tabHost.tabBar.isUserInteractionEnabled,
+            dock.navigationSlot.isHidden, dock.searchSlot.isHidden else { return false }
+      FileHandle.standardOutput.write(Data("Dock scroll reversal preserved list viewport and content position\n".utf8))
+      return true
+    }
+
     @MainActor private func audibleLyricMatches(row: Int) async throws -> Bool {
       let analyzer = self.appDelegate.player.audioAnalyzer
       analyzer.isActive = true
@@ -2080,6 +2139,9 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
       }
       let collection = libraryVC.collectionView!
       collection.layoutIfNeeded()
+      if let host = libraryVC.tabBarController as? TabBarVC {
+        guard try await verifyDockScrollStability(tabHost: host, scroll: collection) else { return false }
+      }
       guard collection.visibleCells.contains(where: { $0.accessibilityIdentifier == "library-pinned-playlist" }),
             collection.visibleCells.contains(where: { $0.accessibilityIdentifier == "library-category-\(LibraryDisplayType.favoriteSongs.rawValue)" }),
             !collection.visibleCells.contains(where: { $0.accessibilityIdentifier == "library-pinned-favorites" }),
@@ -2140,6 +2202,9 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
         smokeLog("Playlist fixture did not sync"); return false
       }
       list.tableView.layoutIfNeeded()
+      if let host = list.tabBarController as? TabBarVC {
+        guard try await verifyDockScrollStability(tabHost: host, scroll: list.tableView) else { return false }
+      }
       guard abs(list.tableView.rectForRow(at: playlistPath).height-76) < 1 else {
         smokeLog("Playlist row height departed from reference"); return false
       }
