@@ -106,6 +106,7 @@ jobs:
             build/validation/player-statistics-detail.png
             build/validation/player-library-*.png
             build/validation/player-playlist*.png
+            build/validation/player-mini-*.png
           retention-days: 7
       - name: Save simulator build cache even after a UI failure
         if: always() && !cancelled() && steps.simulator-cache.outputs.cache-hit != 'true'

@@ -38,8 +38,8 @@ open class EntityImageView: UIView {
 
   public var imageContentMode: UIView.ContentMode = .scaleAspectFit {
     didSet {
-      singleImage?.contentMode = imageContentMode
-      quadImages.forEach { $0.contentMode = imageContentMode }
+      singleImage?.preferredArtworkContentMode = imageContentMode
+      quadImages.forEach { $0.preferredArtworkContentMode = imageContentMode }
     }
   }
 

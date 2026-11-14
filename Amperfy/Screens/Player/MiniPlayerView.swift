@@ -212,14 +212,16 @@ class MiniPlayerView: UIView, UIGestureRecognizerDelegate {
     return button
   }()
 
-  fileprivate lazy var playButton: UIButton = {
+  fileprivate lazy var playButton: PlayerTransportButton = {
     var config = UIButton.Configuration.plain()
     config.image = .play
       .withConfiguration(
         UIImage
           .SymbolConfiguration(pointSize: PlayerUIHandler.playButtonImagePointSize)
       )
-    let button = UIButton(configuration: config)
+    let button = PlayerTransportButton(frame: .zero)
+    button.configuration = config
+    button.usesCompactStyle = true
     button.tintColor = .label
     button.addTarget(self, action: #selector(Self.playButtonPushed), for: .touchUpInside)
     return button
@@ -231,10 +233,12 @@ class MiniPlayerView: UIView, UIGestureRecognizerDelegate {
     playerHandler?.refreshPlayButton(playButton)
   }
 
-  fileprivate lazy var previousButton: UIButton = {
+  fileprivate lazy var previousButton: PlayerTransportButton = {
     var config = UIButton.Configuration.plain()
     config.image = .backwardFill.withConfiguration(UIImage.SymbolConfiguration(scale: .large))
-    let button = UIButton(configuration: config)
+    let button = PlayerTransportButton(frame: .zero)
+    button.configuration = config
+    button.usesCompactStyle = true
     button.tintColor = .label
     button.addTarget(self, action: #selector(Self.previousButtonPushed), for: .touchUpInside)
     return button
@@ -242,13 +246,16 @@ class MiniPlayerView: UIView, UIGestureRecognizerDelegate {
 
   @IBAction
   func previousButtonPushed(_ sender: Any) {
+    previousButton.animateActivation(direction: player.playerMode == .music ? -1 : 0)
     playerHandler?.previousButtonPushed()
   }
 
-  fileprivate lazy var nextButton: UIButton = {
+  fileprivate lazy var nextButton: PlayerTransportButton = {
     var config = UIButton.Configuration.plain()
     config.image = .forwardFill.withConfiguration(UIImage.SymbolConfiguration(scale: .large))
-    let button = UIButton(configuration: config)
+    let button = PlayerTransportButton(frame: .zero)
+    button.configuration = config
+    button.usesCompactStyle = true
     button.tintColor = .label
     button.addTarget(self, action: #selector(Self.nextButtonPushed), for: .touchUpInside)
     return button
@@ -256,8 +263,43 @@ class MiniPlayerView: UIView, UIGestureRecognizerDelegate {
 
   @IBAction
   func nextButtonPushed(_ sender: Any) {
+    nextButton.animateActivation(direction: player.playerMode == .music ? 1 : 0)
     playerHandler?.nextButtonPushed()
   }
+
+  #if DEBUG && targetEnvironment(simulator)
+    func verifyTransportForSmoke() async throws -> Bool {
+      let originalStyle = overrideUserInterfaceStyle
+      let initiallyPlaying = player.isPlaying
+      defer {
+        overrideUserInterfaceStyle = originalStyle
+        if player.isPlaying != initiallyPlaying { player.togglePlayPause() }
+      }
+      for style in [UIUserInterfaceStyle.light, .dark] {
+        overrideUserInterfaceStyle = style
+        try await Task.sleep(for: .milliseconds(500))
+        let name = style == .light ? "light" : "dark"
+        for index in 0..<2 {
+          let wasPlaying = player.isPlaying
+          playButton.sendActions(for: .touchUpInside)
+          guard player.isPlaying != wasPlaying,
+                try await playButton.verifyReplacementForSmoke(
+                  filename: "player-mini-\(name)-replacement-\(index).png") else { return false }
+        }
+        nextButton.animateActivation(direction: 1)
+        guard try await nextButton.verifyActivationForSmoke(direction: 1,
+          filename: "player-mini-\(name)-next.png") else { return false }
+        for _ in 0..<6 {
+          playButton.sendActions(for: .touchUpInside)
+          try await Task.sleep(for: .milliseconds(60))
+        }
+        try await Task.sleep(for: .milliseconds(500))
+        guard player.isPlaying == initiallyPlaying, playButton.isRenderedSymbolSettled,
+              nextButton.isRenderedSymbolSettled else { return false }
+      }
+      return true
+    }
+  #endif
 
   fileprivate lazy var repeatButton: UIButton = {
     var config = UIButton.Configuration.plain()

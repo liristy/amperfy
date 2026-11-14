@@ -236,6 +236,11 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
                 smokeLog("Mini player content or progress escaped its capsule")
                 return
               }
+              guard try await miniPlayer.verifyTransportForSmoke() else {
+                smokeLog("Mini player transport did not animate or settle in light/dark appearance")
+                return
+              }
+              smokeLog("Mini player play/pause and next animated in both appearances and survived rapid taps")
               miniPlayer.beginTrackDrag()
               miniPlayer.updateTrackDrag(translation: -120)
               guard self.appDelegate.player.currentlyPlaying == song,

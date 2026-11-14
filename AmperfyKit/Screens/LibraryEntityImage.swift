@@ -108,6 +108,12 @@ public class LibraryEntityImage: RoundedImage {
   private var backupArtworkType: ArtworkType?
   private var accountNotificationHandler: AccountNotificationHandler?
 
+  public var preferredArtworkContentMode: UIView.ContentMode? {
+    didSet {
+      if let preferredArtworkContentMode { contentMode = preferredArtworkContentMode }
+    }
+  }
+
   required public init?(coder: NSCoder) {
     self.appDelegate = AmperKit.shared
     super.init(coder: coder)
@@ -221,7 +227,11 @@ public class LibraryEntityImage: RoundedImage {
 
   private func refresh() {
     // Albums and playlist covers may be portrait or landscape images.
-    if !(entity is Artist) { contentMode = .scaleAspectFit }
+    if let preferredArtworkContentMode {
+      contentMode = preferredArtworkContentMode
+    } else if !(entity is Artist) {
+      contentMode = .scaleAspectFit
+    }
     let imagePathToDisplay = entityImagePathToDisplay
 
     if let imagePathToDisplay,

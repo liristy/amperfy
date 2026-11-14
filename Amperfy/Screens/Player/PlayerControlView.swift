@@ -39,8 +39,24 @@ final class PlayerTransportButton: UIButton {
   private static let symbolTransitionKey = "player-symbol-replacement"
   private static let activationAnimationKey = "player-transport-activation"
 
-  override func awakeFromNib() {
-    super.awakeFromNib()
+  var usesCompactStyle = false {
+    didSet { updateSymbolColor() }
+  }
+  private var symbolColor: UIColor { usesCompactStyle ? tintColor : .white }
+  private var replacementDuration: TimeInterval { usesCompactStyle ? 0.40 : 0.36 }
+  private var activationDuration: TimeInterval { usesCompactStyle ? 0.36 : 0.32 }
+
+  override init(frame: CGRect) {
+    super.init(frame: frame)
+    configureTransport()
+  }
+
+  required init?(coder: NSCoder) {
+    super.init(coder: coder)
+    configureTransport()
+  }
+
+  private func configureTransport() {
     pressDisc.backgroundColor = .white.withAlphaComponent(0.12)
     pressDisc.alpha = 0
     for view in [pressDisc, symbolContainer] {
@@ -51,11 +67,26 @@ final class PlayerTransportButton: UIButton {
     symbolContainer.addSubview(retiringSymbolView)
     symbolContainer.addSubview(activationView)
     retiringSymbolView.contentMode = .center
-    retiringSymbolView.tintColor = .white
     retiringSymbolView.alpha = 0
     activationView.isUserInteractionEnabled = false
     symbolView.contentMode = .center
-    symbolView.tintColor = .white
+    updateSymbolColor()
+    registerForTraitChanges([UITraitUserInterfaceStyle.self]) { (button: PlayerTransportButton, _: UITraitCollection) in
+      // Temporary raster pieces must not keep the previous page's contrast.
+      button.finishActivation()
+      button.updateSymbolColor()
+    }
+  }
+
+  override func tintColorDidChange() {
+    super.tintColorDidChange()
+    updateSymbolColor()
+  }
+
+  private func updateSymbolColor() {
+    symbolView.tintColor = symbolColor
+    retiringSymbolView.tintColor = symbolColor
+    pressDisc.isHidden = usesCompactStyle
   }
 
   override func layoutSubviews() {
@@ -83,7 +114,7 @@ final class PlayerTransportButton: UIButton {
       UIView.animate(withDuration: pressed ? 0.12 : 0.32, delay: 0,
         usingSpringWithDamping: pressed ? 1 : 0.75, initialSpringVelocity: 0,
         options: [.beginFromCurrentState, .allowUserInteraction]) {
-        self.pressDisc.alpha = pressed ? 1 : 0
+        self.pressDisc.alpha = pressed && !self.usesCompactStyle ? 1 : 0
         self.symbolContainer.transform = pressed && !UIAccessibility.isReduceMotionEnabled ?
           CGAffineTransform(scaleX: 0.90, y: 0.90) : .identity
       }
@@ -94,7 +125,8 @@ final class PlayerTransportButton: UIButton {
     guard symbolIdentifier != identifier else { return }
     finishActivation()
     symbolView.layer.removeAnimation(forKey: Self.activationAnimationKey)
-    let animated = symbolIdentifier != nil && window != nil && !UIAccessibility.isReduceMotionEnabled
+    let animated = symbolIdentifier != nil && window != nil &&
+      UIApplication.shared.applicationState == .active && !UIAccessibility.isReduceMotionEnabled
     symbolIdentifier = identifier
     let current = symbolView.layer.presentation() ?? symbolView.layer
     let retiring = retiringSymbolView.layer.presentation() ?? retiringSymbolView.layer
@@ -123,21 +155,22 @@ final class PlayerTransportButton: UIButton {
       fade.values = opacity
       fade.keyTimes = times
       for animation in [size, fade] {
-        animation.duration = 0.36
+        animation.duration = replacementDuration
         animation.timingFunctions = Array(repeating: CAMediaTimingFunction(name: .easeInEaseOut),
           count: times.count - 1)
       }
       let group = CAAnimationGroup()
       group.animations = [size, fade]
-      group.duration = 0.36
+      group.duration = replacementDuration
       layer.add(group, forKey: Self.symbolTransitionKey)
     }
     // 0.94–1.30 s: overlap the outgoing shrink with the incoming growth.
     animate(retiringSymbolView.layer, scale: [outgoingScale, 0.12, 0.12],
       opacity: [outgoingOpacity, 0, 0], times: [0, 0.36, 1])
     animate(symbolView.layer, scale: [0.12, 0.12, 1], opacity: [0, 0, 1], times: [0, 0.12, 1])
+    let cleanupDelay = replacementDuration + 0.01
     symbolTransitionTask = Task { @MainActor [weak self] in
-      try? await Task.sleep(for: .milliseconds(370))
+      try? await Task.sleep(for: .seconds(cleanupDelay))
       guard !Task.isCancelled else { return }
       self?.finishSymbolTransition()
     }
@@ -156,10 +189,12 @@ final class PlayerTransportButton: UIButton {
     // Play/pause touch highlighting already fades on release. Re-triggering it
     // here would flash the circle a second time after every successful tap.
     guard direction != 0 else { return }
-    pressDisc.layer.removeAllAnimations()
-    pressDisc.alpha = 1
-    UIView.animate(withDuration: 0.3, delay: 0.05, options: [.allowUserInteraction, .beginFromCurrentState]) {
-      self.pressDisc.alpha = 0
+    if !usesCompactStyle {
+      pressDisc.layer.removeAllAnimations()
+      pressDisc.alpha = 1
+      UIView.animate(withDuration: 0.3, delay: 0.05, options: [.allowUserInteraction, .beginFromCurrentState]) {
+        self.pressDisc.alpha = 0
+      }
     }
     guard activationTask == nil, window != nil, !UIAccessibility.isReduceMotionEnabled,
           let image = symbolView.image else { return }
@@ -185,7 +220,7 @@ final class PlayerTransportButton: UIButton {
       let animation = CAKeyframeAnimation(keyPath: key)
       animation.values = values
       animation.keyTimes = times
-      animation.duration = 0.32
+      animation.duration = activationDuration
       animation.timingFunctions = Array(repeating: CAMediaTimingFunction(name: .easeInEaseOut), count: times.count - 1)
       animation.fillMode = .forwards
       animation.isRemovedOnCompletion = false
@@ -199,8 +234,9 @@ final class PlayerTransportButton: UIButton {
     animate(incoming, key: "transform.scale", values: [0.001, 0.001, 1, 1], times: [0, 0.08, 0.80, 1])
     animate(incoming, key: "opacity", values: [0, 0, 1, 1], times: [0, 0.08, 0.80, 1])
     // Rapid taps keep the running handoff continuous; playback actions are not delayed.
+    let cleanupDelay = activationDuration + 0.01
     activationTask = Task { @MainActor [weak self] in
-      try? await Task.sleep(for: .milliseconds(330))
+      try? await Task.sleep(for: .seconds(cleanupDelay))
       guard !Task.isCancelled else { return }
       self?.finishActivation()
     }
@@ -216,7 +252,8 @@ final class PlayerTransportButton: UIButton {
   private func transportPieces(_ image: UIImage, direction: CGFloat)
     -> ((image: CGImage, frame: CGRect), (image: CGImage, frame: CGRect))? {
     let rendered = UIGraphicsImageRenderer(size: image.size).image { _ in
-      image.withTintColor(.white, renderingMode: .alwaysOriginal).draw(at: .zero)
+      image.withTintColor(symbolColor.resolvedColor(with: traitCollection), renderingMode: .alwaysOriginal)
+        .draw(at: .zero)
     }
     guard let cg = rendered.cgImage else { return nil }
     let width = cg.width, height = cg.height
@@ -280,6 +317,10 @@ final class PlayerTransportButton: UIButton {
     if window == nil {
       finishActivation()
       finishSymbolTransition()
+      pressDisc.layer.removeAllAnimations()
+      pressDisc.alpha = 0
+      symbolContainer.layer.removeAllAnimations()
+      symbolContainer.transform = .identity
     }
   }
 
@@ -303,6 +344,37 @@ final class PlayerTransportButton: UIButton {
         symbolContainer.transform == .identity &&
         abs(symbolView.center.x - symbolContainer.bounds.midX) < 0.5 &&
         abs(symbolView.center.y - symbolContainer.bounds.midY) < 0.5
+    }
+
+    func verifyReplacementForSmoke(filename: String) async throws -> Bool {
+      let originalBounds = bounds
+      var frames = [UIImage]()
+      var sawShrink = false
+      for _ in 0..<20 {
+        try await Task.sleep(for: .milliseconds(25))
+        let rendered = symbolView.layer.presentation() ?? symbolView.layer
+        sawShrink = sawShrink || (rendered.opacity > 0 && rendered.transform.m11 < 0.9)
+        guard bounds == originalBounds, isCurrentSymbolImage,
+              abs(rendered.position.x - bounds.midX) < 0.5,
+              abs(rendered.position.y - bounds.midY) < 0.5,
+              abs(rendered.transform.m11 - rendered.transform.m22) < 0.01,
+              abs(rendered.transform.m12) < 0.01 else { return false }
+        frames.append(UIGraphicsImageRenderer(size: bounds.size).image { _ in
+          drawHierarchy(in: bounds, afterScreenUpdates: false)
+        })
+      }
+      guard UIAccessibility.isReduceMotionEnabled || sawShrink, isRenderedSymbolSettled else { return false }
+      let gridSize = CGSize(width: bounds.width * 10, height: bounds.height * 2)
+      let grid = UIGraphicsImageRenderer(size: gridSize).image { context in
+        UIColor.secondarySystemBackground.resolvedColor(with: traitCollection).setFill()
+        context.fill(CGRect(origin: .zero, size: gridSize))
+        for (index, frame) in frames.enumerated() {
+          frame.draw(at: CGPoint(x: CGFloat(index % 10) * bounds.width,
+            y: CGFloat(index / 10) * bounds.height))
+        }
+      }
+      try grid.pngData()?.write(to: URL.documentsDirectory.appendingPathComponent(filename))
+      return true
     }
 
     func verifyActivationForSmoke(direction: CGFloat, filename: String) async throws -> Bool {
