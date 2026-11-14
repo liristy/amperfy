@@ -43,6 +43,8 @@ test_arguments=(
   -only-testing:AmperfyKitTests/SsPlaylistSongsParserTest
   -only-testing:AmperfyKitTests/PlaylistTest
   -only-testing:AmperfyKitTests/ArtworkTest
+  -only-testing:AmperfyKitTests/UtilitiesTest
+  -only-testing:AmperfyKitTests/ArtistTest
   -only-testing:AmperfyKitTests/MusicPlayerTest
   -only-testing:AmperfyKitTests/SsLyricsBySongId2ParserTest
 )

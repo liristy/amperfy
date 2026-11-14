@@ -61,6 +61,27 @@ public class LibraryEntityImage: RoundedImage {
   static private var pendingImages = [String: Task<UIImage?, Never>]()
   private var imageLoadTask: Task<Void, Never>?
   private var requestedImagePath: String?
+  private static let paletteCache = NSCache<NSString, NSArray>()
+
+  #if DEBUG
+    public private(set) static var paletteComputationCount = 0
+  #endif
+
+  public static func loadArtworkPalette(at path: String) async -> [UIColor] {
+    if let cached = paletteCache.object(forKey: path as NSString) as? [UIColor] { return cached }
+    guard !Task.isCancelled, UIApplication.shared.applicationState == .active,
+          let image = await loadPreparedImage(at: path), !Task.isCancelled,
+          UIApplication.shared.applicationState == .active else { return [] }
+    #if DEBUG
+      paletteComputationCount += 1
+    #endif
+    let colors = image.boundedArtworkPalette()
+    if !colors.isEmpty {
+      paletteCache.countLimit = 100
+      paletteCache.setObject(colors as NSArray, forKey: path as NSString)
+    }
+    return colors
+  }
 
   public static func preparedImage(at imagePath: String) -> UIImage? {
     cache.object(forKey: imagePath as NSString)
@@ -117,6 +138,7 @@ public class LibraryEntityImage: RoundedImage {
   required public init?(coder: NSCoder) {
     self.appDelegate = AmperKit.shared
     super.init(coder: coder)
+    observeVisualLifecycle()
     self.accountNotificationHandler = AccountNotificationHandler(
       storage: appDelegate.storage,
       notificationHandler: appDelegate.notificationHandler
@@ -141,6 +163,7 @@ public class LibraryEntityImage: RoundedImage {
   override public init(frame: CGRect) {
     self.appDelegate = AmperKit.shared
     super.init(frame: .zero)
+    observeVisualLifecycle()
     self.accountNotificationHandler = AccountNotificationHandler(
       storage: appDelegate.storage,
       notificationHandler: appDelegate.notificationHandler
@@ -225,7 +248,18 @@ public class LibraryEntityImage: RoundedImage {
     )
   }
 
+  private func observeVisualLifecycle() {
+    NotificationCenter.default.addObserver(self, selector: #selector(resumeImageDisplay),
+      name: UIApplication.didBecomeActiveNotification, object: nil)
+    NotificationCenter.default.addObserver(self, selector: #selector(suspendImageDisplay),
+      name: UIApplication.willResignActiveNotification, object: nil)
+  }
+
+  @objc private func suspendImageDisplay() { imageLoadTask?.cancel(); imageLoadTask = nil }
+  @objc private func resumeImageDisplay() { if window != nil { refresh() } }
+
   private func refresh() {
+    guard UIApplication.shared.applicationState == .active else { return }
     // Albums and playlist covers may be portrait or landscape images.
     if let preferredArtworkContentMode {
       contentMode = preferredArtworkContentMode
@@ -277,7 +311,10 @@ public class LibraryEntityImage: RoundedImage {
   }
 
   private func refreshDownloadedImage() {
-    if let path = entityImagePathToDisplay { Self.cache.removeObject(forKey: path as NSString) }
+    if let path = entityImagePathToDisplay {
+      Self.cache.removeObject(forKey: path as NSString)
+      Self.paletteCache.removeObject(forKey: path as NSString)
+    }
     imageLoadTask?.cancel()
     imageLoadTask = nil
     refresh()

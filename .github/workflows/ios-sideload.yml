@@ -104,6 +104,8 @@ jobs:
             build/validation/player-queue-glass-*.png
             build/validation/player-queue-history.png
             build/validation/player-statistics-detail.png
+            build/validation/player-album-*.png
+            build/validation/player-artist-*.png
             build/validation/player-library-*.png
             build/validation/player-playlist*.png
             build/validation/player-mini-*.png
@@ -159,6 +161,8 @@ jobs:
             build/sideload/SHA256SUMS
             build/sideload/build-info.txt
             build/sideload/ipa-integrity.log
+            build/sideload/qMusic-dSYMs.zip
+            build/sideload/binary-uuid.txt
             BuildTools/verify_ipa.py
             docs/iphone-install-zh.md
           if-no-files-found: error

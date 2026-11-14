@@ -22,3 +22,28 @@
 Windows 上的源码检查不能替代以上构建及视觉验证。
 
 参考：[Apple — Build a UIKit app with the new design](https://developer.apple.com/videos/play/wwdc2025/284/)。
+
+
+### Background artwork and detail pages
+
+Artwork palette extraction is foreground UI work. `LibraryEntityImage.loadArtworkPalette`
+checks application state before and after asynchronous decoding, caches results by artwork
+path, and uses a fixed 64×64 RGB histogram. It performs no Core Image clustering or detached
+palette task. The player and artwork headers cancel visual tasks on resignation; hidden
+player callbacks do not update lyrics, queue rows, or gradients. Lock-screen artwork still
+uses the shared prepared-image loader independently of these UI guards.
+
+The November CPU-resource report records 48 CPU seconds in 48 wall seconds and an OS kill.
+Image/Core Image stacks and the previous detached clustering path identify a strong suspect,
+not a symbolicated function-level diagnosis. New IPA artifacts retain matching dSYMs/UUIDs.
+Simulator resource reports check that palette computation counts stay constant in actual
+background phases; they measure process CPU/RSS, not iPhone battery consumption.
+
+Album details use centered artwork, title/artist metadata and playback controls, track-number
+rows and a release/count/duration footer. There is no recommendation section. Artist details
+have a full-width hero and exactly two sections: listening-count song rankings and horizontal
+albums. The first five songs link to the complete ranking; ordering uses real `playCount`,
+with stable title/ID ties and offline filtering. Song swipe actions show their icons only.
+
+Regression coverage includes dense 1200px artwork with a bounded runtime, dominant/transparent
+color handling, ranking/count updates, and actual album/artist screenshots and dock reversals.

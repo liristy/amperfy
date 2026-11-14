@@ -212,6 +212,15 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
   }
 
   func sceneWillEnterForeground(_ scene: UIScene) {
+    #if DEBUG && targetEnvironment(simulator)
+      if !resourceProfilePhase.isEmpty {
+        let event: [String: Any] = ["phase": resourceProfilePhase,
+          "palette_computations": LibraryEntityImage.paletteComputationCount]
+        if let data = try? JSONSerialization.data(withJSONObject: event) {
+          try? data.write(to: URL.documentsDirectory.appendingPathComponent("player-resource-foreground.json"), options: .atomic)
+        }
+      }
+    #endif
     // Called as the scene transitions from the background to the foreground.
     // Use this method to undo the changes made on entering the background.
     os_log("sceneWillEnterForeground", log: self.log, type: .info)
@@ -229,7 +238,8 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
       if !resourceProfilePhase.isEmpty {
         let event: [String: Any] = ["phase": resourceProfilePhase,
                                     "state": "background", "playing": appDelegate.player.isPlaying,
-                                    "audio_tap_installed": appDelegate.player.audioAnalyzer.isTapInstalled]
+                                    "audio_tap_installed": appDelegate.player.audioAnalyzer.isTapInstalled,
+                                    "palette_computations": LibraryEntityImage.paletteComputationCount]
         if let data = try? JSONSerialization.data(withJSONObject: event) {
           try? data.write(to: URL.documentsDirectory.appendingPathComponent("player-resource-background.json"), options: .atomic)
         }
@@ -531,6 +541,7 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
             guard tabHost.selectedTab === library, tabHost.tabBar.alpha == 1,
                   !dock.point(inside: CGPoint(x: dock.bounds.midX, y: dock.bounds.maxY - 20), with: nil) else { return }
             try dockScreenshot("player-native-library.png")
+            guard try await verifyArtworkDetails(libraryTab: library, compositorScreenshot: compositorScreenshot) else { return }
             tabHost.selectedTab = home
             tabHost.view.layoutIfNeeded()
             try await Task.sleep(for: .milliseconds(900))
@@ -2261,6 +2272,56 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
       return true
     }
 
+    @MainActor private func verifyArtworkDetails(libraryTab: UITab,
+      compositorScreenshot: @MainActor (String) async throws -> Void) async throws -> Bool {
+      func log(_ message: String) { FileHandle.standardOutput.write(Data((message + "\n").utf8)) }
+      guard let group = libraryTab as? UITabGroup, let nav = group.managingNavigationController,
+            let info = appDelegate.storage.settings.accounts.active else { return false }
+      let library = appDelegate.storage.main.library
+      let account = library.getAccount(info: info)
+      guard let song = library.getSong(for: account, id: "song-1"), let album = song.album,
+            let artist = song.artist else { log("Artwork detail fixture missing"); return false }
+      let albumVC = AlbumDetailVC(account: account, album: album)
+      nav.pushViewController(albumVC, animated: false)
+      try await Task.sleep(for: .seconds(2))
+      albumVC.view.layoutIfNeeded()
+      guard let header = albumVC.detailOperationsView,
+            abs(header.artwork.bounds.width - min(340, albumVC.view.bounds.width * 0.694)) < 1,
+            albumVC.tableView.numberOfSections == 1,
+            albumVC.navigationItem.title == "" else { log("Album artwork/header structure failed"); return false }
+      let path = IndexPath(row: 0, section: 0)
+      let leading = albumVC.tableView(albumVC.tableView, leadingSwipeActionsConfigurationForRowAt: path)?.actions ?? []
+      let trailing = albumVC.tableView(albumVC.tableView, trailingSwipeActionsConfigurationForRowAt: path)?.actions ?? []
+      guard !leading.isEmpty || !trailing.isEmpty,
+            (leading + trailing).allSatisfy({ $0.title == nil && $0.image != nil }) else {
+        log("Song swipe actions are missing icons or still display titles"); return false
+      }
+      try await compositorScreenshot("player-album-detail.png")
+      if let host = albumVC.tabBarController as? TabBarVC {
+        guard try await verifyDockScrollStability(tabHost: host, scroll: albumVC.tableView) else { return false }
+      }
+      nav.popViewController(animated: false)
+      let artistVC = ArtistDetailVC(account: account, artist: artist)
+      nav.pushViewController(artistVC, animated: false)
+      try await Task.sleep(for: .seconds(2))
+      artistVC.view.layoutIfNeeded()
+      guard artistVC.tableView.numberOfSections == 2,
+            artistVC.tableView.numberOfRows(inSection: 0) == min(5, artistVC.rankedSongs.count),
+            artistVC.rankedSongs.map(\.playCount) == artistVC.rankedSongs.map(\.playCount).sorted(by: >),
+            abs(artistVC.artworkHeader.artwork.bounds.width - artistVC.view.bounds.width) < 1 else {
+        log("Artist hero, listening-count ranking or two-section structure failed"); return false
+      }
+      try await compositorScreenshot("player-artist-detail.png")
+      artistVC.tableView.setContentOffset(CGPoint(x: 0, y: artistVC.artworkHeader.frame.height - 30), animated: false)
+      try await compositorScreenshot("player-artist-albums.png")
+      if let host = artistVC.tabBarController as? TabBarVC {
+        guard try await verifyDockScrollStability(tabHost: host, scroll: artistVC.tableView) else { return false }
+      }
+      nav.popViewController(animated: false)
+      log("Album artwork, artist listening-count ranking/albums and icon-only song swipes passed")
+      return true
+    }
+
     // Test-only UI staging. Sampling runs outside the app so it does not add
     // an in-app polling timer or prevent a paused app from being suspended.
     @MainActor private func runPlayerResourceProfile(on host: UIViewController) async {
@@ -2345,7 +2406,8 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
                      "state": UIApplication.shared.applicationState.rawValue,
                      "queue": queue, "lyrics": lyrics, "visualizer": visualizer,
                      "audio_analyzer_active": player.audioAnalyzer.isActive,
-                     "audio_tap_installed": player.audioAnalyzer.isTapInstalled], name: "player-resource-phase.json")
+                     "audio_tap_installed": player.audioAnalyzer.isTapInstalled,
+                     "palette_computations": LibraryEntityImage.paletteComputationCount], name: "player-resource-phase.json")
           if phase == "playing_queue_scroll" {
             let maximum = max(0, popup.tableView.contentSize.height - popup.tableView.bounds.height)
             for step in 0..<30 {

@@ -25,379 +25,294 @@ import UIKit
 
 class ArtistDetailVC: MultiSourceTableViewController {
   override var sceneTitle: String? { artist.name }
-
-  private let artist: Artist
+  private var previousNavStyle: UIUserInterfaceStyle?
+  private var previousNavTint: UIColor?
+  let artist: Artist
   var albumToScrollTo: Album?
-  private var albumsFetchedResultsController: ArtistAlbumsItemsFetchedResultsController!
-  private var songsFetchedResultsController: ArtistSongsItemsFetchedResultsController!
-  private var optionsButton: UIBarButtonItem!
-  private var detailOperationsView: GenericDetailTableHeader?
+  private(set) var rankedSongs = [Song]()
+  private var albums = [Album]()
+  private(set) var artworkHeader: MusicArtworkHeader!
+  private var needsRefresh = true
 
   init(account: Account, artist: Artist) {
     self.artist = artist
-    super.init(style: .grouped, account: account)
+    super.init(style: .plain, account: account)
   }
-
-  required init?(coder: NSCoder) {
-    fatalError("init(coder:) has not been implemented")
-  }
+  required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
 
   override func viewDidLoad() {
     super.viewDidLoad()
     appDelegate.userStatistics.visited(.artistDetail)
-
-    optionsButton = UIBarButtonItem.createOptionsBarButton()
-
-    albumsFetchedResultsController = ArtistAlbumsItemsFetchedResultsController(
-      for: artist,
-      coreDataCompanion: appDelegate.storage.main,
-      isGroupedInAlphabeticSections: false
-    )
-    albumsFetchedResultsController.delegate = self
-    songsFetchedResultsController = ArtistSongsItemsFetchedResultsController(
-      for: artist,
-      displayFilter: appDelegate.storage.settings.user.artistsFilterSetting,
-      coreDataCompanion: appDelegate.storage.main,
-      isGroupedInAlphabeticSections: false
-    )
-    songsFetchedResultsController.delegate = self
-    tableView.register(nibName: GenericTableCell.typeName)
+    overrideUserInterfaceStyle = .dark
+    navigationItem.largeTitleDisplayMode = .never
+    let appearance = UINavigationBarAppearance()
+    appearance.configureWithTransparentBackground()
+    appearance.titleTextAttributes = [.foregroundColor: UIColor.white]
+    navigationItem.standardAppearance = appearance
+    navigationItem.scrollEdgeAppearance = appearance
+    let options = UIBarButtonItem.createOptionsBarButton()
+    options.menu = UIMenu.lazyMenu { EntityPreviewActionBuilder(container: self.artist, on: self).createMenuActions() }
+    navigationItem.rightBarButtonItem = options
+    tableView.contentInsetAdjustmentBehavior = .never
+    tableView.backgroundColor = UIColor(white: 0.16, alpha: 1)
+    tableView.separatorColor = .white.withAlphaComponent(0.12)
+    tableView.separatorInset = UIEdgeInsets(top: 0, left: 76, bottom: 0, right: 20)
     tableView.register(nibName: PlayableTableCell.typeName)
-    tableView.sectionHeaderHeight = 0.0
-    tableView.estimatedSectionHeaderHeight = 0.0
-    tableView.sectionFooterHeight = 0.0
-    tableView.estimatedSectionFooterHeight = 0.0
-    tableView.backgroundColor = .backgroundColor
-
-    configureSearchController(placeholder: "Albums and Songs".localized, scopeButtonTitles: ["All".localized, "Cached".localized])
-    let playShuffleInfoConfig = PlayShuffleInfoConfiguration(
-      infoCB: {
-        "\(CommonString.albums(self.artist.albumCount)) \(CommonString.oneMiddleDot) \(CommonString.songs(self.artist.songCount))"
-      },
-      playContextCb: { () in
-        let songs = self.songsFetchedResultsController
-          .getContextSongs(onlyCachedSongs: self.appDelegate.storage.settings.user.isOfflineMode) ??
-          []
-        let sortedSongs = songs.filterSongs().sortByAlbum()
-        return PlayContext(containable: self.artist, playables: sortedSongs)
-      },
-      player: appDelegate.player,
-      isInfoAlwaysHidden: true
-    )
-    let detailHeaderConfig = DetailHeaderConfiguration(
-      entityContainer: artist,
-      rootView: self,
-      tableView: tableView,
-      playShuffleInfoConfig: playShuffleInfoConfig
-    )
-    detailOperationsView = GenericDetailTableHeader
-      .createTableHeader(configuration: detailHeaderConfig)
-
-    optionsButton = UIBarButtonItem.createOptionsBarButton()
-    optionsButton.menu = UIMenu.lazyMenu {
-      EntityPreviewActionBuilder(container: self.artist, on: self).createMenuActions()
+    tableView.register(ArtistAlbumStripCell.self, forCellReuseIdentifier: "artist-albums")
+    artworkHeader = MusicArtworkHeader(entity: artist)
+    artworkHeader.playAction = { [weak self] shuffled in
+      guard let self else { return }
+      let context = PlayContext(containable: artist, playables: rankedSongs)
+      if shuffled { appDelegate.player.playShuffled(context: context) } else { appDelegate.player.play(context: context) }
     }
-    navigationItem.rightBarButtonItem = optionsButton
-
-    containableAtIndexPathCallback = { indexPath in
-      switch indexPath.section + 1 {
-      case LibraryElement.Album.rawValue:
-        return self.albumsFetchedResultsController.getWrappedEntity(at: IndexPath(
-          row: indexPath.row,
-          section: 0
-        ))
-      case LibraryElement.Song.rawValue:
-        return self.songsFetchedResultsController.getWrappedEntity(at: IndexPath(
-          row: indexPath.row,
-          section: 0
-        ))
-      default:
-        return nil
+    artworkHeader.secondaryAction = { [weak self] in
+      guard let self, appDelegate.storage.settings.user.isOnlineMode else { return }
+      Task { @MainActor in
+        do { try await self.artist.remoteToggleFavorite(syncer: self.appDelegate.getMeta(self.account.info).librarySyncer) }
+        catch { self.appDelegate.eventLogger.report(topic: "Artist Favorite", error: error) }
+        self.artworkHeader.refresh()
       }
     }
-    playContextAtIndexPathCallback = { indexPath in
-      switch indexPath.section + 1 {
-      case LibraryElement.Album.rawValue:
-        let album = self.albumsFetchedResultsController.getWrappedEntity(at: IndexPath(
-          row: indexPath.row,
-          section: 0
-        ))
-        Task { @MainActor in do {
-          try await album.fetch(
-            storage: self.appDelegate.storage,
-            librarySyncer: self.appDelegate.getMeta(self.account.info).librarySyncer,
-            playableDownloadManager: self.appDelegate.getMeta(self.account.info)
-              .playableDownloadManager
-          )
-        } catch {
-          self.appDelegate.eventLogger.report(topic: "Album Sync", error: error)
-        }}
-        return PlayContext(containable: album)
-      case LibraryElement.Song.rawValue:
-        let songIndexPath = IndexPath(row: indexPath.row, section: 0)
-        return self.convertIndexPathToPlayContext(songIndexPath: songIndexPath)
-      default:
-        return nil
-      }
+    artworkHeader.paletteChanged = { [weak self] color in self?.tableView.backgroundColor = color }
+    tableView.tableHeaderView = artworkHeader
+    containableAtIndexPathCallback = { [weak self] path in
+      guard let self, path.section == 0, path.row < min(5, rankedSongs.count) else { return nil }
+      return rankedSongs[path.row]
     }
-    swipeCallback = { indexPath, completionHandler in
-      switch indexPath.section + 1 {
-      case LibraryElement.Album.rawValue:
-        let album = self.albumsFetchedResultsController.getWrappedEntity(at: IndexPath(
-          row: indexPath.row,
-          section: 0
-        ))
-        Task { @MainActor in
-          do {
-            try await album.fetch(
-              storage: self.appDelegate.storage,
-              librarySyncer: self.appDelegate.getMeta(self.account.info).librarySyncer,
-              playableDownloadManager: self.appDelegate.getMeta(self.account.info)
-                .playableDownloadManager
-            )
-          } catch {
-            self.appDelegate.eventLogger.report(topic: "Album Sync", error: error)
-          }
-          completionHandler(SwipeActionContext(containable: album))
-        }
-      case LibraryElement.Song.rawValue:
-        let songIndexPath = IndexPath(row: indexPath.row, section: 0)
-        let song = self.songsFetchedResultsController.getWrappedEntity(at: songIndexPath)
-        let playContext = self.convertIndexPathToPlayContext(songIndexPath: songIndexPath)
-        completionHandler(SwipeActionContext(containable: song, playContext: playContext))
-      default:
-        completionHandler(nil)
-      }
+    playContextAtIndexPathCallback = { [weak self] path in self?.songContext(at: path.row) }
+    swipeCallback = { [weak self] path, completion in
+      guard let self, path.section == 0, path.row < min(5, rankedSongs.count) else { completion(nil); return }
+      completion(SwipeActionContext(containable: rankedSongs[path.row], playContext: songContext(at: path.row)))
     }
+    NotificationCenter.default.addObserver(self, selector: #selector(libraryChanged(_:)), name: .NSManagedObjectContextObjectsDidChange, object: appDelegate.storage.main.context)
+    NotificationCenter.default.addObserver(self, selector: #selector(refreshVisible), name: UIApplication.didBecomeActiveNotification, object: nil)
+    refreshContent()
   }
 
   override func viewWillAppear(_ animated: Bool) {
     super.viewWillAppear(animated)
     navigationController?.navigationBar.prefersLargeTitles = false
+    if previousNavStyle == nil {
+      previousNavStyle = navigationController?.navigationBar.overrideUserInterfaceStyle
+      previousNavTint = navigationController?.navigationBar.tintColor
+    }
+    navigationController?.navigationBar.overrideUserInterfaceStyle = .dark
+    navigationController?.navigationBar.tintColor = .white
+    refreshContent()
   }
-
   override func viewIsAppearing(_ animated: Bool) {
     super.viewIsAppearing(animated)
-    extendSafeAreaToAccountForMiniPlayer()
-    albumsFetchedResultsController?.delegate = self
-    songsFetchedResultsController?.delegate = self
-    Task { @MainActor in
-      do {
-        try await artist.fetch(
-          storage: self.appDelegate.storage,
-          librarySyncer: self.appDelegate.getMeta(self.account.info).librarySyncer,
-          playableDownloadManager: self.appDelegate.getMeta(self.account.info)
-            .playableDownloadManager
-        )
-      } catch {
-        self.appDelegate.eventLogger.report(topic: "Artist Sync", error: error)
-      }
-      self.detailOperationsView?.refresh()
+    Task { @MainActor [weak self] in
+      guard let self else { return }
+      do { try await artist.fetch(storage: appDelegate.storage, librarySyncer: appDelegate.getMeta(account.info).librarySyncer,
+                                  playableDownloadManager: appDelegate.getMeta(account.info).playableDownloadManager) }
+      catch { appDelegate.eventLogger.report(topic: "Artist Sync", error: error) }
+      needsRefresh = true
+      refreshVisible()
     }
   }
-
-  override func viewWillDisappear(_ animated: Bool) {
-    super.viewWillDisappear(animated)
-    albumsFetchedResultsController?.delegate = nil
-    songsFetchedResultsController?.delegate = nil
-  }
-
   override func viewDidAppear(_ animated: Bool) {
     super.viewDidAppear(animated)
-    defer { albumToScrollTo = nil }
-    guard let albumToScrollTo = albumToScrollTo,
-          let indexPath = albumsFetchedResultsController.fetchResultsController
-          .indexPath(forObject: albumToScrollTo.managedObject)
-    else { return }
-    let adjustedIndexPath = IndexPath(row: indexPath.row, section: 1)
-    tableView.scrollToRow(at: adjustedIndexPath, at: .top, animated: true)
-  }
-
-  func convertIndexPathToPlayContext(songIndexPath: IndexPath) -> PlayContext? {
-    guard let songs = songsFetchedResultsController
-      .getContextSongs(onlyCachedSongs: appDelegate.storage.settings.user.isOfflineMode)
-    else { return nil }
-    let selectedSong = songsFetchedResultsController.getWrappedEntity(at: songIndexPath)
-    guard let playContextIndex = songs.firstIndex(of: selectedSong) else { return nil }
-    return PlayContext(containable: artist, index: playContextIndex, playables: songs)
-  }
-
-  func convertCellViewToPlayContext(cell: UITableViewCell) -> PlayContext? {
-    guard let indexPath = tableView.indexPath(for: cell),
-          indexPath.section + 1 == LibraryElement.Song.rawValue
-    else { return nil }
-    return convertIndexPathToPlayContext(songIndexPath: IndexPath(row: indexPath.row, section: 0))
-  }
-
-  // MARK: - Table view data source
-
-  override func numberOfSections(in tableView: UITableView) -> Int {
-    // 2 section + 1 top section. The top section is needed due to display bugs
-    3
-  }
-
-  override func tableView(
-    _ tableView: UITableView,
-    titleForHeaderInSection section: Int
-  )
-    -> String? {
-    switch section + 1 {
-    case LibraryElement.Album.rawValue:
-      return "Albums".localized
-    case LibraryElement.Song.rawValue:
-      return "Songs".localized
-    default:
-      return ""
+    if let albumToScrollTo, albums.contains(where: { $0.id == albumToScrollTo.id }) {
+      tableView.scrollToRow(at: IndexPath(row: 0, section: 1), at: .top, animated: false)
+      (tableView.cellForRow(at: IndexPath(row: 0, section: 1)) as? ArtistAlbumStripCell)?.scroll(to: albumToScrollTo)
     }
+    albumToScrollTo = nil
+  }
+  override func viewWillDisappear(_ animated: Bool) {
+    super.viewWillDisappear(animated)
+    let bar = navigationController?.navigationBar
+    let restore = { [previousNavStyle, previousNavTint] in
+      bar?.overrideUserInterfaceStyle = previousNavStyle ?? .unspecified
+      bar?.tintColor = previousNavTint
+    }
+    if let coordinator = transitionCoordinator {
+      coordinator.animate(alongsideTransition: nil) { context in
+        if !context.isCancelled { restore() }
+      }
+    } else { restore() }
   }
 
-  override func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int {
-    switch section + 1 {
-    case LibraryElement.Album.rawValue:
-      return albumsFetchedResultsController.sections?[0].numberOfObjects ?? 0
-    case LibraryElement.Song.rawValue:
-      return songsFetchedResultsController.sections?[0].numberOfObjects ?? 0
-    default:
-      return 0
-    }
+  override func viewDidLayoutSubviews() {
+    super.viewDidLayoutSubviews()
+    let size = CGSize(width: tableView.bounds.width, height: artworkHeader.preferredHeight(width: tableView.bounds.width))
+    if artworkHeader.frame.size != size { artworkHeader.frame.size = size; tableView.tableHeaderView = artworkHeader }
+    // The hero extends behind the navigation bar; preserve the system dock reservation below.
+    let bottom = view.safeAreaInsets.bottom
+    if tableView.contentInset.bottom != bottom { tableView.contentInset.bottom = bottom }
+    updateNavigationTitle()
   }
-
-  override func tableView(
-    _ tableView: UITableView,
-    cellForRowAt indexPath: IndexPath
-  )
-    -> UITableViewCell {
-    switch indexPath.section + 1 {
-    case LibraryElement.Album.rawValue:
-      let cell: GenericTableCell = dequeueCell(for: tableView, at: indexPath)
-      let album = albumsFetchedResultsController.getWrappedEntity(at: IndexPath(
-        row: indexPath.row,
-        section: 0
-      ))
-      cell.display(container: album, rootView: self)
-      return cell
-    case LibraryElement.Song.rawValue:
-      let cell: PlayableTableCell = dequeueCell(for: tableView, at: indexPath)
-      let song = songsFetchedResultsController.getWrappedEntity(at: IndexPath(
-        row: indexPath.row,
-        section: 0
-      ))
-      cell.display(playable: song, playContextCb: convertCellViewToPlayContext, rootView: self)
-      return cell
-    default:
-      return UITableViewCell()
-    }
+  override func scrollViewDidScroll(_ scrollView: UIScrollView) { updateNavigationTitle() }
+  private func updateNavigationTitle() {
+    guard let artworkHeader else { return }
+    let text = tableView.contentOffset.y > artworkHeader.frame.height - 140 ? artist.name : ""
+    if navigationItem.title != text { navigationItem.title = text }
   }
-
-  override func tableView(
-    _ tableView: UITableView,
-    heightForHeaderInSection section: Int
-  )
-    -> CGFloat {
-    switch section + 1 {
-    case LibraryElement.Album.rawValue:
-      return albumsFetchedResultsController.sections?[0]
-        .numberOfObjects ?? 0 > 0 ? CommonScreenOperations.tableSectionHeightLarge : 0
-    case LibraryElement.Song.rawValue:
-      return songsFetchedResultsController.sections?[0]
-        .numberOfObjects ?? 0 > 0 ? CommonScreenOperations.tableSectionHeightLarge : 0
-    default:
-      return 0.0
-    }
+  @objc private func libraryChanged(_ note: Notification) {
+    let inserted = note.userInfo?[NSInsertedObjectsKey] as? Set<NSManagedObject> ?? []
+    let deleted = note.userInfo?[NSDeletedObjectsKey] as? Set<NSManagedObject> ?? []
+    let updated = note.userInfo?[NSUpdatedObjectsKey] as? Set<NSManagedObject> ?? []
+    let keys: Set<String> = ["playCount", "title", "name", "artist", "album", "artwork", "isFavorite"]
+    guard inserted.union(deleted).contains(where: { $0 is SongMO || $0 is AlbumMO }) ||
+      updated.contains(where: { ($0 is SongMO || $0 is AlbumMO || $0 is ArtistMO) && !Set($0.changedValuesForCurrentEvent().keys).isDisjoint(with: keys) }) else { return }
+    needsRefresh = true
+    refreshVisible()
   }
-
-  override func tableView(
-    _ tableView: UITableView,
-    heightForRowAt indexPath: IndexPath
-  )
-    -> CGFloat {
-    switch indexPath.section + 1 {
-    case LibraryElement.Album.rawValue:
-      return GenericTableCell.rowHeight
-    case LibraryElement.Song.rawValue:
-      return PlayableTableCell.rowHeight
-    default:
-      return 0.0
-    }
+  @objc private func refreshVisible() {
+    guard needsRefresh, viewIfLoaded?.window != nil, UIApplication.shared.applicationState == .active,
+          !tableView.isDragging, !tableView.isDecelerating, !isSingleCellEditingModeActive else { return }
+    refreshContent()
   }
-
-  override func tableView(
-    _ tableView: UITableView,
-    estimatedHeightForRowAt indexPath: IndexPath
-  )
-    -> CGFloat {
-    switch indexPath.section + 1 {
-    case LibraryElement.Album.rawValue:
-      return GenericTableCell.rowHeight
-    case LibraryElement.Song.rawValue:
-      return PlayableTableCell.rowHeight
-    default:
-      return 0.0
+  private func refreshContent() {
+    guard isViewLoaded, UIApplication.shared.applicationState == .active else { needsRefresh = true; return }
+    needsRefresh = false
+    let offline = appDelegate.storage.settings.user.isOfflineMode
+    rankedSongs = artist.songsRankedByPlayCount(onlyCached: offline)
+    albums = appDelegate.storage.main.library.getAlbums(for: account, whichContainsSongsWithArtist: artist, onlyCached: offline).sorted {
+      $0.year == $1.year ? $0.name.localizedStandardCompare($1.name) == .orderedAscending : $0.year > $1.year
     }
-  }
-
-  override func tableView(_ tableView: UITableView, didSelectRowAt indexPath: IndexPath) {
-    switch indexPath.section + 1 {
-    case LibraryElement.Album.rawValue:
-      let album = albumsFetchedResultsController.getWrappedEntity(at: IndexPath(
-        row: indexPath.row,
-        section: 0
-      ))
-      navigationController?.pushViewController(
-        AppStoryboard.Main.segueToAlbumDetail(account: account, album: album),
-        animated: true
-      )
-    case LibraryElement.Song.rawValue: break
-    default: break
-    }
-  }
-
-  override func updateSearchResults(for searchController: UISearchController) {
-    guard let searchText = searchController.searchBar.text else { return }
-    if !searchText.isEmpty, searchController.searchBar.selectedScopeButtonIndex == 0 {
-      albumsFetchedResultsController.search(searchText: searchText, onlyCached: false)
-      songsFetchedResultsController.search(searchText: searchText, onlyCachedSongs: false)
-    } else if searchController.searchBar.selectedScopeButtonIndex == 1 {
-      albumsFetchedResultsController.search(searchText: searchText, onlyCached: true)
-      songsFetchedResultsController.search(searchText: searchText, onlyCachedSongs: true)
-    } else {
-      albumsFetchedResultsController.showAllResults()
-      songsFetchedResultsController.showAllResults()
-    }
+    artworkHeader.refresh()
     tableView.reloadData()
   }
-
-  override func controller(
-    _ controller: NSFetchedResultsController<NSFetchRequestResult>,
-    didChange anObject: Any,
-    at indexPath: IndexPath?,
-    for type: NSFetchedResultsChangeType,
-    newIndexPath: IndexPath?
-  ) {
-    var section = 0
-    switch controller {
-    case albumsFetchedResultsController.fetchResultsController:
-      section = LibraryElement.Album.rawValue - 1
-    case songsFetchedResultsController.fetchResultsController:
-      section = LibraryElement.Song.rawValue - 1
-    default:
-      return
-    }
-
-    resultUpdateHandler?.applyChangesOfMultiRowType(
-      controller,
-      didChange: anObject,
-      determinedSection: section,
-      at: indexPath,
-      for: type,
-      newIndexPath: newIndexPath
-    )
+  private func songContext(at index: Int) -> PlayContext? {
+    guard rankedSongs.indices.contains(index) else { return nil }
+    return PlayContext(containable: artist, index: index, playables: rankedSongs)
   }
+  override func numberOfSections(in tableView: UITableView) -> Int { 2 }
+  override func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int {
+    section == 0 ? min(5, rankedSongs.count) : (albums.isEmpty ? 0 : 1)
+  }
+  override func tableView(_ tableView: UITableView, heightForRowAt indexPath: IndexPath) -> CGFloat {
+    indexPath.section == 0 ? 56 : min(220, tableView.bounds.width * 0.43) + 50
+  }
+  override func tableView(_ tableView: UITableView, viewForHeaderInSection section: Int) -> UIView? {
+    let button = UIButton(type: .system)
+    button.setTitle((section == 0 ? "Top Songs".localized + " ›" : "Albums".localized), for: .normal)
+    button.titleLabel?.font = .systemFont(ofSize: 22, weight: .bold)
+    button.setTitleColor(.white, for: .normal)
+    button.contentHorizontalAlignment = .leading
+    button.configuration = .plain()
+    button.configuration?.contentInsets = NSDirectionalEdgeInsets(top: 4, leading: 20, bottom: 4, trailing: 20)
+    if section == 0 {
+      button.addAction(UIAction { [weak self] _ in
+        guard let self else { return }
+        navigationController?.pushViewController(ArtistRankingVC(account: account, artist: artist), animated: true)
+      }, for: .touchUpInside)
+    } else { button.isUserInteractionEnabled = false }
+    return button
+  }
+  override func tableView(_ tableView: UITableView, heightForHeaderInSection section: Int) -> CGFloat { 52 }
+  override func tableView(_ tableView: UITableView, heightForFooterInSection section: Int) -> CGFloat { 12 }
+  override func tableView(_ tableView: UITableView, cellForRowAt path: IndexPath) -> UITableViewCell {
+    if path.section == 1 {
+      let cell = tableView.dequeueReusableCell(withIdentifier: "artist-albums", for: path) as! ArtistAlbumStripCell
+      cell.display(albums: albums, root: self)
+      return cell
+    }
+    let cell: PlayableTableCell = dequeueCell(for: tableView, at: path)
+    cell.display(playable: rankedSongs[path.row], playContextCb: nil, rootView: self,
+                 playAction: { [weak self] in
+                   guard let self, let context = songContext(at: path.row) else { return }
+                   appDelegate.player.play(context: context)
+                 })
+    return cell
+  }
+}
 
-  override func controller(
-    _ controller: NSFetchedResultsController<NSFetchRequestResult>,
-    didChange sectionInfo: NSFetchedResultsSectionInfo,
-    atSectionIndex sectionIndex: Int,
-    for type: NSFetchedResultsChangeType
-  ) {}
+private final class ArtistAlbumStripCell: UITableViewCell, UICollectionViewDataSource, UICollectionViewDelegateFlowLayout {
+  private let collection: UICollectionView
+  private var albums = [Album]()
+  private weak var root: ArtistDetailVC?
+  override init(style: UITableViewCell.CellStyle, reuseIdentifier: String?) {
+    let layout = UICollectionViewFlowLayout()
+    layout.scrollDirection = .horizontal
+    layout.minimumLineSpacing = 12
+    layout.sectionInset = UIEdgeInsets(top: 0, left: 20, bottom: 0, right: 20)
+    collection = UICollectionView(frame: .zero, collectionViewLayout: layout)
+    super.init(style: style, reuseIdentifier: reuseIdentifier)
+    backgroundColor = .clear; selectionStyle = .none
+    collection.backgroundColor = .clear; collection.showsHorizontalScrollIndicator = false
+    collection.dataSource = self; collection.delegate = self
+    collection.register(ArtistAlbumTile.self, forCellWithReuseIdentifier: "album")
+    contentView.addSubview(collection)
+  }
+  required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
+  override func layoutSubviews() { super.layoutSubviews(); collection.frame = contentView.bounds }
+  func display(albums: [Album], root: ArtistDetailVC) { self.albums = albums; self.root = root; collection.reloadData() }
+  func scroll(to album: Album) {
+    guard let index = albums.firstIndex(where: { $0.id == album.id }) else { return }
+    collection.layoutIfNeeded()
+    collection.scrollToItem(at: IndexPath(item: index, section: 0), at: .centeredHorizontally, animated: false)
+  }
+  func collectionView(_ view: UICollectionView, numberOfItemsInSection section: Int) -> Int { albums.count }
+  func collectionView(_ view: UICollectionView, layout: UICollectionViewLayout, sizeForItemAt path: IndexPath) -> CGSize {
+    let side = max(1, min(220, view.bounds.width * 0.43))
+    return CGSize(width: side, height: side + 46)
+  }
+  func collectionView(_ view: UICollectionView, cellForItemAt path: IndexPath) -> UICollectionViewCell {
+    let cell = view.dequeueReusableCell(withReuseIdentifier: "album", for: path) as! ArtistAlbumTile
+    cell.display(albums[path.item]); return cell
+  }
+  func collectionView(_ view: UICollectionView, didSelectItemAt path: IndexPath) {
+    guard let root else { return }
+    root.navigationController?.pushViewController(AppStoryboard.Main.segueToAlbumDetail(account: root.account, album: albums[path.item]), animated: true)
+  }
+}
+
+private final class ArtistAlbumTile: UICollectionViewCell {
+  private let artwork = EntityImageView(frame: .zero)
+  private let title = UILabel(), year = UILabel()
+  override init(frame: CGRect) {
+    super.init(frame: frame)
+    [artwork, title, year].forEach { contentView.addSubview($0) }
+    artwork.imageContentMode = .scaleAspectFill; artwork.clipsToBounds = true
+    title.font = .systemFont(ofSize: 14); title.textColor = .white
+    year.font = .systemFont(ofSize: 12); year.textColor = .white.withAlphaComponent(0.5)
+    isAccessibilityElement = true; accessibilityTraits = .button
+  }
+  required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
+  func display(_ album: Album) {
+    let settings = appDelegate.storage.settings.accounts.getSetting(album.account?.info).read
+    artwork.display(theme: settings.themePreference, container: album)
+    title.text = album.name; year.text = album.year > 0 ? String(album.year) : nil
+    accessibilityLabel = [title.text, year.text].compactMap { $0 }.joined(separator: ", ")
+  }
+  override func layoutSubviews() {
+    super.layoutSubviews()
+    artwork.frame = CGRect(x: 0, y: 0, width: bounds.width, height: bounds.width)
+    title.frame = CGRect(x: 0, y: bounds.width + 6, width: bounds.width, height: 18)
+    year.frame = CGRect(x: 0, y: bounds.width + 25, width: bounds.width, height: 16)
+  }
+}
+
+final class ArtistRankingVC: MultiSourceTableViewController {
+  private let artist: Artist
+  private var songs = [Song]()
+  init(account: Account, artist: Artist) { self.artist = artist; super.init(style: .plain, account: account) }
+  required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
+  override func viewDidLoad() {
+    super.viewDidLoad(); title = "Top Songs".localized; overrideUserInterfaceStyle = .dark
+    tableView.register(nibName: PlayableTableCell.typeName)
+    tableView.backgroundColor = UIColor(white: 0.16, alpha: 1); tableView.rowHeight = 56
+    containableAtIndexPathCallback = { [weak self] path in self?.songs[path.row] }
+    playContextAtIndexPathCallback = { [weak self] path in self?.context(at: path.row) }
+    swipeCallback = { [weak self] path, completion in
+      guard let self else { completion(nil); return }
+      completion(SwipeActionContext(containable: songs[path.row], playContext: context(at: path.row)))
+    }
+  }
+  override func viewWillAppear(_ animated: Bool) {
+    super.viewWillAppear(animated)
+    songs = artist.songsRankedByPlayCount(onlyCached: appDelegate.storage.settings.user.isOfflineMode)
+    tableView.reloadData()
+  }
+  private func context(at index: Int) -> PlayContext { PlayContext(containable: artist, index: index, playables: songs) }
+  override func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int { songs.count }
+  override func tableView(_ tableView: UITableView, cellForRowAt path: IndexPath) -> UITableViewCell {
+    let cell: PlayableTableCell = dequeueCell(for: tableView, at: path)
+    cell.display(playable: songs[path.row], playContextCb: nil, rootView: self,
+      playAction: { [weak self] in guard let self else { return }; appDelegate.player.play(context: context(at: path.row)) })
+    cell.backgroundColor = .clear
+    return cell
+  }
 }

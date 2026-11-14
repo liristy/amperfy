@@ -40,6 +40,10 @@ if [[ ! -f "$app_path/Amperfy" || ! -f "$app_path/Frameworks/AmperfyKit.framewor
 fi
 xcrun lipo "$app_path/Amperfy" -verify_arch arm64
 
+# Keep matching symbols for CPU-resource and crash reports from test devices.
+ditto -c -k --keepParent "$archive_path/dSYMs" "$output_dir/qMusic-dSYMs.zip"
+xcrun dwarfdump --uuid "$app_path/Amperfy" > "$output_dir/binary-uuid.txt"
+
 mkdir -p "$work_dir/package/Payload"
 ditto "$app_path" "$work_dir/package/Payload/Amperfy.app"
 

@@ -20,7 +20,6 @@
 //
 
 import AmperfyKit
-import DominantColors
 import UIKit
 
 extension PopupPlayerVC {
@@ -112,6 +111,7 @@ extension PopupPlayerVC {
   }
 
   func refreshBackgroundItemArtwork() {
+    guard UIApplication.shared.applicationState == .active else { return }
     let settings = appDelegate.storage.settings
     let playable = player.currentlyPlaying
     let account = playable?.account?.info ?? settings.accounts.active
@@ -132,10 +132,7 @@ extension PopupPlayerVC {
     applyGradientBackground()
     guard let path else { return }
     backgroundArtworkTask = Task { @MainActor [weak self] in
-      guard let image = await LibraryEntityImage.loadPreparedImage(at: path), !Task.isCancelled else { return }
-      let colors = await Task.detached(priority: .userInitiated) {
-        (try? image.dominantColors(max: 2)) ?? []
-      }.value
+      let colors = await LibraryEntityImage.loadArtworkPalette(at: path)
       guard !Task.isCancelled, let self, self.backgroundArtworkKey == key else { return }
       if !colors.isEmpty {
         self.artworkGradientColors = colors

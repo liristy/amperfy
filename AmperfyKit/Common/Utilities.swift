@@ -532,6 +532,52 @@ extension UIAlertAction {
 }
 
 extension UIImage {
+  // Fixed-size histogram: artwork complexity cannot turn palette extraction
+  // into an unbounded color-comparison job that survives backgrounding.
+  public func boundedArtworkPalette(maxColors: Int = 2) -> [UIColor] {
+    guard !Task.isCancelled, let image = cgImage else { return [] }
+    let side = 64
+    var pixels = [UInt8](repeating: 0, count: side * side * 4)
+    let rendered = pixels.withUnsafeMutableBytes { buffer -> Bool in
+      guard let context = CGContext(data: buffer.baseAddress, width: side, height: side,
+        bitsPerComponent: 8, bytesPerRow: side * 4, space: CGColorSpaceCreateDeviceRGB(),
+        bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { return false }
+      context.interpolationQuality = .low
+      context.draw(image, in: CGRect(x: 0, y: 0, width: side, height: side))
+      return true
+    }
+    guard rendered else { return [] }
+    var counts = [Int](repeating: 0, count: 4096)
+    var red = counts, green = counts, blue = counts
+    for y in 0..<side {
+      guard !Task.isCancelled else { return [] }
+      for x in 0..<side {
+        let i = (y * side + x) * 4, alpha = Int(pixels[i + 3])
+        guard alpha >= 32 else { continue }
+        let r = min(255, Int(pixels[i]) * 255 / alpha)
+        let g = min(255, Int(pixels[i + 1]) * 255 / alpha)
+        let b = min(255, Int(pixels[i + 2]) * 255 / alpha)
+        let bin = (r >> 4) << 8 | (g >> 4) << 4 | (b >> 4)
+        counts[bin] += 1; red[bin] += r; green[bin] += g; blue[bin] += b
+      }
+    }
+    var result = [UIColor]()
+    var selected = [(Int, Int, Int)]()
+    for _ in 0..<min(4, max(0, maxColors)) {
+      var best: Int?
+      for bin in counts.indices where counts[bin] > 0 {
+        let r = red[bin] / counts[bin], g = green[bin] / counts[bin], b = blue[bin] / counts[bin]
+        guard !selected.contains(where: { abs($0.0 - r) + abs($0.1 - g) + abs($0.2 - b) < 72 }) else { continue }
+        if best == nil || counts[bin] > counts[best!] { best = bin }
+      }
+      guard let best else { break }
+      let count = counts[best], r = red[best] / count, g = green[best] / count, b = blue[best] / count
+      selected.append((r, g, b))
+      result.append(UIColor(red: CGFloat(r) / 255, green: CGFloat(g) / 255, blue: CGFloat(b) / 255, alpha: 1))
+    }
+    return result
+  }
+
   public func averageColor() -> UIColor {
     var bitmap = [UInt8](repeating: 0, count: 4)
 

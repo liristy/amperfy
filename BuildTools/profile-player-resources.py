@@ -98,7 +98,7 @@ def main():
                            if device["state"] == "Booted" and device["name"].startswith("iPhone"))
     device_id = device["udid"]
     documents = Path(command("xcrun", "simctl", "get_app_container", device_id, bundle_id, "data")) / "Documents"
-    for name in ("phase", "background", "ready", "failed"):
+    for name in ("phase", "background", "foreground", "ready", "failed"):
         (documents / f"player-resource-{name}.json").unlink(missing_ok=True)
     # The preceding UI suite's recording/server have stopped. Do not record
     # video, take screenshots, or run sample/Instruments during these windows.
@@ -114,7 +114,7 @@ def main():
         "measured_at_utc": datetime.datetime.now(datetime.timezone.utc).isoformat(),
         "host": platform.platform(), "host_machine": platform.machine(),
         "simulator": {"runtime": runtime, "device": device["name"]},
-        "configuration": "Debug", "audio": "Loopback mock server, 180s silent 16kHz mono 16-bit PCM WAV",
+        "configuration": "Debug", "audio": "Loopback mock server, 180s marker-tone 16kHz mono 16-bit PCM WAV",
         "cpu_definition": "Delta app-process user+system CPU time / monotonic wall time; 100% is one host CPU core",
         "rss_definition": "App-process current RSS from host ps, KiB; excludes simulator/compositor/server processes",
         "limitations": ["No physical battery, watts, mWh or percent/hour measurement",
@@ -172,6 +172,11 @@ def main():
                 restored = command("xcrun", "simctl", "launch", device_id, bundle_id)
                 if int(restored.rsplit(":", 1)[1].strip()) != pid:
                     raise RuntimeError("App was restarted instead of foregrounded")
+                foreground = wait_for(documents / "player-resource-foreground.json",
+                                      lambda value: value.get("phase") == name, documents, timeout=15)
+                row["foreground_lifecycle"] = foreground
+                if foreground["palette_computations"] != background_event["palette_computations"]:
+                    raise RuntimeError("Artwork palette computation ran while app was in background")
         wait_for(documents / "player-resource-ready.json", lambda value: value.get("completed") is True, documents)
         fields = ["phase", "wall_seconds", "cpu_seconds", "cpu_one_core_percent", "rss_mean_mib", "rss_peak_mib"]
         with (output / "summary.csv").open("w", newline="") as stream:
@@ -191,7 +196,7 @@ def main():
             encoding="utf-8")
     except Exception:
         # Preserve app staging diagnostics even when no measurement window ran.
-        for name in ("phase", "background", "ready", "failed"):
+        for name in ("phase", "background", "foreground", "ready", "failed"):
             value = read_json(documents / f"player-resource-{name}.json")
             if value is not None:
                 (output / f"player-resource-{name}.json").write_text(json.dumps(value, indent=2, ensure_ascii=False) + "\n")

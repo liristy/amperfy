@@ -53,6 +53,21 @@ public class Artist: AbstractLibraryEntity {
 
   public var playables: [AbstractPlayable] { songs }
 
+  public func songsRankedByPlayCount(onlyCached: Bool = false) -> [Song] {
+    let candidates: [Song]
+    if let context = managedObject.managedObjectContext, let account {
+      candidates = LibraryStorage(context: context).getSongs(for: account,
+        whichContainsSongsWithArtist: self, onlyCached: onlyCached)
+    } else {
+      candidates = songs.compactMap { $0.asSong }.filter { !onlyCached || $0.isCached }
+    }
+    return candidates.sorted {
+      if $0.playCount != $1.playCount { return $0.playCount > $1.playCount }
+      let titleOrder = $0.title.localizedStandardCompare($1.title)
+      return titleOrder == .orderedSame ? $0.id < $1.id : titleOrder == .orderedAscending
+    }
+  }
+
   public var name: String {
     get { managedObject.name ?? "Unknown Artist".localized }
     set {

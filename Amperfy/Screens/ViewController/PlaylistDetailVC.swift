@@ -21,7 +21,6 @@
 
 import AmperfyKit
 import CoreData
-import DominantColors
 import UIKit
 
 // MARK: - PlaylistDetailDiffableDataSource
@@ -409,6 +408,8 @@ final class PlaylistArtworkHeader: UIView {
       name: .downloadFinishedSuccess, object: nil)
     NotificationCenter.default.addObserver(self, selector: #selector(refreshVisibleHeader),
       name: UIApplication.didBecomeActiveNotification, object: nil)
+    NotificationCenter.default.addObserver(self, selector: #selector(stopPaletteWork),
+      name: UIApplication.willResignActiveNotification, object: nil)
     [artwork, nameLabel, subtitle, playButton, shuffleButton, downloadButton].forEach { addSubview($0) }
     artwork.accessibilityIdentifier = "playlist-header-artwork"
     artwork.imageContentMode = .scaleAspectFill
@@ -442,6 +443,7 @@ final class PlaylistArtworkHeader: UIView {
     downloadButton.addAction(UIAction { [weak self] _ in self?.downloadAction?() }, for: .touchUpInside)
   }
   required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
+  @objc private func stopPaletteWork() { paletteTask?.cancel(); paletteTask = nil; paletteKey = nil }
   @objc private func refreshVisibleHeader() {
     if window != nil, UIApplication.shared.applicationState == .active { refresh() }
   }
@@ -459,6 +461,7 @@ final class PlaylistArtworkHeader: UIView {
     12 + artworkSide(width: width) + 20 + titleHeight(width: width) + 26 + 16 + 44 + 22
   }
   func refresh() {
+    guard UIApplication.shared.applicationState == .active else { return }
     let settings = appDelegate.storage.settings.accounts.getSetting(playlist.account?.info).read
     artwork.display(theme: settings.themePreference, container: playlist, cornerRadius: .small)
     nameLabel.text = playlist.name
@@ -474,8 +477,7 @@ final class PlaylistArtworkHeader: UIView {
     paletteKey = path
     paletteTask?.cancel()
     paletteTask = Task { @MainActor [weak self] in
-      guard let image = await LibraryEntityImage.loadPreparedImage(at: path), !Task.isCancelled else { return }
-      let colors = await Task.detached(priority: .utility) { (try? image.dominantColors(max: 1)) ?? [] }.value
+      let colors = await LibraryEntityImage.loadArtworkPalette(at: path)
       guard let self, !Task.isCancelled, paletteKey == path, let color = colors.first else { return }
       var r: CGFloat = 0, g: CGFloat = 0, b: CGFloat = 0, a: CGFloat = 0
       color.getRed(&r, green: &g, blue: &b, alpha: &a)

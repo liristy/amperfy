@@ -246,10 +246,34 @@ class PopupPlayerVC: UIViewController, UIScrollViewDelegate, UIGestureRecognizer
 
     registerForTraitChanges(
       [UITraitUserInterfaceStyle.self, UITraitHorizontalSizeClass.self],
-      handler: { (self: Self, previousTraitCollection: UITraitCollection) in
-        self.refresh()
+      handler: { (controller: PopupPlayerVC, previousTraitCollection: UITraitCollection) in
+        controller.refresh()
       }
     )
+    NotificationCenter.default.addObserver(self, selector: #selector(suspendVisualWork),
+      name: UIApplication.willResignActiveNotification, object: nil)
+    NotificationCenter.default.addObserver(self, selector: #selector(resumeVisualWork),
+      name: UIApplication.didBecomeActiveNotification, object: nil)
+  }
+
+  var isPlayerUIVisible: Bool {
+    isViewLoaded && view.window != nil && UIApplication.shared.applicationState == .active
+  }
+
+  @objc private func suspendVisualWork() {
+    backgroundArtworkTask?.cancel()
+    backgroundArtworkTask = nil
+    backgroundArtworkKey = nil
+    lyricsControlsTask?.cancel()
+  }
+
+  @objc private func resumeVisualWork() {
+    guard isPlayerUIVisible else { return }
+    fetchSongInfoAndUpdateViews()
+    reloadData(preservingScrollOffset: true)
+    largeCurrentlyPlayingView?.initializeLyrics()
+    refresh()
+    lyricsModeDidChange()
   }
 
   override func viewDidLayoutSubviews() {
@@ -277,12 +301,15 @@ class PopupPlayerVC: UIViewController, UIScrollViewDelegate, UIGestureRecognizer
   override func viewWillDisappear(_ animated: Bool) {
     super.viewWillDisappear(animated)
     lyricsControlsTask?.cancel()
+    backgroundArtworkTask?.cancel()
+    backgroundArtworkKey = nil
     resignFirstResponder()
   }
 
   override func viewDidAppear(_ animated: Bool) {
     super.viewDidAppear(animated)
     updateQueueModeBackgrounds()
+    refreshBackgroundItemArtwork()
     lyricsModeDidChange()
   }
 
@@ -682,40 +709,48 @@ class PopupPlayerVC: UIViewController, UIScrollViewDelegate, UIGestureRecognizer
 
 extension PopupPlayerVC: MusicPlayable {
   func didStartPlayingFromBeginning() {
+    guard isPlayerUIVisible else { return }
     fetchSongInfoAndUpdateViews()
     largeCurrentlyPlayingView?.initializeLyrics()
   }
 
   func didStartPlaying() {
+    guard isPlayerUIVisible else { return }
     reloadData()
     refresh()
     largeCurrentlyPlayingView?.refreshPlaybackAppearance(animated: true)
   }
 
   func didStopPlaying() {
+    guard isPlayerUIVisible else { return }
     reloadData()
     refresh()
   }
 
   func didPlaylistChange() {
+    guard isPlayerUIVisible else { return }
     reloadData(preservingScrollOffset: true)
     refresh()
   }
 
   func didPause() {
+    guard isPlayerUIVisible else { return }
     largeCurrentlyPlayingView?.refreshPlaybackAppearance(animated: true)
   }
   func didElapsedTimeChange() {}
 
   func didLyricsTimeChange(time: CMTime) {
+    guard isPlayerUIVisible else { return }
     largeCurrentlyPlayingView?.refreshLyricsTime(time: time)
   }
 
   func didArtworkChange() {
+    guard isPlayerUIVisible else { return }
     refreshCurrentlyPlayingArtworks()
   }
 
   func didNowPlayingInfoChange() {
+    guard isPlayerUIVisible else { return }
     refreshCurrentlyPlayingInfoView()
   }
 

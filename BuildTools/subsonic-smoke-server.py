@@ -15,13 +15,17 @@ def rectangular_cover(second=False):
     def chunk(kind, data):
         return struct.pack('>I', len(data)) + kind + data + struct.pack('>I', zlib.crc32(kind + data))
     pixels = bytearray()
+    seed = 42
     for y in range(height):
         pixels.append(0)
         for x in range(width):
             border = x < 12 or y < 12 or x >= width - 12 or y >= height - 12
+            # Dense deterministic color detail exercises artwork palette worst cases.
+            seed = (seed * 1664525 + 1013904223) & 0xffffffff
+            noise = (seed >> 24) & 31
             pixels.extend((255, 240, 210) if border else
-                          (40 + x * 100 // width, 55 + y * 80 // height, 180) if not second else
-                          (30 + x * 50 // width, 90 + y * 100 // height, 135))
+                          (40 + x * 100 // width + noise, 55 + y * 80 // height + noise, 180 - noise) if not second else
+                          (30 + x * 50 // width + noise, 90 + y * 100 // height + noise, 135 - noise))
     return (b'\x89PNG\r\n\x1a\n' + chunk(b'IHDR', struct.pack('>IIBBBBB', width, height, 8, 2, 0, 0, 0)) +
             chunk(b'IDAT', zlib.compress(bytes(pixels))) + chunk(b'IEND', b''))
 

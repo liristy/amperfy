@@ -40,6 +40,27 @@ class ArtistTest: XCTestCase {
 
   override func tearDown() {}
 
+  func testRankingUsesListeningCountsAndStableTies() {
+    let album = library.createAlbum(account: account)
+    album.artist = testArtist
+    let featuredArtist = library.createArtist(account: account)
+    let songs = [("Beta", 12), ("Alpha", 12), ("Popular", 50), ("Unplayed", 0)].enumerated().map { index, item in
+      let song = library.createSong(account: account)
+      song.id = "ranking-\(index)"
+      song.title = item.0
+      song.playCount = item.1
+      song.album = album
+      song.artist = index == 2 ? featuredArtist : testArtist
+      return song
+    }
+    songs[0].relFilePath = URL(string: "ranking-cached")
+    library.saveContext()
+    XCTAssertEqual(testArtist.songsRankedByPlayCount().map(\.title), ["Popular", "Alpha", "Beta", "Unplayed"])
+    XCTAssertEqual(testArtist.songsRankedByPlayCount(onlyCached: true).map(\.id), [songs[0].id])
+    songs[3].playCount = 100
+    XCTAssertEqual(testArtist.songsRankedByPlayCount().first?.id, songs[3].id)
+  }
+
   func testCreation() {
     let artist = library.createArtist(account: account)
     XCTAssertEqual(artist.account?.serverHash, TestAccountInfo.test1ServerHash)

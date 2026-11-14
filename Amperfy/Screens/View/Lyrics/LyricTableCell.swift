@@ -136,6 +136,7 @@ class LyricTableCell: UITableViewCell {
   // Playback emphasis crossfades these two layers without rerunning the filter.
   @discardableResult
   private func renderBlurredLyricsIfNeeded() -> Bool {
+    guard UIApplication.shared.applicationState == .active else { return false }
     guard let text = lyricLabel.attributedText,
           lyricLabel.bounds.width > 0, lyricLabel.bounds.height > 0 else { return false }
     let size = lyricLabel.bounds.size
