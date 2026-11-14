@@ -2348,7 +2348,13 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
         appDelegate.player.isAutoCachePlayedItems = false
         let player = appDelegate.player
         player.setRepeatMode(.off)
-        player.play(context: PlayContext(name: "Resource profile", playables: (0..<24).map { _ in song }))
+        var profileSongs = [song]
+        if let second = library.getSong(for: account, id: "song-2") {
+          try await appDelegate.getMeta(accountInfo).librarySyncer.sync(song: second)
+          profileSongs.append(second)
+        }
+        let profileQueue = (0..<24).map { profileSongs[$0 % profileSongs.count] }
+        player.play(context: PlayContext(name: "Resource profile", playables: profileQueue))
         try await Task.sleep(for: .seconds(3))
         player.play(playerIndex: PlayerIndex(queueType: .next, index: 12))
         try await Task.sleep(for: .seconds(3))
@@ -2408,7 +2414,26 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
                      "audio_analyzer_active": player.audioAnalyzer.isActive,
                      "audio_tap_installed": player.audioAnalyzer.isTapInstalled,
                      "palette_computations": LibraryEntityImage.paletteComputationCount], name: "player-resource-phase.json")
-          if phase == "playing_queue_scroll" {
+          if phase == "playing_background" {
+            for _ in 0..<150 {
+              if UIApplication.shared.applicationState == .background { break }
+              try await Task.sleep(for: .milliseconds(100))
+            }
+            let oldID = player.currentlyPlaying?.id ?? ""
+            guard UIApplication.shared.applicationState == .background else {
+              throw NSError(domain: "ResourceProfile", code: 7)
+            }
+            player.play(playerIndex: PlayerIndex(queueType: .next, index: 0))
+            try await Task.sleep(for: .seconds(2))
+            let newID = player.currentlyPlaying?.id ?? ""
+            guard newID != oldID, player.isPlaying else {
+              throw NSError(domain: "ResourceProfile", code: 8)
+            }
+            try write(["phase": phase, "old_id": oldID, "new_id": newID,
+              "state": UIApplication.shared.applicationState.rawValue,
+              "palette_computations": LibraryEntityImage.paletteComputationCount], name: "player-resource-track-change.json")
+            try await Task.sleep(for: .seconds(60))
+          } else if phase == "playing_queue_scroll" {
             let maximum = max(0, popup.tableView.contentSize.height - popup.tableView.bounds.height)
             for step in 0..<30 {
               popup.tableView.setContentOffset(CGPoint(x: 0, y: step.isMultiple(of: 2) ? 0 : maximum), animated: true)

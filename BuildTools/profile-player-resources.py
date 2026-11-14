@@ -98,7 +98,7 @@ def main():
                            if device["state"] == "Booted" and device["name"].startswith("iPhone"))
     device_id = device["udid"]
     documents = Path(command("xcrun", "simctl", "get_app_container", device_id, bundle_id, "data")) / "Documents"
-    for name in ("phase", "background", "foreground", "ready", "failed"):
+    for name in ("phase", "background", "foreground", "track-change", "ready", "failed"):
         (documents / f"player-resource-{name}.json").unlink(missing_ok=True)
     # The preceding UI suite's recording/server have stopped. Do not record
     # video, take screenshots, or run sample/Instruments during these windows.
@@ -163,6 +163,13 @@ def main():
                    "rss_mean_mib": round(sum(s["rss_kib"] for s in samples) / len(samples) / 1024, 2),
                    "rss_peak_mib": round(max(s["rss_kib"] for s in samples) / 1024, 2),
                    "staged_ui": staged, "background_lifecycle": background_event}
+            if name == "playing_background":
+                track_change = read_json(documents / "player-resource-track-change.json")
+                if not track_change or track_change["state"] != 2 or track_change["old_id"] == track_change["new_id"]:
+                    raise RuntimeError("Background playback did not switch to a different cover")
+                if track_change["palette_computations"] != background_event["palette_computations"]:
+                    raise RuntimeError("Background track switch triggered artwork palette computation")
+                row["background_track_change"] = track_change
             rows.append(row)
             raw_samples.append({"phase": name, "samples": samples})
             (output / "report.json").write_text(json.dumps(report, indent=2, ensure_ascii=False) + "\n")
@@ -196,7 +203,7 @@ def main():
             encoding="utf-8")
     except Exception:
         # Preserve app staging diagnostics even when no measurement window ran.
-        for name in ("phase", "background", "foreground", "ready", "failed"):
+        for name in ("phase", "background", "foreground", "track-change", "ready", "failed"):
             value = read_json(documents / f"player-resource-{name}.json")
             if value is not None:
                 (output / f"player-resource-{name}.json").write_text(json.dumps(value, indent=2, ensure_ascii=False) + "\n")
