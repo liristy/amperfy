@@ -1177,55 +1177,7 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
                 return lyricsTable.visibleCells.contains { $0.accessibilityTraits.contains(.selected) }
               }
               guard activeLyricIsVisible() else { smokeLog("Lyrics did not highlight when opened"); return }
-              // Drive the real lyric selection callback and engine, including
-              // rapid forward/backward taps while the previous seek can buffer.
-              @MainActor func audibleLyricMatches(row: Int) async throws -> Bool {
-                let analyzer = self.appDelegate.player.audioAnalyzer
-                analyzer.isActive = true
-                defer { analyzer.isActive = false }
-                var matchingBuffers = 0
-                var measured: Float = 0
-                // Read PCM-derived frequency, not the engine's seek/progress
-                // property, which can report the requested time before audio moves.
-                for _ in 0..<60 {
-                  try await Task.sleep(for: .milliseconds(50))
-                  let bins = analyzer.magnitudes
-                  guard bins.count > 1, let peak = bins.max(by: { $0.value < $1.value }) else { continue }
-                  let width = bins[1].hertz-bins[0].hertz
-                  measured = peak.hertz-width
-                  if peak.value > 0.001, abs(measured-Float(500+row*500)) < width*0.6 {
-                    matchingBuffers += 1
-                    if matchingBuffers >= 3 { return true }
-                  } else { matchingBuffers = 0 }
-                }
-                smokeLog("Lyric audio marker mismatch: row \(row), rendered \(measured) Hz")
-                return false
-              }
-              lyricsTable.tableView(lyricsTable, didSelectRowAt: IndexPath(row: 1, section: 0))
-              guard try await audibleLyricMatches(row: 1) else { return }
-              for row in [7, 2, 6] {
-                lyricsTable.tableView(lyricsTable, didSelectRowAt: IndexPath(row: row, section: 0))
-                try await Task.sleep(for: .milliseconds(30))
-              }
-              try await Task.sleep(for: .milliseconds(800))
-              guard abs(self.appDelegate.player.elapsedTime - 60) < 2,
-                    lyricsTable.cellForRow(at: IndexPath(row: 6, section: 0))?.accessibilityTraits.contains(.selected) == true else {
-                smokeLog("Rapid lyric taps did not align engine position and selected line"); return
-              }
-              guard try await audibleLyricMatches(row: 6) else { return }
-              self.appDelegate.player.pause()
-              try await Task.sleep(for: .milliseconds(200))
-              lyricsTable.tableView(lyricsTable, didSelectRowAt: IndexPath(row: 3, section: 0))
-              try await Task.sleep(for: .milliseconds(500))
-              guard !self.appDelegate.player.isPlaying,
-                    abs(self.appDelegate.player.elapsedTime - 30) < 0.2,
-                    lyricsTable.cellForRow(at: IndexPath(row: 3, section: 0))?.accessibilityTraits.contains(.selected) == true else {
-                smokeLog("Paused lyric tap did not align engine position and highlight"); return
-              }
-              self.appDelegate.player.play()
-              guard try await audibleLyricMatches(row: 3) else { return }
-              self.appDelegate.player.seek(toSecond: 42)
-              smokeLog("Single, rapid and paused lyric selection matched rendered PCM audio markers and highlights")
+              guard try await self.verifyLyricSelection(lyricsTable) else { return }
               popup.restoreLyricsControls()
               try await Task.sleep(for: .milliseconds(400))
               let heightWithControls = popup.largePlayerPlaceholderView.bounds.height
@@ -2053,6 +2005,59 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
 
 #if DEBUG && targetEnvironment(simulator)
   extension SceneDelegate {
+    @MainActor private func audibleLyricMatches(row: Int) async throws -> Bool {
+      let analyzer = self.appDelegate.player.audioAnalyzer
+      analyzer.isActive = true
+      defer { analyzer.isActive = false }
+      var matchingBuffers = 0
+      var measured: Float = 0
+      // Read PCM-derived frequency, not the engine's seek/progress
+      // property, which can report the requested time before audio moves.
+      for _ in 0..<60 {
+        try await Task.sleep(for: .milliseconds(50))
+        let bins = analyzer.magnitudes
+        guard bins.count > 1, let peak = bins.max(by: { $0.value < $1.value }) else { continue }
+        let width = bins[1].hertz-bins[0].hertz
+        measured = peak.hertz-width
+        if peak.value > 0.001, abs(measured-Float(500+row*500)) < width*0.6 {
+          matchingBuffers += 1
+          if matchingBuffers >= 3 { return true }
+        } else { matchingBuffers = 0 }
+      }
+      FileHandle.standardOutput.write(Data("Lyric audio marker mismatch: row \(row), rendered \(measured) Hz\n".utf8))
+      return false
+    }
+
+    @MainActor private func verifyLyricSelection(_ lyricsTable: LyricsView) async throws -> Bool {
+      func smokeLog(_ message: String) { FileHandle.standardOutput.write(Data((message + "\n").utf8)) }
+      lyricsTable.tableView(lyricsTable, didSelectRowAt: IndexPath(row: 1, section: 0))
+      guard try await audibleLyricMatches(row: 1) else { return false }
+      for row in [7, 2, 6] {
+        lyricsTable.tableView(lyricsTable, didSelectRowAt: IndexPath(row: row, section: 0))
+        try await Task.sleep(for: .milliseconds(30))
+      }
+      try await Task.sleep(for: .milliseconds(800))
+      guard abs(self.appDelegate.player.elapsedTime - 60) < 2,
+            lyricsTable.cellForRow(at: IndexPath(row: 6, section: 0))?.accessibilityTraits.contains(.selected) == true else {
+        smokeLog("Rapid lyric taps did not align engine position and selected line"); return false
+      }
+      guard try await audibleLyricMatches(row: 6) else { return false }
+      self.appDelegate.player.pause()
+      try await Task.sleep(for: .milliseconds(200))
+      lyricsTable.tableView(lyricsTable, didSelectRowAt: IndexPath(row: 3, section: 0))
+      try await Task.sleep(for: .milliseconds(500))
+      guard !self.appDelegate.player.isPlaying,
+            abs(self.appDelegate.player.elapsedTime - 30) < 0.2,
+            lyricsTable.cellForRow(at: IndexPath(row: 3, section: 0))?.accessibilityTraits.contains(.selected) == true else {
+        smokeLog("Paused lyric tap did not align engine position and highlight"); return false
+      }
+      self.appDelegate.player.play()
+      guard try await audibleLyricMatches(row: 3) else { return false }
+      self.appDelegate.player.seek(toSecond: 42)
+      smokeLog("Single, rapid and paused lyric selection matched rendered PCM audio markers and highlights")
+      return true
+    }
+
     @MainActor private func verifyLibraryLayout(libraryTab: UITab,
       compositorScreenshot: @MainActor (String) async throws -> Void) async throws -> Bool {
       func smokeLog(_ message: String) {
