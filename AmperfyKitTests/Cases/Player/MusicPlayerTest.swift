@@ -30,6 +30,22 @@ import UIKit
 
 // MARK: - MOCK_AudioStreamingPlayer
 
+// Supplies the same encoded bytes in either file-sized or small network chunks.
+// The real AudioFileStream parser, converter and renderer ring remain in use.
+private final class FLACSeekTestSource: CoreAudioStreamSource {
+  var position = 0
+  let length: Int
+  weak var delegate: AudioStreamSourceDelegate?
+  let underlyingQueue = DispatchQueue(label: "test.flac.source")
+  var audioFileHint: AudioFileTypeID { kAudioFileFLACType }
+
+  init(length: Int) { self.length = length }
+  func seek(at offset: Int) { position = offset }
+  func close() {}
+  func suspend() {}
+  func resume() {}
+}
+
 class MOCK_AudioStreamingPlayer: AudioStreamingPlayer {
 
   let starts = OSAllocatedUnfairLock(initialState: [(url: URL, volume: Float, previousState: AudioStreaming.AudioPlayerState)]())
@@ -2753,6 +2769,64 @@ class MusicPlayerTest: XCTestCase {
     backendPlayer.audioPlayerStateChanged(player: mockAudioStreamingPlayer, with: .playing, previous: .bufferring)
     for _ in 0..<10 { await Task.yield() }
     XCTAssertEqual(testPlayer.elapsedTime, 18.047, "Resuming must not replay an older seek")
+  }
+
+  func testFLACSeekMatchesActualDecodedSamplesAcrossVariableBitrateSections() throws {
+    let url = try XCTUnwrap(Bundle(for: Self.self).url(forResource: "flac-variable-bitrate", withExtension: "flac"))
+    let encoded = try Data(contentsOf: url)
+    let format = try XCTUnwrap(AVAudioFormat(commonFormat: .pcmFormatFloat32, sampleRate: 44100,
+                                           channels: 2, interleaved: true))
+    // Big enough to decode the entire 12-second fixture without hardware output.
+    let configuration = AudioPlayerConfiguration(bufferSizeInSeconds: 16, enableLogs: false)
+    for chunkSize in [1024, 65536] {
+      let context = AudioPlayerContext()
+      let renderer = AudioRendererContext(configuration: configuration, outputAudioFormat: format)
+      let processor = AudioFileStreamProcessor(playerContext: context, rendererContext: renderer,
+                                              outputAudioFormat: format.basicStreamDescription)
+      let source = FLACSeekTestSource(length: encoded.count)
+      let entry = AudioEntry(source: source, entryId: AudioEntryId(id: url.absoluteString), outputAudioFormat: format)
+      context.audioReadingEntry = entry
+      context.audioPlayingEntry = entry
+      context.setInternalState(to: .waitingForData)
+      defer {
+        processor.closeFileStreamIfNeeded()
+        if let converter = processor.audioConverter { AudioConverterDispose(converter) }
+        renderer.clean()
+      }
+      func decodeRemainingSource() throws {
+        if !processor.isFileStreamOpen {
+          XCTAssertEqual(processor.openFileStream(with: source.audioFileHint), noErr)
+        }
+        while source.position < encoded.count {
+          let end = min(source.position + chunkSize, encoded.count)
+          let data = encoded.subdata(in: source.position..<end)
+          source.position = end
+          XCTAssertEqual(processor.parseFileStreamBytes(data: data), noErr)
+        }
+        XCTAssertEqual(processor.flushRemainingPackets(), noErr)
+      }
+      try decodeRemainingSource()
+      XCTAssertEqual(entry.audioStreamFormat.mFormatID, kAudioFormatFLAC)
+      XCTAssertTrue(entry.canProcessSeek)
+      let totalFrames = Int(renderer.bufferContext.frameUsedCount)
+      XCTAssertEqual(totalFrames, 12 * 44100)
+      let pcm = try XCTUnwrap(renderer.audioBuffer.mData?.assumingMemoryBound(to: Float.self))
+      let baseline = Array(UnsafeBufferPointer(start: pcm, count: totalFrames * 2))
+      // Forward, backward, sub-second and start-of-track seeks, after read-ahead
+      // has reached EOF. Compare sound samples, never just the seek property.
+      for time in [6.125, 2.001, 10.37, 0.0] {
+        entry.seekRequest.time = time
+        processor.processSeek()
+        try decodeRemainingSource()
+        let frame = Int((time * 44100).rounded())
+        let remaining = Int(renderer.bufferContext.frameUsedCount)
+        XCTAssertEqual(remaining, totalFrames - frame, "chunk \(chunkSize), seek \(time)")
+        guard remaining >= 256 else { continue }
+        let largestDifference = (0..<512).map { abs(pcm[$0] - baseline[frame * 2 + $0]) }.max() ?? 1
+        XCTAssertLessThan(largestDifference, 0.000001, "Audio disagrees with timeline at seek \(time)")
+        XCTAssertEqual(entry.progress, time, accuracy: 0.000001)
+      }
+    }
   }
 
   func testPausedLyricSeekPublishesWithoutWaitingForPlaybackTimer() async throws {

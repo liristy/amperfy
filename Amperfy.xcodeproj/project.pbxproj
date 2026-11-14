@@ -540,6 +540,7 @@
 		AD3EC09FB038456D8446BDFA /* ListeningAPI.swift in Sources */ = {isa = PBXBuildFile; fileRef = BA29A4D5DCFD4A608C4CC56A /* ListeningAPI.swift */; };
 		1E400938848B412CBACCCB35 /* ListeningStatisticsVC.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9F5165622C4D42559EC9542F /* ListeningStatisticsVC.swift */; };
 		DDE96B53DFD84D3F96FB4FA0 /* ListeningStatisticsSmoke.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4B296E1AE7AF41D0A6EF115A /* ListeningStatisticsSmoke.swift */; };
+		F1AC20261114000000000001 /* flac-variable-bitrate.flac in Resources */ = {isa = PBXBuildFile; fileRef = F1AC20261114000000000002 /* flac-variable-bitrate.flac */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -1176,6 +1177,7 @@
 		BA29A4D5DCFD4A608C4CC56A /* ListeningAPI.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ListeningAPI.swift; sourceTree = "<group>"; };
 		9F5165622C4D42559EC9542F /* ListeningStatisticsVC.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ListeningStatisticsVC.swift; sourceTree = "<group>"; };
 		4B296E1AE7AF41D0A6EF115A /* ListeningStatisticsSmoke.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ListeningStatisticsSmoke.swift; sourceTree = "<group>"; };
+		F1AC20261114000000000002 /* flac-variable-bitrate.flac */ = {isa = PBXFileReference; lastKnownFileType = file; path = AmperfyKitTests/Resources/flac-variable-bitrate.flac; sourceTree = SOURCE_ROOT; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -2086,6 +2088,7 @@
 				50AE79B92C1F69A00085CBB3 /* OpenSubsonicExtensions_example_1.xml */,
 				50AE79B12C1F64E30085CBB3 /* getLyricsBySongId_example_1.xml */,
 				50AE79B32C1F64F50085CBB3 /* getLyricsBySongId_example_2.xml */,
+				F1AC20261114000000000002 /* flac-variable-bitrate.flac */,
 				50F3A1C3308A1B8A00A1B2C3 /* similarSongs2_example_1.xml */,
 				50CEC6392D1EDB0000D0E696 /* internetRadioStations_example_1.xml */,
 			);
@@ -2343,7 +2346,7 @@
 				50F40A392C9088B30097FE63 /* XCRemoteSwiftPackageReference "Ifrit" */,
 				505249792D10CBC70005EEB0 /* XCRemoteSwiftPackageReference "swift-collections" */,
 				500E70D02E2FD63900636770 /* XCRemoteSwiftPackageReference "DominantColors" */,
-				50B166A82ED071A100F7A1D6 /* XCRemoteSwiftPackageReference "AudioStreaming" */,
+				50B166A82ED071A100F7A1D6 /* XCLocalSwiftPackageReference "AudioStreaming" */,
 			);
 			productRefGroup = 508385E521C5965B00C4BB32 /* Products */;
 			projectDirPath = "";
@@ -2409,6 +2412,7 @@
 				50BE5D7D2850F50700156FC6 /* catalogs.xml in Resources */,
 				50BE5D7C2850F50700156FC6 /* podcast_episodes.xml in Resources */,
 				50AE79B42C1F64F50085CBB3 /* getLyricsBySongId_example_2.xml in Resources */,
+				F1AC20261114000000000001 /* flac-variable-bitrate.flac in Resources */,
 				50BE5D572850F4F600156FC6 /* album_missing_artistId.xml in Resources */,
 				50CEC6382D1EDA6B00D0E696 /* live_streams.xml in Resources */,
 				50CA61242D4CE9E500EEF515 /* podcast_example_1.xml in Resources */,
@@ -3390,6 +3394,13 @@
 		};
 /* End XCConfigurationList section */
 
+/* Begin XCLocalSwiftPackageReference section */
+		50B166A82ED071A100F7A1D6 /* XCLocalSwiftPackageReference "AudioStreaming" */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = vendor/AudioStreaming;
+		};
+/* End XCLocalSwiftPackageReference section */
+
 /* Begin XCRemoteSwiftPackageReference section */
 		500E70D02E2FD63900636770 /* XCRemoteSwiftPackageReference "DominantColors" */ = {
 			isa = XCRemoteSwiftPackageReference;
@@ -3447,14 +3458,6 @@
 				version = 1.5.4;
 			};
 		};
-		50B166A82ED071A100F7A1D6 /* XCRemoteSwiftPackageReference "AudioStreaming" */ = {
-			isa = XCRemoteSwiftPackageReference;
-			repositoryURL = "https://github.com/dimitris-c/AudioStreaming/";
-			requirement = {
-				kind = exactVersion;
-				version = 1.4.4;
-			};
-		};
 		50BE5DA3285713B100156FC6 /* XCRemoteSwiftPackageReference "CallbackURLKit" */ = {
 			isa = XCRemoteSwiftPackageReference;
 			repositoryURL = "https://github.com/phimage/CallbackURLKit";
@@ -3481,7 +3484,7 @@
 		};
 		502B8A4C2EE0CE40004CA3AD /* AudioStreaming */ = {
 			isa = XCSwiftPackageProductDependency;
-			package = 50B166A82ED071A100F7A1D6 /* XCRemoteSwiftPackageReference "AudioStreaming" */;
+			package = 50B166A82ED071A100F7A1D6 /* XCLocalSwiftPackageReference "AudioStreaming" */;
 			productName = AudioStreaming;
 		};
 		5052497A2D10CBC70005EEB0 /* Collections */ = {
@@ -3496,7 +3499,7 @@
 		};
 		50699C812ED859B20039BECD /* AudioStreaming */ = {
 			isa = XCSwiftPackageProductDependency;
-			package = 50B166A82ED071A100F7A1D6 /* XCRemoteSwiftPackageReference "AudioStreaming" */;
+			package = 50B166A82ED071A100F7A1D6 /* XCLocalSwiftPackageReference "AudioStreaming" */;
 			productName = AudioStreaming;
 		};
 		507DFE4B2B1E57BE002BBB1D /* MarqueeLabel */ = {
@@ -3541,7 +3544,7 @@
 		};
 		50B166A92ED071EC00F7A1D6 /* AudioStreaming */ = {
 			isa = XCSwiftPackageProductDependency;
-			package = 50B166A82ED071A100F7A1D6 /* XCRemoteSwiftPackageReference "AudioStreaming" */;
+			package = 50B166A82ED071A100F7A1D6 /* XCLocalSwiftPackageReference "AudioStreaming" */;
 			productName = AudioStreaming;
 		};
 		50BE5DA6285714A200156FC6 /* CallbackURLKit */ = {
