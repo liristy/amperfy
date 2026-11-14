@@ -30,8 +30,10 @@ import UIKit
 final class PlayerTransportButton: UIButton {
   private let pressDisc = UIView()
   private let symbolContainer = UIView()
-  private let symbolView = UIImageView()
-  private let retiringSymbolView = UIImageView()
+  private let symbolView = UIView()
+  private let retiringSymbolView = UIView()
+  private let symbolImageView = UIImageView()
+  private let retiringSymbolImageView = UIImageView()
   private let activationView = UIView()
   private var activationTask: Task<Void, Never>?
   private var symbolIdentifier: String?
@@ -66,10 +68,12 @@ final class PlayerTransportButton: UIButton {
     symbolContainer.addSubview(symbolView)
     symbolContainer.addSubview(retiringSymbolView)
     symbolContainer.addSubview(activationView)
-    retiringSymbolView.contentMode = .center
+    symbolView.addSubview(symbolImageView)
+    retiringSymbolView.addSubview(retiringSymbolImageView)
+    retiringSymbolImageView.contentMode = .center
     retiringSymbolView.alpha = 0
     activationView.isUserInteractionEnabled = false
-    symbolView.contentMode = .center
+    symbolImageView.contentMode = .center
     updateSymbolColor()
     registerForTraitChanges([UITraitUserInterfaceStyle.self]) { (button: PlayerTransportButton, _: UITraitCollection) in
       // Temporary raster pieces must not keep the previous page's contrast.
@@ -84,8 +88,8 @@ final class PlayerTransportButton: UIButton {
   }
 
   private func updateSymbolColor() {
-    symbolView.tintColor = symbolColor
-    retiringSymbolView.tintColor = symbolColor
+    symbolImageView.tintColor = symbolColor
+    retiringSymbolImageView.tintColor = symbolColor
     pressDisc.isHidden = usesCompactStyle
   }
 
@@ -104,6 +108,8 @@ final class PlayerTransportButton: UIButton {
     symbolView.center = CGPoint(x: symbolContainer.bounds.midX, y: symbolContainer.bounds.midY)
     retiringSymbolView.bounds = symbolView.bounds
     retiringSymbolView.center = symbolView.center
+    symbolImageView.frame = symbolView.bounds
+    retiringSymbolImageView.frame = retiringSymbolView.bounds
     activationView.frame = symbolContainer.bounds
   }
 
@@ -132,11 +138,11 @@ final class PlayerTransportButton: UIButton {
     let retiring = retiringSymbolView.layer.presentation() ?? retiringSymbolView.layer
     let outgoingView = current.opacity >= retiring.opacity ? symbolView : retiringSymbolView
     let outgoing = outgoingView.layer.presentation() ?? outgoingView.layer
-    let outgoingImage = outgoingView.image
+    let outgoingImage = outgoingView === symbolView ? symbolImageView.image : retiringSymbolImageView.image
     let outgoingScale = outgoing.transform.m11
     let outgoingOpacity = outgoing.opacity
     finishSymbolTransition()
-    symbolView.image = image
+    symbolImageView.image = image
     symbolView.transform = .identity
     symbolView.alpha = 1
     setNeedsLayout()
@@ -144,9 +150,11 @@ final class PlayerTransportButton: UIButton {
 
     // Use compositor animations directly. A nested UIView keyframe animator can
     // finish the replacement during layout, leaving a hard cut in real recordings.
-    retiringSymbolView.image = outgoingImage
+    retiringSymbolImageView.image = outgoingImage
     retiringSymbolView.transform = .identity
-    retiringSymbolView.alpha = 0
+    // Leave the model visible until cleanup. Glass can discard content when
+    // UIView.alpha is zero before the compositor's fade has actually run.
+    retiringSymbolView.alpha = 1
     func animate(_ layer: CALayer, scale: [CGFloat], opacity: [Float], times: [NSNumber]) {
       let size = CAKeyframeAnimation(keyPath: "transform.scale")
       size.values = scale
@@ -162,6 +170,8 @@ final class PlayerTransportButton: UIButton {
       let group = CAAnimationGroup()
       group.animations = [size, fade]
       group.duration = replacementDuration
+      group.fillMode = .forwards
+      group.isRemovedOnCompletion = false
       layer.add(group, forKey: Self.symbolTransitionKey)
     }
     // 0.94–1.30 s: overlap the outgoing shrink with the incoming growth.
@@ -181,7 +191,7 @@ final class PlayerTransportButton: UIButton {
     symbolTransitionTask = nil
     symbolView.layer.removeAnimation(forKey: Self.symbolTransitionKey)
     retiringSymbolView.layer.removeAnimation(forKey: Self.symbolTransitionKey)
-    retiringSymbolView.image = nil
+    retiringSymbolImageView.image = nil
     retiringSymbolView.alpha = 0
   }
 
@@ -197,7 +207,7 @@ final class PlayerTransportButton: UIButton {
       }
     }
     guard activationTask == nil, window != nil, !UIAccessibility.isReduceMotionEnabled,
-          let image = symbolView.image else { return }
+          let image = symbolImageView.image else { return }
     guard let pieces = transportPieces(image, direction: direction) else { return }
     let leading = direction > 0 ? pieces.0 : pieces.1
     let trailing = direction > 0 ? pieces.1 : pieces.0
@@ -209,9 +219,14 @@ final class PlayerTransportButton: UIButton {
         let glyph = UIImageView(image: UIImage(cgImage: piece.image).withRenderingMode(.alwaysTemplate))
         glyph.tintColor = symbolColor
         glyph.contentMode = .scaleToFill
-        glyph.frame = piece.frame
-        activationView.addSubview(glyph)
-        return glyph.layer
+        let carrier = UIView(frame: piece.frame)
+        glyph.frame = carrier.bounds
+        glyph.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+        carrier.addSubview(glyph)
+        activationView.addSubview(carrier)
+        // UIKit may move the image's layer into a vibrancy container. Animate
+        // the ordinary parent so its position never gains that internal offset.
+        return carrier.layer
       }
       let layer = CALayer()
       layer.contents = piece.image
@@ -355,7 +370,7 @@ final class PlayerTransportButton: UIButton {
             y: (bounds.height - image.size.height) / 2))
         }.pngData()
       }
-      guard let rendered = pixels(symbolView.image), let expected = pixels(image(for: .normal)) else { return false }
+      guard let rendered = pixels(symbolImageView.image), let expected = pixels(image(for: .normal)) else { return false }
       return rendered == expected
     }
 
@@ -412,6 +427,18 @@ final class PlayerTransportButton: UIButton {
           let current = $0.presentation() ?? $0
           return current.opacity > 0 && abs(current.transform.m11 - 1) > 0.01
         })
+        if let image = symbolImageView.image {
+          let left = (bounds.width - image.size.width) / 2 - 1
+          let right = (bounds.width + image.size.width) / 2 + 1
+          guard animatedLayers.allSatisfy({ layer in
+            let current = layer.presentation() ?? layer
+            return current.opacity < 0.01 ||
+              (current.frame.minX >= left && current.frame.maxX <= right)
+          }) else {
+            FileHandle.standardOutput.write(Data(("Transport glyph escaped original symbol width: \(filename)\n").utf8))
+            return false
+          }
+        }
         guard bounds == originalBounds, isCurrentSymbolImage, symbolView.alpha == 1,
               abs(rendered.m42) < 0.1, abs(rendered.m11 - rendered.m22) < 0.01 else {
           FileHandle.standardOutput.write(Data(("Transport sample failed: \(filename), bounds=\(bounds), expected=\(originalBounds), image=\(isCurrentSymbolImage), alpha=\(symbolView.alpha), transform=\(rendered)\n").utf8))
