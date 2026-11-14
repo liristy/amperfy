@@ -120,7 +120,7 @@ class LibraryVC: KeyCommandCollectionViewController {
     syncTask = Task { @MainActor [weak self] in
       guard let self else { return }
       do {
-        try await appDelegate.getMeta(account.info).librarySyncer.syncNewestLibraryElements(offset: 0, count: 40)
+        try await appDelegate.getMeta(account.info).librarySyncer.syncNewestAlbums(offset: 0, count: 40)
         guard !Task.isCancelled else { return }
         refreshLibrary()
       } catch { didSync = false }

@@ -274,7 +274,7 @@ class PlaylistsVC: SingleSnapshotFetchedResultsTableViewController<PlaylistMO> {
     let detail = AppStoryboard.Main.segueToPlaylistDetail(account: account, playlist: playlist)
     let objectID = playlist.managedObject.objectID
     detail.preferredTransition = .zoom { [weak self] _ in
-      guard let self, let path = diffableDataSource.indexPath(for: objectID) else { return nil }
+      guard let self, let path = diffableDataSource?.indexPath(for: objectID) else { return nil }
       return (tableView.cellForRow(at: path) as? MusicPlaylistListCell)?.artwork
     }
     navigationController?.pushViewController(detail, animated: true)
