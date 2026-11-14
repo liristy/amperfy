@@ -290,7 +290,8 @@ class PlaylistsVC: SingleSnapshotFetchedResultsTableViewController<PlaylistMO> {
       let playlist = appDelegate.storage.main.library.createPlaylist(account: account)
       playlist.name = name
       appDelegate.storage.main.saveContext()
-      navigationController?.pushViewController(AppStoryboard.Main.segueToPlaylistEdit(account: account, playlist: playlist), animated: true)
+      let editor = AppStoryboard.Main.segueToPlaylistEdit(account: account, playlist: playlist)
+      present(UINavigationController(rootViewController: editor), animated: true)
     })
     present(alert, animated: true)
   }

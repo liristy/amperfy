@@ -1707,6 +1707,11 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
               if let tabHost = vc as? UITabBarController,
                  let libraryTab = tabHost.tabs.first(where: { $0.identifier == "Tabs.Library" }) {
                 vc.dismiss(animated: false)
+                try await self.appDelegate.getMeta(account.info).librarySyncer.syncDownPlaylistsWithoutSongs()
+                if let pinned = self.appDelegate.storage.main.library.getPlaylist(for: account, id: "playlist-1") {
+                  UserDefaults.standard.set([pinned.managedObject.objectID.uriRepresentation().absoluteString],
+                    forKey: "libraryPinnedPlaylists." + account.managedObject.objectID.uriRepresentation().absoluteString)
+                }
                 tabHost.selectedTab = libraryTab
                 try await Task.sleep(for: .seconds(1))
                 tabHost.view.layoutIfNeeded()
@@ -1714,74 +1719,8 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
                   tabHost.view.drawHierarchy(in: tabHost.view.bounds, afterScreenUpdates: true)
                 }
                 try image.pngData()?.write(to: URL.documentsDirectory.appendingPathComponent("player-library-defaults.png"))
-                guard let group = libraryTab as? UITabGroup,
-                      let libraryVC = group.managingNavigationController?.topViewController as? LibraryVC else {
-                  smokeLog("Library tab did not present the collection layout"); return
-                }
-                let collection = libraryVC.collectionView!
-                collection.layoutIfNeeded()
-                guard collection.visibleCells.contains(where: { $0.accessibilityIdentifier == "library-pinned-favorites" }),
-                      let category = collection.visibleCells.first(where: {
-                        $0.accessibilityIdentifier == "library-category-\(LibraryDisplayType.playlists.rawValue)"
-                      }), let categoryPath = collection.indexPath(for: category) else {
-                  smokeLog("Library favorites or playlist category is missing"); return
-                }
-                try await compositorScreenshot("player-library-layout.png")
-                let recentPaths = (0..<collection.numberOfSections).flatMap { section in
-                  (0..<collection.numberOfItems(inSection: section)).map { IndexPath(item: $0, section: section) }
-                }.filter { $0.section == collection.numberOfSections-1 }
-                guard recentPaths.count >= 2,
-                      let left = collection.layoutAttributesForItem(at: recentPaths[0]),
-                      let right = collection.layoutAttributesForItem(at: recentPaths[1]),
-                      abs(left.frame.minY-right.frame.minY) < 1,
-                      abs(left.frame.width-right.frame.width) < 1,
-                      abs(left.frame.width - (collection.bounds.width-52)/2) < 1 else {
-                  smokeLog("Recent albums are not a two-column grid"); return
-                }
-                collection.scrollToItem(at: recentPaths[0], at: .top, animated: false)
-                try await compositorScreenshot("player-library-recent.png")
-                collection.setContentOffset(CGPoint(x: 0, y: -collection.adjustedContentInset.top), animated: false)
-                libraryVC.collectionView(collection, didSelectItemAt: categoryPath)
-                try await Task.sleep(for: .seconds(2))
-                guard let list = group.managingNavigationController?.topViewController as? PlaylistsVC else {
-                  smokeLog("Library category did not open playlists"); return
-                }
-                for _ in 0..<50 {
-                  if list.tableView.numberOfSections > 0, list.tableView.numberOfRows(inSection: 0) > 0 { break }
-                  try await Task.sleep(for: .milliseconds(100))
-                }
-                let playlistPath = IndexPath(row: 0, section: 0)
-                guard list.tableView.numberOfSections > 0, list.tableView.numberOfRows(inSection: 0) > 0 else {
-                  smokeLog("Playlist fixture did not sync"); return
-                }
-                list.tableView.layoutIfNeeded()
-                guard abs(list.tableView.rectForRow(at: playlistPath).height-76) < 1 else {
-                  smokeLog("Playlist row height departed from reference"); return
-                }
-                try await compositorScreenshot("player-playlists-layout.png")
-                list.tableView(list.tableView, didSelectRowAt: playlistPath)
-                try await Task.sleep(for: .seconds(2))
-                guard let detail = group.managingNavigationController?.topViewController as? PlaylistDetailVC,
-                      let header = detail.detailOperationsView,
-                      detail.tableView.numberOfRows(inSection: 0) == 16,
-                      abs(header.artwork.bounds.width - min(340, detail.view.bounds.width*0.694)) < 1,
-                      abs(detail.tableView.rectForRow(at: playlistPath).height-56) < 1 else {
-                  smokeLog("Playlist detail artwork or rows departed from reference"); return
-                }
-                try await compositorScreenshot("player-playlist-detail.png")
-                detail.tableView.setContentOffset(CGPoint(x: 0, y: header.frame.height), animated: false)
-                try await compositorScreenshot("player-playlist-scrolled.png")
-                guard detail.navigationItem.title == detail.playlist.name else {
-                  smokeLog("Playlist title did not follow the scrolling header"); return
-                }
-                group.managingNavigationController?.popViewController(animated: true)
-                try await Task.sleep(for: .seconds(1))
-                guard group.managingNavigationController?.topViewController === list,
-                      list.tableView.visibleCells.contains(where: { $0.accessibilityIdentifier == "library-playlist-row" }) else {
-                  smokeLog("Playlist zoom did not restore the source row"); return
-                }
-                group.managingNavigationController?.popToRootViewController(animated: false)
-                smokeLog("Library grid, playlist list, scrolling detail and native zoom passed")
+                guard try await self.verifyLibraryLayout(libraryTab: libraryTab,
+                  compositorScreenshot: compositorScreenshot, smokeLog: smokeLog) else { return }
 
               }
               if let tabHost = vc as? TabBarVC, let dock = tabHost.playerDock {
@@ -2042,6 +1981,81 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
 
 #if DEBUG && targetEnvironment(simulator)
   extension SceneDelegate {
+    @MainActor private func verifyLibraryLayout(libraryTab: UITab,
+      compositorScreenshot: @MainActor (String) async throws -> Void,
+      smokeLog: @MainActor (String) -> Void) async throws -> Bool {
+      guard let group = libraryTab as? UITabGroup,
+            let libraryVC = group.managingNavigationController?.topViewController as? LibraryVC else {
+        smokeLog("Library tab did not present the collection layout"); return false
+      }
+      let collection = libraryVC.collectionView!
+      collection.layoutIfNeeded()
+      guard collection.visibleCells.contains(where: { $0.accessibilityIdentifier == "library-pinned-favorites" }),
+            let category = collection.visibleCells.first(where: {
+              $0.accessibilityIdentifier == "library-category-\(LibraryDisplayType.playlists.rawValue)"
+            }), let categoryPath = collection.indexPath(for: category) else {
+        smokeLog("Library favorites or playlist category is missing"); return false
+      }
+      try await compositorScreenshot("player-library-layout.png")
+      let recentSection = collection.numberOfSections - 1
+      let recentPaths = (0..<collection.numberOfItems(inSection: recentSection)).map {
+        IndexPath(item: $0, section: recentSection)
+      }
+      guard recentPaths.count >= 2,
+            let left = collection.layoutAttributesForItem(at: recentPaths[0]),
+            let right = collection.layoutAttributesForItem(at: recentPaths[1]),
+            abs(left.frame.minY-right.frame.minY) < 1,
+            abs(left.frame.width-right.frame.width) < 1,
+            abs(left.frame.width - (collection.bounds.width-52)/2) < 1 else {
+        smokeLog("Recent albums are not a two-column grid"); return false
+      }
+      collection.scrollToItem(at: recentPaths[0], at: .top, animated: false)
+      try await compositorScreenshot("player-library-recent.png")
+      collection.setContentOffset(CGPoint(x: 0, y: -collection.adjustedContentInset.top), animated: false)
+      libraryVC.collectionView(collection, didSelectItemAt: categoryPath)
+      try await Task.sleep(for: .seconds(2))
+      guard let list = group.managingNavigationController?.topViewController as? PlaylistsVC else {
+        smokeLog("Library category did not open playlists"); return false
+      }
+      for _ in 0..<50 {
+        if list.tableView.numberOfSections > 0, list.tableView.numberOfRows(inSection: 0) > 0 { break }
+        try await Task.sleep(for: .milliseconds(100))
+      }
+      let playlistPath = IndexPath(row: 0, section: 0)
+      guard list.tableView.numberOfSections > 0, list.tableView.numberOfRows(inSection: 0) > 0 else {
+        smokeLog("Playlist fixture did not sync"); return false
+      }
+      list.tableView.layoutIfNeeded()
+      guard abs(list.tableView.rectForRow(at: playlistPath).height-76) < 1 else {
+        smokeLog("Playlist row height departed from reference"); return false
+      }
+      try await compositorScreenshot("player-playlists-layout.png")
+      list.tableView(list.tableView, didSelectRowAt: playlistPath)
+      try await Task.sleep(for: .seconds(2))
+      guard let detail = group.managingNavigationController?.topViewController as? PlaylistDetailVC,
+            let header = detail.detailOperationsView,
+            detail.tableView.numberOfRows(inSection: 0) == 16,
+            abs(header.artwork.bounds.width - min(340, detail.view.bounds.width*0.694)) < 1,
+            abs(detail.tableView.rectForRow(at: playlistPath).height-56) < 1 else {
+        smokeLog("Playlist detail artwork or rows departed from reference"); return false
+      }
+      try await compositorScreenshot("player-playlist-detail.png")
+      detail.tableView.setContentOffset(CGPoint(x: 0, y: header.frame.height), animated: false)
+      try await compositorScreenshot("player-playlist-scrolled.png")
+      guard detail.navigationItem.title == detail.playlist.name else {
+        smokeLog("Playlist title did not follow the scrolling header"); return false
+      }
+      group.managingNavigationController?.popViewController(animated: true)
+      try await Task.sleep(for: .seconds(1))
+      guard group.managingNavigationController?.topViewController === list,
+            list.tableView.visibleCells.contains(where: { $0.accessibilityIdentifier == "library-playlist-row" }) else {
+        smokeLog("Playlist zoom did not restore the source row"); return false
+      }
+      group.managingNavigationController?.popToRootViewController(animated: false)
+      smokeLog("Library grid, playlist list, scrolling detail and native zoom passed")
+      return true
+    }
+
     // Test-only UI staging. Sampling runs outside the app so it does not add
     // an in-app polling timer or prevent a paused app from being suspended.
     @MainActor private func runPlayerResourceProfile(on host: UIViewController) async {

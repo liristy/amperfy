@@ -38,6 +38,9 @@ class LibraryVC: KeyCommandCollectionViewController {
   private var needsRefresh = true
   private var didSync = false
   private var pinKey: String { "libraryPinnedPlaylists." + account.managedObject.objectID.uriRepresentation().absoluteString }
+  private func pinIdentifier(_ playlist: Playlist) -> String {
+    playlist.managedObject.objectID.uriRepresentation().absoluteString
+  }
   private var pinnedIDs: [String] {
     get { UserDefaults.standard.stringArray(forKey: pinKey) ?? [] }
     set { UserDefaults.standard.set(newValue, forKey: pinKey) }
@@ -66,7 +69,7 @@ class LibraryVC: KeyCommandCollectionViewController {
       if case let .category(raw) = item, let category = LibraryDisplayType(rawValue: raw) {
         let cell = view.dequeueReusableCell(withReuseIdentifier: "category", for: path) as! UICollectionViewListCell
         var content = cell.defaultContentConfiguration()
-        content.text = category.displayName
+        content.text = category == .downloads ? "Downloaded".localized : category.displayName
         content.image = category.image.withConfiguration(UIImage.SymbolConfiguration(pointSize: 22, weight: .regular))
         content.imageProperties.tintColor = .label
         content.imageProperties.reservedLayoutSize = CGSize(width: 28, height: 28)
@@ -82,7 +85,7 @@ class LibraryVC: KeyCommandCollectionViewController {
       switch item {
       case .favorites: cell.displayFavorites()
       case let .playlist(id):
-        if let playlist = playlists.first(where: { $0.id == id }) {
+        if let playlist = playlists.first(where: { $0.managedObject.objectID.uriRepresentation().absoluteString == id }) {
           cell.display(playlist, pinned: true)
         }
       case let .album(id):
@@ -161,7 +164,7 @@ class LibraryVC: KeyCommandCollectionViewController {
     }
     var snapshot = NSDiffableDataSourceSnapshot<Section, Item>()
     let pins: [Item] = (selected.contains(.favoriteSongs) ? [.favorites] : []) +
-      pinnedIDs.filter { id in playlists.contains { $0.id == id } }.map(Item.playlist)
+      pinnedIDs.filter { id in playlists.contains { $0.managedObject.objectID.uriRepresentation().absoluteString == id } }.map(Item.playlist)
     if !pins.isEmpty {
       snapshot.appendSections([.pinned])
       snapshot.appendItems(pins, toSection: .pinned)
@@ -182,10 +185,11 @@ class LibraryVC: KeyCommandCollectionViewController {
   private func updateMenu() {
     let pins = pinnedIDs
     let pinActions = playlists.sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }.map { playlist in
-      UIAction(title: playlist.name, image: UIImage(systemName: "pin"), state: pins.contains(playlist.id) ? .on : .off) { [weak self] _ in
+      UIAction(title: playlist.name, image: UIImage(systemName: "pin"), state: pins.contains(pinIdentifier(playlist)) ? .on : .off) { [weak self] _ in
         guard let self else { return }
         var ids = pinnedIDs
-        if ids.contains(playlist.id) { ids.removeAll { $0 == playlist.id } } else { ids.append(playlist.id) }
+        let id = pinIdentifier(playlist)
+        if ids.contains(id) { ids.removeAll { $0 == id } } else { ids.append(id) }
         pinnedIDs = ids
         refreshLibrary()
       }
@@ -249,7 +253,7 @@ class LibraryVC: KeyCommandCollectionViewController {
     switch item {
     case .favorites: destination = AppStoryboard.Main.segueToFavoriteSongs(account: account)
     case let .playlist(id):
-      destination = playlists.first(where: { $0.id == id }).map { AppStoryboard.Main.segueToPlaylistDetail(account: account, playlist: $0) }
+      destination = playlists.first(where: { $0.managedObject.objectID.uriRepresentation().absoluteString == id }).map { AppStoryboard.Main.segueToPlaylistDetail(account: account, playlist: $0) }
     case let .category(raw): destination = LibraryDisplayType(rawValue: raw)?.controller(account: account, settings: appDelegate.storage.settings)
     case let .album(id):
       if let mo = try? appDelegate.storage.main.context.existingObject(with: id) as? AlbumMO {
