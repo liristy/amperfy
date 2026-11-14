@@ -48,6 +48,8 @@ test_arguments=(
 )
 # Run the regression suite for every deliverable. A preceding library-changing
 # push may have been cancelled by workflow concurrency before its tests ran.
+# Report a source location for pathological type inference instead of spending
+# the entire simulator job in one expression. This does not affect the IPA build.
 
 xcodebuild "${test_arguments[@]}" \
   -project Amperfy.xcodeproj \
@@ -57,6 +59,7 @@ xcodebuild "${test_arguments[@]}" \
   -onlyUsePackageVersionsFromResolvedFile \
   -skipPackageUpdates \
   ONLY_ACTIVE_ARCH=YES COMPILER_INDEX_STORE_ENABLE=NO \
+  'OTHER_SWIFT_FLAGS=$(inherited) -Xfrontend -solver-expression-time-threshold=30 -Xfrontend -warn-long-function-bodies=1000 -Xfrontend -warn-long-expression-type-checking=1000' \
   CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO \
   2>&1 | tee build/validation/test.log
 
