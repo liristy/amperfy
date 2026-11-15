@@ -94,12 +94,11 @@ legacy safe-area helper, retaining exactly 56pt + 12pt regardless of dock collap
 
 The complete player regression also exposed a real release stall: the CI recording holds
 the dragged lyrics page at its full size before jumping directly to Home. Interactive
-player dismissals now pause, scrub, and continue their own `UIViewPropertyAnimator` through
-`PlayerSurfaceInteraction`, while reporting progress and finish/cancellation to UIKit's
-transition context. The surface and shared cover continue to read the same timing probe.
-Interaction state remains owned until transition completion, including cancellation.
-The UIKit dismissal callback does not clear that ownership; only the surface animator's
-completion releases it, so a short cancellation cannot discard its animator early.
+player transitions retain their UIKit percent-driven interaction controller until the
+surface animator completes. Both the gesture's end handler and UIKit's dismissal callback
+leave that ownership intact while the animation continues. The surface and shared cover
+continue to read the same timing probe. Only the surface animator completion releases the
+interaction, including cancellation, so an early callback cannot discard a running driver.
 
 The first-collapse probe runs immediately after detail returns, before any test-only Home
 scroll or forced layout can settle pending work. Failures retain geometry and compositor

@@ -438,7 +438,7 @@ class PopupPlayerVC: UIViewController, UIScrollViewDelegate, UIGestureRecognizer
   func beginInteractiveDismissal() {
     guard surfaceTransition.interaction == nil, !isBeingDismissed else { return }
     lyricsControlsTask?.cancel()
-    let interaction = PlayerSurfaceInteraction()
+    let interaction = UIPercentDrivenInteractiveTransition()
     // Let the surface spring and the cover's easing retain their own curves.
     surfaceTransition.interaction = interaction
     // The surface animator owns this interaction until its completion. UIKit's
@@ -457,7 +457,8 @@ class PopupPlayerVC: UIViewController, UIScrollViewDelegate, UIGestureRecognizer
     let shouldFinish = !cancelled && velocity > -100 &&
       (translation > 90 || (translation > 12 && velocity > 650))
     surfaceTransition.finishArtwork(completed: shouldFinish)
-    // Continue the same property animator instead of leaving its timing probe paused.
+    // Keep UIKit's interaction alive while it continues the released gesture.
+    interaction.completionCurve = shouldFinish ? .easeOut : .easeInOut
     if shouldFinish { interaction.finish() } else { interaction.cancel() }
     if !shouldFinish { scheduleLyricsControlsHide() }
   }

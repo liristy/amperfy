@@ -22,85 +22,6 @@
 import AmperfyKit
 import UIKit
 
-// Drive the dismissal property animator directly. Percent-driven Core Animation timing
-// can leave the surface probe paused after a short drag is released, then jump
-// to its endpoint when UIKit completes the transition.
-@MainActor
-final class PlayerSurfaceInteraction: NSObject, UIViewControllerInteractiveTransitioning {
-  private var animationController: PlayerSurfaceAnimator?
-  private var animator: UIViewPropertyAnimator?
-  private var context: UIViewControllerContextTransitioning?
-  private var progress: CGFloat = 0
-  private var endpoint: Bool?
-  var wantsInteractiveStart: Bool { true }
-  var completionSpeed: CGFloat { 1 }
-  var completionCurve: UIView.AnimationCurve { endpoint == false ? .easeInOut : .easeOut }
-
-  func prepare(using controller: UIViewControllerAnimatedTransitioning) {
-    animationController = controller as? PlayerSurfaceAnimator
-  }
-
-  func startInteractiveTransition(_ transitionContext: UIViewControllerContextTransitioning) {
-    guard let animationController,
-          let animator = animationController.interruptibleAnimator(using: transitionContext) as? UIViewPropertyAnimator else {
-      transitionContext.completeTransition(false)
-      return
-    }
-    context = transitionContext
-    self.animator = animator
-    #if DEBUG && targetEnvironment(simulator)
-      trace("start duration=\(animator.duration), progress=\(progress), interactive=\(transitionContext.isInteractive)")
-    #endif
-    animator.addCompletion { [weak self] position in
-      #if DEBUG && targetEnvironment(simulator)
-        self?.trace("completion position=\(position)")
-      #endif
-      self?.context = nil
-      self?.animator = nil
-      self?.animationController = nil
-    }
-    animator.startAnimation()
-    animator.pauseAnimation()
-    animator.fractionComplete = progress
-    transitionContext.updateInteractiveTransition(progress)
-    if let endpoint { settle(completed: endpoint) }
-  }
-
-  func update(_ value: CGFloat) {
-    guard endpoint == nil else { return }
-    progress = min(1, max(0, value))
-    animator?.fractionComplete = progress
-    context?.updateInteractiveTransition(progress)
-  }
-
-  func finish() { end(completed: true) }
-  func cancel() { end(completed: false) }
-
-  private func end(completed: Bool) {
-    guard endpoint == nil else { return }
-    endpoint = completed
-    if animator != nil { settle(completed: completed) }
-  }
-
-  private func settle(completed: Bool) {
-    guard let animator, let context else { return }
-    #if DEBUG && targetEnvironment(simulator)
-      trace("release finish=\(completed), progress=\(progress), duration=\(animator.duration), state=\(animator.state), running=\(animator.isRunning)")
-    #endif
-    if completed { context.finishInteractiveTransition() } else { context.cancelInteractiveTransition() }
-    animator.isReversed = !completed
-    animator.continueAnimation(withTimingParameters: UICubicTimingParameters(animationCurve: completionCurve),
-      durationFactor: 1)
-  }
-
-  #if DEBUG && targetEnvironment(simulator)
-    private func trace(_ message: String) {
-      guard ProcessInfo.processInfo.arguments.contains("--smoke-player") else { return }
-      FileHandle.standardOutput.write(Data(("Player interaction: " + message + "\n").utf8))
-    }
-  #endif
-}
-
 // The complete player expands from, and contracts into, the mini-player capsule.
 // Keep the live content laid out at full size while its surface morphs in both axes.
 // Never swap a rendered screenshot for the real player at the end of the animation.
@@ -108,7 +29,7 @@ final class PlayerSurfaceInteraction: NSObject, UIViewControllerInteractiveTrans
 final class PlayerSurfaceTransitionDelegate: NSObject, UIViewControllerTransitioningDelegate {
   weak var sourcePlayer: UIView?
   weak var sourceArtwork: UIImageView?
-  var interaction: PlayerSurfaceInteraction?
+  var interaction: UIPercentDrivenInteractiveTransition?
   var presentationInteraction: UIPercentDrivenInteractiveTransition?
   var artworkMotion: PlayerArtworkMotion?
   var artworkProgress: CGFloat = 0
@@ -141,7 +62,6 @@ final class PlayerSurfaceTransitionDelegate: NSObject, UIViewControllerTransitio
 
   func interactionControllerForDismissal(using animator: UIViewControllerAnimatedTransitioning)
     -> UIViewControllerInteractiveTransitioning? {
-    interaction?.prepare(using: animator)
     return interaction
   }
 }
