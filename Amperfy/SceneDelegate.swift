@@ -587,9 +587,10 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
             if let scroll = dockScrollView(in: tabHost.selectedViewController?.view ?? tabHost.view) {
               guard try await verifyDockScrollStability(tabHost: tabHost, scroll: scroll) else { return }
             }
-            if let pinned = library.getPlaylist(for: account, id: "playlist-1") {
+            if let pinned = self.appDelegate.storage.main.library.getPlaylist(for: account, id: "playlist-1") {
               UserDefaults.standard.set([pinned.managedObject.objectID.uriRepresentation().absoluteString],
                 forKey: "libraryPinnedPlaylists." + account.managedObject.objectID.uriRepresentation().absoluteString)
+              NotificationCenter.default.post(name: .LibraryItemsChanged, object: nil)
             }
             tabHost.selectedTab = library
             try await Task.sleep(for: .milliseconds(900))
