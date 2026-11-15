@@ -194,8 +194,9 @@ final class MusicNavigationController: UINavigationController, UINavigationContr
     if (artworkPage || controller is HomeVC || controller is LibraryVC), !navigationBar.prefersLargeTitles {
       navigationBar.prefersLargeTitles = true
     }
-    if let host = tabBarController as? TabBarVC, host.selectedViewController === self {
-      host.applyNavigationChrome(style: style)
+    if let host = tabBarController as? TabBarVC {
+      host.reserveDockSpace(for: controller)
+      if host.activeNavigationController === self { host.applyNavigationChrome(style: style) }
     }
   }
 
@@ -205,6 +206,7 @@ final class MusicNavigationController: UINavigationController, UINavigationContr
 
   func navigationController(_ navigationController: UINavigationController,
                             willShow controller: UIViewController, animated: Bool) {
+    (tabBarController as? TabBarVC)?.reserveDockSpace(for: controller)
     guard animated, let coordinator = transitionCoordinator else {
       applyAppearance(for: controller)
       return

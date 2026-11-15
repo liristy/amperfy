@@ -535,19 +535,20 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
             try dockScreenshot("player-mini-spacing.png")
             guard let home = tabHost.tabs.first(where: { $0.identifier == "Tabs.Home" }),
                   let library = tabHost.tabs.first(where: { $0.identifier == "Tabs.Library" }) else { return }
+            let returnsPassed = try await verifyHomeReturnChrome(tabHost: tabHost, homeTab: home,
+              compositorScreenshot: compositorScreenshot)
             tabHost.selectedTab = library
             tabHost.view.layoutIfNeeded()
             try await Task.sleep(for: .milliseconds(900))
             guard tabHost.selectedTab === library, tabHost.tabBar.alpha == 1,
                   !dock.point(inside: CGPoint(x: dock.bounds.midX, y: dock.bounds.maxY - 20), with: nil) else { return }
             try dockScreenshot("player-native-library.png")
-            guard try await verifyArtworkDetails(libraryTab: library, compositorScreenshot: compositorScreenshot) else { return }
+            let artworkPassed = try await verifyArtworkDetails(libraryTab: library, compositorScreenshot: compositorScreenshot)
+            guard returnsPassed && artworkPassed else { return }
             tabHost.selectedTab = home
             tabHost.view.layoutIfNeeded()
             try await Task.sleep(for: .milliseconds(900))
             guard tabHost.selectedTab === home, tabHost.tabBar.alpha == 1 else { return }
-            guard try await verifyHomeReturnChrome(tabHost: tabHost, homeTab: home,
-              compositorScreenshot: compositorScreenshot) else { return }
             smokeLog("Home and Library selection uses the visible native tab bar without a custom glass overlay")
             tabHost.updatePlayerDockForScroll(delta: -40, atTop: false)
             try await Task.sleep(for: .milliseconds(650))
@@ -2285,6 +2286,7 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
       func log(_ message: String) { FileHandle.standardOutput.write(Data((message + "\n").utf8)) }
       guard let group = libraryTab as? UITabGroup, let nav = group.managingNavigationController,
             let info = appDelegate.storage.settings.accounts.active else { return false }
+      var stable = true
       let library = appDelegate.storage.main.library
       let account = library.getAccount(info: info)
       guard let song = library.getSong(for: account, id: "song-1"), let album = song.album,
@@ -2330,7 +2332,7 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
       }
       try await compositorScreenshot("player-album-detail.png")
       if let host = albumVC.tabBarController as? TabBarVC {
-        guard try await verifyDockScrollStability(tabHost: host, scroll: albumVC.tableView) else { return false }
+        if !(try await verifyDockScrollStability(tabHost: host, scroll: albumVC.tableView)) { stable = false }
       }
       nav.popViewController(animated: false)
       let artistVC = ArtistDetailVC(account: account, artist: artist)
@@ -2355,11 +2357,11 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
       artistVC.tableView.setContentOffset(CGPoint(x: 0, y: artistVC.artworkHeader.frame.height - 30), animated: false)
       try await compositorScreenshot("player-artist-albums.png")
       if let host = artistVC.tabBarController as? TabBarVC {
-        guard try await verifyDockScrollStability(tabHost: host, scroll: artistVC.tableView) else { return false }
+        if !(try await verifyDockScrollStability(tabHost: host, scroll: artistVC.tableView)) { stable = false }
       }
       nav.popViewController(animated: false)
       log("Album artwork, artist listening-count ranking/albums and icon-only song swipes passed")
-      return true
+      return stable
     }
 
     @MainActor private func verifyHomeReturnChrome(tabHost: TabBarVC, homeTab: UITab,
@@ -2368,6 +2370,7 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
       guard let nav = homeTab.viewController as? MusicNavigationController,
             let home = nav.topViewController as? HomeVC,
             let info = appDelegate.storage.settings.accounts.active else { return false }
+      defer { nav.popToViewController(home, animated: false) }
       let library = appDelegate.storage.main.library
       let account = library.getAccount(info: info)
       guard let song = library.getSong(for: account, id: "song-1"), let album = song.album,

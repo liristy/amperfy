@@ -61,7 +61,7 @@ jobs:
           BASE_SHA: ${{ github.event.before }}
         run: bash BuildTools/test-iphone-changes.sh
       - name: Record source timestamps
-        if: always()
+        if: always() && !cancelled()
         run: python3 BuildTools/build-cache-mtimes.py save build/validation/DerivedData/source-mtimes.json
       - name: Prepare current README screenshots
         run: |
@@ -80,21 +80,6 @@ jobs:
           name: qMusic-readme-screenshots-${{ github.run_number }}
           path: build/readme-screenshots/
           if-no-files-found: error
-          retention-days: 7
-      - name: Profile player resources on simulator (not battery power)
-        if: ${{ !cancelled() }}
-        run: |
-          if [[ "${{ inputs.profile_player_resources || contains(github.event.pull_request.body, '<!-- profile-player-resources -->') }}" == "true" ]]; then
-            python3 BuildTools/profile-player-resources.py
-          else
-            python3 BuildTools/profile-player-resources.py --background-only
-          fi
-      - name: Upload simulator resource measurements
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: Amperfy-resource-profile-${{ github.run_number }}
-          path: build/resource-profile/
           retention-days: 7
       - name: Upload compact player review artifacts
         if: always()
@@ -115,6 +100,21 @@ jobs:
             build/validation/player-library-*.png
             build/validation/player-playlist*.png
             build/validation/player-mini-*.png
+          retention-days: 7
+      - name: Profile player resources on simulator (not battery power)
+        if: ${{ !cancelled() }}
+        run: |
+          if [[ "${{ inputs.profile_player_resources || contains(github.event.pull_request.body, '<!-- profile-player-resources -->') }}" == "true" ]]; then
+            python3 BuildTools/profile-player-resources.py
+          else
+            python3 BuildTools/profile-player-resources.py --background-only
+          fi
+      - name: Upload simulator resource measurements
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: Amperfy-resource-profile-${{ github.run_number }}
+          path: build/resource-profile/
           retention-days: 7
       - name: Save simulator build cache even after a UI failure
         if: always() && !cancelled() && steps.simulator-cache.outputs.cache-hit != 'true'

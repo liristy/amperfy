@@ -43,8 +43,7 @@ class TabBarVC: UITabBarController {
   private var welcomePopupPresenter = WelcomePopupPresenter()
   var miniPlayer: MiniPlayerView?
   private(set) var playerDock: FloatingPlayerDock?
-  private weak var dockInsetController: UIViewController?
-  private var originalDockInset: CGFloat = 0
+  private let originalDockInsets = NSMapTable<UIViewController, NSNumber>.weakToStrongObjects()
   private weak var dockScrollView: UIScrollView?
   private var dockScrollDistance: CGFloat = 0
   private var lastDockPanTranslation: CGFloat = 0
@@ -274,7 +273,7 @@ class TabBarVC: UITabBarController {
     if dock.frame != dockFrame { dock.frame = dockFrame }
     view.bringSubviewToFront(dock)
     updateDockSelection()
-    let top = (selectedViewController as? UINavigationController)?.topViewController
+    let top = activeNavigationController?.topViewController
     dock.isHidden = dockKeyboardVisible || top?.hidesBottomBarWhenPushed == true
     updateDockContentInset(visible: !dock.isHidden)
   }
@@ -315,7 +314,7 @@ class TabBarVC: UITabBarController {
 
   private func updateNativeDockNavigation(animated: Bool) {
     guard let dock = playerDock else { return }
-    let top = (selectedViewController as? UINavigationController)?.topViewController
+    let top = activeNavigationController?.topViewController
     // The native search field moves into the tab bar above the keyboard.
     // Hiding that bar would detach its first responder and dismiss the keyboard.
     let hiddenForNavigation = top?.hidesBottomBarWhenPushed == true
@@ -348,7 +347,7 @@ class TabBarVC: UITabBarController {
     dock.updateSelection(selection, tint: theme)
     if identifier != dockSelectionIdentifier {
       dockSelectionIdentifier = identifier
-      (selectedViewController as? MusicNavigationController)?.synchronizeAppearance()
+      (activeNavigationController as? MusicNavigationController)?.synchronizeAppearance()
       dockScrollDistance = 0
       dock.setCollapsed(false, animated: false)
       if selection == 3 {
@@ -359,18 +358,32 @@ class TabBarVC: UITabBarController {
     }
   }
 
-  private func updateDockContentInset(visible: Bool) {
-    if dockInsetController !== selectedViewController {
-      if let previous = dockInsetController { previous.additionalSafeAreaInsets.bottom = originalDockInset }
-      dockInsetController = selectedViewController
-      originalDockInset = selectedViewController?.additionalSafeAreaInsets.bottom ?? 0
+  var activeNavigationController: UINavigationController? {
+    if selectedTab?.identifier.hasPrefix("Tabs.Library") == true {
+      return libraryGroup?.managingNavigationController
     }
-    guard let controller = dockInsetController else { return }
-    // Keep the scroll viewport stable during sinking; the final row remains reachable.
-    let dockOverlap = playerDock.map { max(0, view.bounds.maxY - $0.frame.minY - view.safeAreaInsets.bottom) } ?? 0
-    let nativeOverlap = isTabBarHidden ? 0 : max(0, view.bounds.maxY - (dockNavigationTop ?? tabBar.frame.minY) - view.safeAreaInsets.bottom)
-    let inset = originalDockInset + (visible ? max(0, dockOverlap - nativeOverlap) : 0)
+    return (selectedViewController as? UINavigationController) ?? selectedViewController?.navigationController
+  }
+
+  func reserveDockSpace(for controller: UIViewController, visible: Bool? = nil) {
+    let original: CGFloat
+    if let stored = originalDockInsets.object(forKey: controller) {
+      original = CGFloat(stored.doubleValue)
+    } else {
+      original = controller.additionalSafeAreaInsets.bottom
+      originalDockInsets.setObject(NSNumber(value: Double(original)), forKey: controller)
+    }
+    let showsDock = visible ?? (playerDock != nil && !dockKeyboardVisible && !controller.hidesBottomBarWhenPushed)
+    // The native bar already reserves its own height. Reserve exactly one
+    // player + gap on the leaf page before it appears, not on its navigation
+    // container (UIKit can propagate that container inset only on a later layout).
+    let inset = original + (showsDock ? FloatingPlayerDock.playerHeight + FloatingPlayerDock.gap : 0)
     if controller.additionalSafeAreaInsets.bottom != inset { controller.additionalSafeAreaInsets.bottom = inset }
+  }
+
+  private func updateDockContentInset(visible: Bool) {
+    guard let controller = activeNavigationController?.topViewController ?? selectedViewController else { return }
+    reserveDockSpace(for: controller, visible: visible)
   }
 
   func updatePlayerDockForScroll(delta: CGFloat, atTop: Bool) {

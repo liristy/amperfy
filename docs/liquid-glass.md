@@ -84,3 +84,10 @@ inner image frame, not just its outer container. A re-decode of an unchanged art
 the currently displayed image until its replacement is ready instead of flashing a placeholder.
 New probes sample Home returns from albums, playlists and artists throughout push/pop, checking
 button tints, synchronized bottom contrast and dock geometry.
+
+
+The scroll diagnostic identified a concrete delayed inset: the album's bottom inset changed
+from 83pt to 151pt while its dock, native bar, scroll offset and viewport frames stayed fixed.
+The additional 68pt must belong to the leaf page before appearance, not its navigation
+container. `reserveDockSpace` shares one per-page original inset across navigation and the
+legacy safe-area helper, retaining exactly 56pt + 12pt regardless of dock collapse state.

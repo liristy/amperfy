@@ -466,6 +466,10 @@ extension UIViewController {
 
   func extendSafeAreaToAccountForMiniPlayer() {
     guard let hostVC = AppDelegate.mainWindowHostVC else { return }
+    if let tabHost = hostVC as? TabBarVC, tabHost.playerDock != nil {
+      tabHost.reserveDockSpace(for: self)
+      return
+    }
     additionalSafeAreaInsets = UIEdgeInsets(
       top: 0,
       left: 0,
