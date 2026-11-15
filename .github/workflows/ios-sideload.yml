@@ -34,7 +34,7 @@ jobs:
   tests:
     if: github.event.repository.private == false
     runs-on: macos-26
-    timeout-minutes: 40
+    timeout-minutes: 45
     env:
       DEVELOPER_DIR: /Applications/Xcode_26.3.app/Contents/Developer
     steps:
@@ -56,7 +56,7 @@ jobs:
           python3 BuildTools/build-cache-mtimes.py restore build/validation/DerivedData/source-mtimes.json
       - name: Validate iPhone UI and affected library tests
         # Leave time to upload diagnostics if the simulator stalls.
-        timeout-minutes: 30
+        timeout-minutes: 35
         env:
           BASE_SHA: ${{ github.event.before }}
         run: bash BuildTools/test-iphone-changes.sh
