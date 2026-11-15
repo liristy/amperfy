@@ -581,7 +581,9 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
               smokeLog("Quick dock reversal or top-of-list expansion changed the player geometry")
               return
             }
-            smokeLog("Custom dock: 56pt player, 12pt external gap, 48pt sinking, reversal and gap hit testing passed")
+            if compactPassed {
+              smokeLog("Custom dock: 56pt player, 12pt external gap, 48pt sinking, reversal and gap hit testing passed")
+            }
             if let scroll = dockScrollView(in: tabHost.selectedViewController?.view ?? tabHost.view) {
               guard try await verifyDockScrollStability(tabHost: tabHost, scroll: scroll) else { return }
             }

@@ -51,6 +51,11 @@ class TabBarVC: UITabBarController {
   private var dockSelectionIdentifier: String?
   private var dockNavigationTop: CGFloat?
   private var dockLayoutSize: CGSize = .zero
+  override var selectedTab: UITab? {
+    didSet {
+      if isViewLoaded { updateDockSelection() }
+    }
+  }
   private lazy var dockScrollPan: UIPanGestureRecognizer = {
     let pan = UIPanGestureRecognizer(target: self, action: #selector(handleDockScroll(_:)))
     pan.cancelsTouchesInView = false
@@ -387,6 +392,10 @@ class TabBarVC: UITabBarController {
   }
 
   func updatePlayerDockForScroll(delta: CGFloat, atTop: Bool) {
+    // Resolve a pending tab change before the gesture changes collapse state.
+    // Otherwise the layout requested by collapse can process that selection
+    // later and immediately expand the dock again.
+    updateDockSelection()
     guard let dock = playerDock, !dock.isHidden else { return }
     if atTop {
       dockScrollDistance = 0
@@ -467,6 +476,11 @@ class TabBarVC: UITabBarController {
 // MARK: UITabBarControllerDelegate
 
 extension TabBarVC: UITabBarControllerDelegate {
+  func tabBarController(_ tabBarController: UITabBarController,
+                        didSelectTab selectedTab: UITab, previousTab: UITab?) {
+    updateDockSelection()
+  }
+
   func tabBarControllerDidEndEditing(_ tabBarController: UITabBarController) {
     var visibleItems = [LibraryDisplayType]()
     guard let libraryGroup else { return }

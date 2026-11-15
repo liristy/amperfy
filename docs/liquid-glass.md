@@ -103,3 +103,10 @@ The first-collapse probe runs immediately after detail returns, before any test-
 scroll or forced layout can settle pending work. Failures retain geometry and compositor
 captures and mark the whole suite failed while allowing independent page checks to run.
 Library/playlist layout and scroll probes also run before full-player dismissal checks.
+
+The first-collapse failure capture shows the dock expanded again, rather than sitting
+at a wrong compact coordinate. Tab selection had been synchronized only during layout;
+the first collapse could request the layout that finally processed a previous selection
+change, whose reset then expanded the dock. Selection now synchronizes at the tab setter
+and native selection callback, and is resolved before processing a scroll delta. Layout
+remains an idempotent fallback, not the first owner of the tab-change reset.
