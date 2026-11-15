@@ -546,6 +546,8 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
             tabHost.view.layoutIfNeeded()
             try await Task.sleep(for: .milliseconds(900))
             guard tabHost.selectedTab === home, tabHost.tabBar.alpha == 1 else { return }
+            guard try await verifyHomeReturnChrome(tabHost: tabHost, homeTab: home,
+              compositorScreenshot: compositorScreenshot) else { return }
             smokeLog("Home and Library selection uses the visible native tab bar without a custom glass overlay")
             tabHost.updatePlayerDockForScroll(delta: -40, atTop: false)
             try await Task.sleep(for: .milliseconds(650))
@@ -2338,8 +2340,15 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
             artistVC.tableView.numberOfRows(inSection: 0) == min(5, artistVC.rankedSongs.count),
             artistVC.rankedSongs.map(\.playCount) == artistVC.rankedSongs.map(\.playCount).sorted(by: >),
             abs(artistVC.artworkHeader.artwork.bounds.width - artistVC.view.bounds.width) < 1,
-            artistVC.artworkHeader.artistNameFrame.minY >= artistVC.artworkHeader.artwork.frame.maxY + 16 else {
+            artistVC.artworkHeader.artistNameFrame.minY >= artistVC.artworkHeader.artwork.frame.maxY + 8,
+            artistVC.artworkHeader.artistNameFrame.minY <= artistVC.artworkHeader.artwork.frame.maxY + 16 else {
         log("Artist hero, listening-count ranking or two-section structure failed"); return false
+      }
+      let visiblePhoto = artistVC.artworkHeader.artwork.convert(
+        artistVC.artworkHeader.artwork.singleArtworkFrame, to: artistVC.artworkHeader)
+      let photoGap = artistVC.artworkHeader.artistNameFrame.minY - visiblePhoto.maxY
+      guard photoGap >= 8, photoGap <= 16 else {
+        log("Artist photo contains hidden safe-area padding before its name"); return false
       }
       try await compositorScreenshot("player-artist-detail.png")
       artistVC.tableView.setContentOffset(CGPoint(x: 0, y: artistVC.artworkHeader.frame.height - 30), animated: false)
@@ -2349,6 +2358,48 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
       }
       nav.popViewController(animated: false)
       log("Album artwork, artist listening-count ranking/albums and icon-only song swipes passed")
+      return true
+    }
+
+    @MainActor private func verifyHomeReturnChrome(tabHost: TabBarVC, homeTab: UITab,
+      compositorScreenshot: @MainActor (String) async throws -> Void) async throws -> Bool {
+      func log(_ text: String) { FileHandle.standardOutput.write(Data((text + "\n").utf8)) }
+      guard let nav = homeTab.viewController as? MusicNavigationController,
+            let home = nav.topViewController as? HomeVC,
+            let info = appDelegate.storage.settings.accounts.active else { return false }
+      let library = appDelegate.storage.main.library
+      let account = library.getAccount(info: info)
+      guard let song = library.getSong(for: account, id: "song-1"), let album = song.album,
+            let artist = song.artist, let playlist = library.getPlaylists(for: account).first else { return false }
+      let left = (home.navigationItem.leftBarButtonItem?.customView as? UIButton)?.tintColor
+      let right = home.navigationItem.rightBarButtonItem?.tintColor
+      let dockFrame = tabHost.playerDock?.frame
+      let controllers: [UIViewController] = [AlbumDetailVC(account: account, album: album),
+        PlaylistDetailVC(account: account, playlist: playlist), ArtistDetailVC(account: account, artist: artist)]
+      for controller in controllers {
+        nav.pushViewController(controller, animated: true)
+        for _ in 0..<45 {
+          try await Task.sleep(for: .milliseconds(16))
+          guard tabHost.playerDock?.frame == dockFrame,
+                tabHost.tabBar.overrideUserInterfaceStyle == .dark else {
+            log("Detail push moved dock geometry or delayed bottom-bar contrast"); return false
+          }
+        }
+        nav.popViewController(animated: true)
+        for _ in 0..<60 {
+          try await Task.sleep(for: .milliseconds(16))
+          guard nav.navigationBar.overrideUserInterfaceStyle == .unspecified,
+                tabHost.tabBar.overrideUserInterfaceStyle == .unspecified,
+                tabHost.playerDock?.frame == dockFrame,
+                (home.navigationItem.leftBarButtonItem?.customView as? UIButton)?.tintColor == left,
+                home.navigationItem.rightBarButtonItem?.tintColor == right else {
+            log("Home return changed button colors after navigation or moved dock"); return false
+          }
+        }
+        guard nav.topViewController === home else { return false }
+      }
+      try await compositorScreenshot("player-home-return.png")
+      log("Home album/playlist/artist returns retained button colors, dock frame and synchronized bar contrast")
       return true
     }
 

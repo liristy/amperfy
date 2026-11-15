@@ -148,7 +148,7 @@ class SplitVC: UISplitViewController {
   }
 
   func embeddInNavigation(vc: UIViewController) -> UINavigationController {
-    UINavigationController(rootViewController: vc)
+    MusicNavigationController(rootViewController: vc)
   }
 
   var defaultSecondaryVC: UINavigationController {

@@ -296,8 +296,12 @@ public class LibraryEntityImage: RoundedImage {
     if requestedImagePath == imagePathToDisplay, imageLoadTask != nil { return }
     imageLoadTask?.cancel()
     imageLoadTask = nil
+    let keepDisplayedArtwork = imagePathToDisplay != nil &&
+      requestedImagePath == imagePathToDisplay && image != nil
     requestedImagePath = imagePathToDisplay
-    image = placeholderImage
+    // A cache eviction or refreshed file must not flash a placeholder between
+    // two decodes of the same cover. Reused cells with a new path still reset.
+    if !keepDisplayedArtwork { image = placeholderImage }
     guard let imagePathToDisplay else { return }
     imageLoadTask = Task { @MainActor [weak self] in
       let prepared = await Self.loadPreparedImage(at: imagePathToDisplay)

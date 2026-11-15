@@ -78,7 +78,9 @@ open class EntityImageView: UIView {
 
     layer.masksToBounds = true
     self.view.backgroundColor = .clear
-    self.view.layoutMargins = UIEdgeInsets(top: 0, left: 0, bottom: 0, right: 0)
+    self.view.insetsLayoutMarginsFromSafeArea = false
+    self.view.preservesSuperviewLayoutMargins = false
+    self.view.layoutMargins = .zero
     quadImages[0].layer.maskedCorners = [
       .layerMinXMinYCorner,
       .layerMaxXMinYCorner,
@@ -89,6 +91,10 @@ open class EntityImageView: UIView {
     quadImages[1].layer.maskedCorners = [.layerMaxXMinYCorner]
     quadImages[2].layer.maskedCorners = [.layerMinXMaxYCorner]
     quadImages[3].layer.maskedCorners = [.layerMaxXMaxYCorner]
+  }
+
+  public var singleArtworkFrame: CGRect {
+    singleImage.convert(singleImage.bounds, to: self)
   }
 
   public func display(

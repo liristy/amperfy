@@ -63,3 +63,24 @@ image. Library category icons use the account theme. New accounts default to red
 migration changes the previous orange default to red without changing other account colors.
 Regression probes include wrapped playlist swipes, the first displayed album background,
 theme-tinted category icons and non-overlapping artist image/name frames.
+
+
+### Return-transition chrome and artwork bounds
+
+`MusicNavigationController` owns main-stack navigation appearance. It changes the navigation
+bar and bottom dock with the same transition coordinator and restores the original appearance
+when an interactive return is cancelled. Artwork controllers no longer mutate and later
+restore shared navigation properties after a return. The Home avatar has an explicit account
+tint, and Home snapshots/network refreshes are deferred until the page is visible; automatic
+remote refresh is limited to once per minute on return.
+
+The dock anchor and bottom inset use the settled tab-bar position, avoiding transient frame
+readbacks during a push/pop. Bottom chrome has an explicit light/dark interface style for the
+active page rather than changing contrast after content settles.
+
+Artwork's internal nib margins ignore safe-area insets: the enclosing page handles those.
+The artist's square photo and name have a 12pt visible gap. The regression probe measures the
+inner image frame, not just its outer container. A re-decode of an unchanged artwork path keeps
+the currently displayed image until its replacement is ready instead of flashing a placeholder.
+New probes sample Home returns from albums, playlists and artists throughout push/pop, checking
+button tints, synchronized bottom contrast and dock geometry.

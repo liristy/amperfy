@@ -45,8 +45,6 @@ class AlbumDetailVC: SingleSnapshotFetchedResultsTableViewController<SongMO> {
   private var optionsButton: UIBarButtonItem!
   private(set) var detailOperationsView: MusicArtworkHeader?
   private let albumFooter = UILabel()
-  private var previousNavStyle: UIUserInterfaceStyle?
-  private var previousNavTint: UIColor?
   let album: Album
 
   init(account: Account, album: Album) {
@@ -153,32 +151,6 @@ class AlbumDetailVC: SingleSnapshotFetchedResultsTableViewController<SongMO> {
       let playContext = self.convertIndexPathToPlayContext(songIndexPath: indexPath)
       completionHandler(SwipeActionContext(containable: song, playContext: playContext))
     }
-  }
-
-  override func viewWillAppear(_ animated: Bool) {
-    super.viewWillAppear(animated)
-    navigationController?.navigationBar.prefersLargeTitles = false
-    if previousNavStyle == nil {
-      previousNavStyle = navigationController?.navigationBar.overrideUserInterfaceStyle
-      previousNavTint = navigationController?.navigationBar.tintColor
-    }
-    navigationController?.navigationBar.overrideUserInterfaceStyle = .dark
-    navigationController?.navigationBar.tintColor = .white
-  }
-
-  override func viewWillDisappear(_ animated: Bool) {
-    super.viewWillDisappear(animated)
-    guard isMovingFromParent || isBeingDismissed || navigationController?.isBeingDismissed == true else { return }
-    let bar = navigationController?.navigationBar
-    let restore = { [previousNavStyle, previousNavTint] in
-      bar?.overrideUserInterfaceStyle = previousNavStyle ?? .unspecified
-      bar?.tintColor = previousNavTint
-    }
-    if let coordinator = transitionCoordinator {
-      coordinator.animate(alongsideTransition: nil) { context in
-        if !context.isCancelled { restore() }
-      }
-    } else { restore() }
   }
 
   override func viewDidLayoutSubviews() {
@@ -356,7 +328,7 @@ final class MusicArtworkHeader: UIView {
   func preferredHeight(width: CGFloat) -> CGFloat {
     if artistHero {
       let nameHeight = max(40, titleLabel.sizeThatFits(CGSize(width: max(1, width - 40), height: 100)).height)
-      return min(500, width * 1.15) + 18 + nameHeight + 18 + 56 + 22
+      return min(500, width) + 12 + nameHeight + 16 + 56 + 22
     }
     let side = min(340, width * 0.694)
     let titleHeight = max(28, titleLabel.sizeThatFits(CGSize(width: max(1, width - 40), height: 80)).height)
@@ -408,11 +380,11 @@ final class MusicArtworkHeader: UIView {
     super.layoutSubviews()
     let width = bounds.width
     if artistHero {
-      artwork.frame = CGRect(x: 0, y: 0, width: width, height: min(500, width * 1.15))
+      artwork.frame = CGRect(x: 0, y: 0, width: width, height: min(500, width))
       artwork.layer.cornerRadius = 0
       let nameHeight = max(40, titleLabel.sizeThatFits(CGSize(width: max(1, width - 40), height: 100)).height)
-      titleLabel.frame = CGRect(x: 20, y: artwork.frame.maxY + 18, width: width - 40, height: nameHeight)
-      playButton.frame = CGRect(x: (width - 56) / 2, y: titleLabel.frame.maxY + 18, width: 56, height: 56)
+      titleLabel.frame = CGRect(x: 20, y: artwork.frame.maxY + 12, width: width - 40, height: nameHeight)
+      playButton.frame = CGRect(x: (width - 56) / 2, y: titleLabel.frame.maxY + 16, width: 56, height: 56)
       shuffleButton.frame = CGRect(x: playButton.frame.minX - 68, y: playButton.frame.minY + 6, width: 44, height: 44)
       secondaryButton.frame = CGRect(x: playButton.frame.maxX + 24, y: shuffleButton.frame.minY, width: 44, height: 44)
     } else {

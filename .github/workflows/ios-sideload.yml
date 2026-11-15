@@ -109,6 +109,7 @@ jobs:
             build/validation/player-queue-glass-*.png
             build/validation/player-queue-history.png
             build/validation/player-statistics-detail.png
+            build/validation/player-home-return.png
             build/validation/player-album-*.png
             build/validation/player-artist-*.png
             build/validation/player-library-*.png

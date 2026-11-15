@@ -51,6 +51,7 @@ class TabBarVC: UITabBarController {
   private var dockKeyboardVisible = false
   private var dockSelectionIdentifier: String?
   private var dockNavigationTop: CGFloat?
+  private var dockLayoutSize: CGSize = .zero
   private lazy var dockScrollPan: UIPanGestureRecognizer = {
     let pan = UIPanGestureRecognizer(target: self, action: #selector(handleDockScroll(_:)))
     pan.cancelsTouchesInView = false
@@ -66,7 +67,7 @@ class TabBarVC: UITabBarController {
       image: TabNavigatorItem.search.icon, identifier: "Tabs.Search") { _ in
       let search = AppStoryboard.Main.segueToSearch(account: self.account)
       self.searchViewController = search
-      return UINavigationController(rootViewController: search)
+      return MusicNavigationController(rootViewController: search)
     }
 
     homeTab = UITab(
@@ -74,7 +75,7 @@ class TabBarVC: UITabBarController {
       image: TabNavigatorItem.home.icon,
       identifier: "Tabs.Home"
     ) { _ in
-      UINavigationController(
+      MusicNavigationController(
         rootViewController: TabNavigatorItem.home
           .getController(account: self.account)
       )
@@ -123,12 +124,12 @@ class TabBarVC: UITabBarController {
     ) { tab in
       AppStoryboard.Main.segueToLibrary(account: self.account)
     }
-    libraryGroup!.managingNavigationController = UINavigationController()
+    libraryGroup!.managingNavigationController = MusicNavigationController()
     libraryGroup!.allowsReordering = true
     fixTabs.append(libraryGroup!)
     fixTabs.append(UITab(title: "Listening Statistics".localized,
       image: UIImage(systemName: "chart.bar.xaxis"), identifier: "Tabs.Listening") { _ in
-      UINavigationController(rootViewController: ListeningStatisticsVC(account: self.account))
+      MusicNavigationController(rootViewController: ListeningStatisticsVC(account: self.account))
     })
     fixTabs.append(searchTab!)
 
@@ -259,7 +260,9 @@ class TabBarVC: UITabBarController {
     if tabBar.itemPositioning != .fill { tabBar.itemPositioning = .fill }
     if tabBar.itemWidth != 0 { tabBar.itemWidth = 0 }
     if tabBar.itemSpacing != 0 { tabBar.itemSpacing = 0 }
-    if !isTabBarHidden, tabBar.bounds.height > 0 {
+    if !isTabBarHidden, tabBar.bounds.height > 0,
+       dockNavigationTop == nil || dockLayoutSize != view.bounds.size {
+      dockLayoutSize = view.bounds.size
       dockNavigationTop = tabBar.convert(tabBar.bounds, to: view).minY
     }
     let navigationTop = dockNavigationTop ??
@@ -330,6 +333,11 @@ class TabBarVC: UITabBarController {
     tabBar.accessibilityElementsHidden = !visible
   }
 
+  func applyNavigationChrome(style: UIUserInterfaceStyle) {
+    if tabBar.overrideUserInterfaceStyle != style { tabBar.overrideUserInterfaceStyle = style }
+    if playerDock?.overrideUserInterfaceStyle != style { playerDock?.overrideUserInterfaceStyle = style }
+  }
+
   private func updateDockSelection() {
     guard let dock = playerDock else { return }
     let identifier = selectedTab?.identifier ?? "Tabs.Home"
@@ -340,6 +348,7 @@ class TabBarVC: UITabBarController {
     dock.updateSelection(selection, tint: theme)
     if identifier != dockSelectionIdentifier {
       dockSelectionIdentifier = identifier
+      (selectedViewController as? MusicNavigationController)?.synchronizeAppearance()
       dockScrollDistance = 0
       dock.setCollapsed(false, animated: false)
       if selection == 3 {
@@ -359,7 +368,7 @@ class TabBarVC: UITabBarController {
     guard let controller = dockInsetController else { return }
     // Keep the scroll viewport stable during sinking; the final row remains reachable.
     let dockOverlap = playerDock.map { max(0, view.bounds.maxY - $0.frame.minY - view.safeAreaInsets.bottom) } ?? 0
-    let nativeOverlap = isTabBarHidden ? 0 : max(0, view.bounds.maxY - tabBar.convert(tabBar.bounds, to: view).minY - view.safeAreaInsets.bottom)
+    let nativeOverlap = isTabBarHidden ? 0 : max(0, view.bounds.maxY - (dockNavigationTop ?? tabBar.frame.minY) - view.safeAreaInsets.bottom)
     let inset = originalDockInset + (visible ? max(0, dockOverlap - nativeOverlap) : 0)
     if controller.additionalSafeAreaInsets.bottom != inset { controller.additionalSafeAreaInsets.bottom = inset }
   }

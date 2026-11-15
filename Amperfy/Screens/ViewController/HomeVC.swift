@@ -39,6 +39,9 @@ final class HomeVC: UICollectionViewController {
   private let account: Account
   private var accountNotificationHandler: AccountNotificationHandler?
   private let sharedHome: HomeManager
+  private var isPageVisible = false
+  private var needsSnapshot = false
+  private var lastRemoteRefresh: Date?
 
   // MARK: - Init
 
@@ -55,7 +58,11 @@ final class HomeVC: UICollectionViewController {
     super.init(collectionViewLayout: layout)
     sharedHome.applySnapshotCB = { [weak self] in
       guard let self else { return }
-      applySnapshot(animated: true)
+      if isPageVisible, transitionCoordinator == nil {
+        applySnapshot(animated: true)
+      } else {
+        needsSnapshot = true
+      }
     }
   }
 
@@ -70,6 +77,7 @@ final class HomeVC: UICollectionViewController {
     // ensures that the collection view stops placing items under the sidebar
     collectionView.contentInsetAdjustmentBehavior = .scrollableAxes
     title = "Home".localized
+    navigationItem.largeTitleDisplayMode = .always
 
     accountNotificationHandler = AccountNotificationHandler(
       storage: appDelegate.storage,
@@ -107,12 +115,27 @@ final class HomeVC: UICollectionViewController {
   override func viewWillAppear(_ animated: Bool) {
     super.viewWillAppear(animated)
     navigationController?.navigationBar.prefersLargeTitles = true
+    navigationItem.rightBarButtonItem?.tintColor = UIColor.label.resolvedColor(with: traitCollection)
   }
 
   override func viewIsAppearing(_ animated: Bool) {
     super.viewIsAppearing(animated)
     extendSafeAreaToAccountForMiniPlayer()
-    sharedHome.updateFromRemote()
+  }
+
+  override func viewDidAppear(_ animated: Bool) {
+    super.viewDidAppear(animated)
+    isPageVisible = true
+    if needsSnapshot { applySnapshot(animated: false); needsSnapshot = false }
+    if lastRemoteRefresh == nil || Date().timeIntervalSince(lastRemoteRefresh!) >= 60 {
+      lastRemoteRefresh = Date()
+      sharedHome.updateFromRemote()
+    }
+  }
+
+  override func viewWillDisappear(_ animated: Bool) {
+    super.viewWillDisappear(animated)
+    isPageVisible = false
   }
 
   // MARK: - Layout
@@ -318,19 +341,16 @@ final class HomeVC: UICollectionViewController {
         AppStoryboard.Main.segueToAlbumDetail(account: account, album: album),
         animated: true
       )
-      navigationController?.navigationBar.prefersLargeTitles = false
     } else if let artist = playableContainer as? Artist {
       navigationController?.pushViewController(
         AppStoryboard.Main.segueToArtistDetail(account: account, artist: artist),
         animated: true
       )
-      navigationController?.navigationBar.prefersLargeTitles = false
     } else if let playlist = playableContainer as? Playlist {
       navigationController?.pushViewController(
         AppStoryboard.Main.segueToPlaylistDetail(account: account, playlist: playlist),
         animated: true
       )
-      navigationController?.navigationBar.prefersLargeTitles = false
     } else if let song = playableContainer as? Song {
       appDelegate.player.play(context: PlayContext(containable: song))
     } else if let podcastEpisode = playableContainer as? PodcastEpisode,
@@ -343,25 +363,21 @@ final class HomeVC: UICollectionViewController {
         ),
         animated: true
       )
-      navigationController?.navigationBar.prefersLargeTitles = false
     } else if let podcast = playableContainer as? Podcast {
       navigationController?.pushViewController(
         AppStoryboard.Main.segueToPodcastDetail(account: account, podcast: podcast),
         animated: true
       )
-      navigationController?.navigationBar.prefersLargeTitles = false
     } else if let _ = playableContainer as? Radio {
       navigationController?.pushViewController(
         AppStoryboard.Main.segueToRadios(account: account),
         animated: true
       )
-      navigationController?.navigationBar.prefersLargeTitles = false
     } else if let genre = playableContainer as? Genre {
       navigationController?.pushViewController(
         AppStoryboard.Main.segueToGenreDetail(account: account, genre: genre),
         animated: true
       )
-      navigationController?.navigationBar.prefersLargeTitles = false
     }
   }
 }

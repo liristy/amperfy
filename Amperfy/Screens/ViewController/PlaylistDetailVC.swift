@@ -94,8 +94,6 @@ class PlaylistDetailVC: SingleSnapshotFetchedResultsTableViewController<Playlist
   private var editButton: UIBarButtonItem!
   private var optionsButton: UIBarButtonItem!
   var detailOperationsView: PlaylistArtworkHeader?
-  private var previousNavStyle: UIUserInterfaceStyle?
-  private var previousNavTint: UIColor?
 
   init(account: Account, playlist: Playlist) {
     self.playlist = playlist
@@ -208,35 +206,6 @@ class PlaylistDetailVC: SingleSnapshotFetchedResultsTableViewController<Playlist
         containable: playlistItem.playable,
         playContext: playContext
       ))
-    }
-  }
-
-  override func viewWillAppear(_ animated: Bool) {
-    super.viewWillAppear(animated)
-    navigationController?.navigationBar.prefersLargeTitles = false
-    if previousNavStyle == nil {
-      previousNavStyle = navigationController?.navigationBar.overrideUserInterfaceStyle
-      previousNavTint = navigationController?.navigationBar.tintColor
-    }
-    navigationController?.navigationBar.overrideUserInterfaceStyle = .dark
-    navigationController?.navigationBar.tintColor = .white
-  }
-
-  override func viewWillDisappear(_ animated: Bool) {
-    super.viewWillDisappear(animated)
-    guard isMovingFromParent || isBeingDismissed || navigationController?.isBeingDismissed == true else { return }
-    let bar = navigationController?.navigationBar
-    let restore = { [previousNavStyle, previousNavTint] in
-      bar?.overrideUserInterfaceStyle = previousNavStyle ?? .unspecified
-      bar?.tintColor = previousNavTint
-    }
-    // Keep the current page's contrast while an interactive pop can still cancel.
-    if let coordinator = transitionCoordinator {
-      coordinator.animate(alongsideTransition: nil) { context in
-        if !context.isCancelled { restore() }
-      }
-    } else {
-      restore()
     }
   }
 

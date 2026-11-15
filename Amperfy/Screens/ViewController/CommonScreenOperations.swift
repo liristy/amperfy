@@ -136,6 +136,7 @@ extension UIViewController {
 
     let button = UIButton(type: .system)
     button.setImage(image, for: .normal)
+    button.tintColor = appDelegate.storage.settings.accounts.getSetting(currentAccount.info).read.themePreference.asColor
     button.layer.cornerRadius = 20
     button.clipsToBounds = true
     #if targetEnvironment(macCatalyst)
@@ -170,5 +171,56 @@ extension UIViewController {
         if !context.isCancelled { update() }
       }
     } else { update() }
+  }
+}
+
+
+// One owner updates native navigation and the floating dock in the same transition.
+// Detail controllers must not restore shared bar properties after a pop completes.
+final class MusicNavigationController: UINavigationController, UINavigationControllerDelegate {
+  override func viewDidLoad() {
+    super.viewDidLoad()
+    delegate = self
+    navigationBar.prefersLargeTitles = true
+  }
+
+  private func applyAppearance(for controller: UIViewController) {
+    let artworkPage = controller is AlbumDetailVC || controller is PlaylistDetailVC ||
+      controller is ArtistDetailVC || controller is ArtistRankingVC
+    let style: UIUserInterfaceStyle = artworkPage ? .dark : .unspecified
+    let tint: UIColor = artworkPage ? .white : appDelegate.storage.settings.accounts.activeSetting.read.themePreference.asColor
+    if navigationBar.overrideUserInterfaceStyle != style { navigationBar.overrideUserInterfaceStyle = style }
+    if navigationBar.tintColor != tint { navigationBar.tintColor = tint }
+    if artworkPage || controller is HomeVC || controller is LibraryVC {
+      navigationBar.prefersLargeTitles = true
+    }
+    if let host = tabBarController as? TabBarVC, host.selectedViewController === self {
+      host.applyNavigationChrome(style: style)
+    }
+  }
+
+  func synchronizeAppearance() {
+    if let controller = topViewController { applyAppearance(for: controller) }
+  }
+
+  func navigationController(_ navigationController: UINavigationController,
+                            willShow controller: UIViewController, animated: Bool) {
+    guard animated, let coordinator = transitionCoordinator else {
+      applyAppearance(for: controller)
+      return
+    }
+    coordinator.animate(alongsideTransition: { [weak self] _ in
+      self?.applyAppearance(for: controller)
+    }, completion: { [weak self] context in
+      if context.isCancelled, let original = context.viewController(forKey: .from) {
+        self?.applyAppearance(for: original)
+      }
+    })
+  }
+
+  func navigationController(_ navigationController: UINavigationController,
+                            didShow controller: UIViewController, animated: Bool) {
+    // Also covers transitions without a coordinator and cancelled interactive pops.
+    applyAppearance(for: controller)
   }
 }

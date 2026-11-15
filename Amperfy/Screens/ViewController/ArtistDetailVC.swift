@@ -25,8 +25,6 @@ import UIKit
 
 class ArtistDetailVC: MultiSourceTableViewController {
   override var sceneTitle: String? { artist.name }
-  private var previousNavStyle: UIUserInterfaceStyle?
-  private var previousNavTint: UIColor?
   let artist: Artist
   var albumToScrollTo: Album?
   private(set) var rankedSongs = [Song]()
@@ -89,16 +87,6 @@ class ArtistDetailVC: MultiSourceTableViewController {
     refreshContent()
   }
 
-  override func viewWillAppear(_ animated: Bool) {
-    super.viewWillAppear(animated)
-    navigationController?.navigationBar.prefersLargeTitles = false
-    if previousNavStyle == nil {
-      previousNavStyle = navigationController?.navigationBar.overrideUserInterfaceStyle
-      previousNavTint = navigationController?.navigationBar.tintColor
-    }
-    navigationController?.navigationBar.overrideUserInterfaceStyle = .dark
-    navigationController?.navigationBar.tintColor = .white
-  }
   override func viewDidAppear(_ animated: Bool) {
     super.viewDidAppear(animated)
     if needsRefresh { refreshContent() }
@@ -116,21 +104,6 @@ class ArtistDetailVC: MultiSourceTableViewController {
     }
     albumToScrollTo = nil
   }
-  override func viewWillDisappear(_ animated: Bool) {
-    super.viewWillDisappear(animated)
-    guard isMovingFromParent || isBeingDismissed || navigationController?.isBeingDismissed == true else { return }
-    let bar = navigationController?.navigationBar
-    let restore = { [previousNavStyle, previousNavTint] in
-      bar?.overrideUserInterfaceStyle = previousNavStyle ?? .unspecified
-      bar?.tintColor = previousNavTint
-    }
-    if let coordinator = transitionCoordinator {
-      coordinator.animate(alongsideTransition: nil) { context in
-        if !context.isCancelled { restore() }
-      }
-    } else { restore() }
-  }
-
   override func viewDidLayoutSubviews() {
     super.viewDidLayoutSubviews()
     let size = CGSize(width: tableView.bounds.width, height: artworkHeader.preferredHeight(width: tableView.bounds.width))
