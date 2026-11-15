@@ -3,6 +3,10 @@ name: qMusic Build & Release
 on:
   workflow_dispatch:
     inputs:
+      validation_only:
+        description: 'Run regression checks without rebuilding the device IPA'
+        type: boolean
+        default: false
       profile_player_resources:
         description: 'Measure simulator process CPU/RSS (not battery power)'
         type: boolean
@@ -134,7 +138,7 @@ jobs:
 
   build:
     # Standard hosted runners are free for public repositories only.
-    if: github.event.repository.private == false
+    if: github.event.repository.private == false && inputs.validation_only != true
     # Device archives cross-compile to arm64; keep them off the capacity-limited
     # ARM simulator pool. This is the standard Intel label, not a larger runner.
     runs-on: macos-26-intel

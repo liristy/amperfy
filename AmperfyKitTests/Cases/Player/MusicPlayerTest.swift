@@ -719,7 +719,7 @@ class MusicPlayerTest: XCTestCase {
     XCTAssertFalse(storage.settings.accounts.getSetting(account.info).read.isScrobbleStreamedItems)
   }
 
-  func testOrangeLibraryDefaultsApplyOnceAndPreserveLaterCustomization() {
+  func testRedLibraryDefaultsApplyOnceAndPreserveLaterCustomization() {
     let marker = "playerAppearance.orangeSixLibraryItems.v1"
     let oldMarker = UserDefaults.standard.object(forKey: marker)
     let oldAccounts = storage.settings.accounts
@@ -735,9 +735,9 @@ class MusicPlayerTest: XCTestCase {
     }
     storage.settings.applyPlayerAppearanceDefaultsIfNeeded()
     var migrated = storage.settings.accounts.getSetting(account.info).read
-    XCTAssertEqual(migrated.themePreference, .orange)
+    XCTAssertEqual(migrated.themePreference, .red)
     XCTAssertEqual(migrated.libraryDisplaySettings.inUse, [.artists, .albums, .songs, .favoriteSongs, .playlists, .downloads])
-    XCTAssertEqual(AccountSetting().themePreference, .orange)
+    XCTAssertEqual(AccountSetting().themePreference, .red)
     XCTAssertEqual(AccountSetting().libraryDisplaySettings.inUse, migrated.libraryDisplaySettings.inUse)
     storage.settings.accounts.updateSetting(account.info) {
       $0.themePreference = .green
@@ -747,6 +747,27 @@ class MusicPlayerTest: XCTestCase {
     migrated = storage.settings.accounts.getSetting(account.info).read
     XCTAssertEqual(migrated.themePreference, .green)
     XCTAssertEqual(migrated.libraryDisplaySettings.inUse, [.songs, .playlists])
+  }
+
+  func testRedThemeMigrationPreservesOtherColorsAndLaterCustomization() {
+    let marker = "appearance.redDefault.v1"
+    let oldMarker = UserDefaults.standard.object(forKey: marker)
+    let oldAccounts = storage.settings.accounts
+    defer {
+      storage.settings.accounts = oldAccounts
+      if let oldMarker { UserDefaults.standard.set(oldMarker, forKey: marker) }
+      else { UserDefaults.standard.removeObject(forKey: marker) }
+    }
+    UserDefaults.standard.removeObject(forKey: marker)
+    let other = TestAccountInfo.create2()
+    storage.settings.accounts.updateSetting(account.info) { $0.themePreference = .orange }
+    storage.settings.accounts.updateSetting(other) { $0.themePreference = .green }
+    storage.settings.applyRedThemeDefaultIfNeeded()
+    XCTAssertEqual(storage.settings.accounts.getSetting(account.info).read.themePreference, .red)
+    XCTAssertEqual(storage.settings.accounts.getSetting(other).read.themePreference, .green)
+    storage.settings.accounts.updateSetting(account.info) { $0.themePreference = .orange }
+    storage.settings.applyRedThemeDefaultIfNeeded()
+    XCTAssertEqual(storage.settings.accounts.getSetting(account.info).read.themePreference, .orange)
   }
 
   private func makePreparationHandler(
