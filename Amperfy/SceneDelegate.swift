@@ -1428,7 +1428,7 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
                       abs(frame.minY - expected.minY) < 0.5,
                       abs(frame.width - expected.width) < 0.5,
                       abs(frame.height - expected.height) < 0.5 else {
-                  smokeLog("Compact header moved: element \(index), \(frame), expected \(expected)")
+                  smokeLog("Compact header moved: element \(index), rendered=\(frame), model=\(element.convert(element.bounds, to: popup.view)), expected=\(expected), host=\(String(describing: element.superview))")
                   return false
                 }
               }

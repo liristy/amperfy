@@ -162,19 +162,26 @@ class LargeCurrentlyPlayingPlayerView: UIView {
 
   func attachCompactHeader(to host: UIView, anchor: UIView) {
     guard lyricsHeader.superview !== host else { return }
-    NSLayoutConstraint.deactivate(headerConstraints)
-    lyricsHeader.removeFromSuperview()
-    lyricsHeader.translatesAutoresizingMaskIntoConstraints = false
-    host.addSubview(lyricsHeader)
-    headerConstraints = [
-      lyricsHeader.leadingAnchor.constraint(equalTo: anchor.leadingAnchor, constant: 8),
-      lyricsHeader.trailingAnchor.constraint(equalTo: anchor.trailingAnchor, constant: -8),
-      lyricsHeader.topAnchor.constraint(equalTo: anchor.topAnchor),
-      lyricsHeader.heightAnchor.constraint(equalToConstant: CurrentlyPlayingTableCell.rowHeight),
-    ]
-    NSLayoutConstraint.activate(headerConstraints)
-    host.setNeedsLayout()
-    setNeedsLayout()
+    // A frame from the previous host is not a valid starting point in the new
+    // host's coordinates. Resolve the constraints before the next transaction,
+    // including when a queue cell is created inside an ongoing layout animation.
+    UIView.performWithoutAnimation {
+      NSLayoutConstraint.deactivate(headerConstraints)
+      lyricsHeader.removeFromSuperview()
+      lyricsHeader.translatesAutoresizingMaskIntoConstraints = false
+      host.addSubview(lyricsHeader)
+      headerConstraints = [
+        lyricsHeader.leadingAnchor.constraint(equalTo: anchor.leadingAnchor, constant: 8),
+        lyricsHeader.trailingAnchor.constraint(equalTo: anchor.trailingAnchor, constant: -8),
+        lyricsHeader.topAnchor.constraint(equalTo: anchor.topAnchor),
+        lyricsHeader.heightAnchor.constraint(equalToConstant: CurrentlyPlayingTableCell.rowHeight),
+      ]
+      NSLayoutConstraint.activate(headerConstraints)
+      host.setNeedsLayout()
+      setNeedsLayout()
+      host.layoutIfNeeded()
+      layoutIfNeeded()
+    }
   }
 
   @IBOutlet

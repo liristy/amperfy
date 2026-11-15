@@ -126,6 +126,9 @@ def main():
     }
     try:
         wait_for_server(server)
+        # Warm Settings before staging playback. A cold system-app launch on a
+        # shared runner can outlast the app's background-lifecycle handshake.
+        command("xcrun", "simctl", "launch", device_id, "com.apple.Preferences")
         launch = command("xcrun", "simctl", "launch", "--terminate-running-process",
                          "--stdout=" + str(output / "app.stdout.log"), "--stderr=" + str(output / "app.stderr.log"),
                          device_id, bundle_id, "-AppleLanguages", "(zh-Hans)", "--smoke-resource-profile",
