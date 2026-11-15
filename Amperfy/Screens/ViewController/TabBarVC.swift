@@ -344,7 +344,7 @@ class TabBarVC: UITabBarController {
     let selection = selectedTab === searchTab ? 3 :
       (identifier == "Tabs.Listening" ? 2 : (identifier.hasPrefix("Tabs.Library") ? 1 : 0))
     let theme = appDelegate.storage.settings.accounts.getSetting(account.info).read.themePreference.asColor
-    tabBar.tintColor = theme
+    if tabBar.tintColor != theme { tabBar.tintColor = theme }
     dock.updateSelection(selection, tint: theme)
     if identifier != dockSelectionIdentifier {
       dockSelectionIdentifier = identifier

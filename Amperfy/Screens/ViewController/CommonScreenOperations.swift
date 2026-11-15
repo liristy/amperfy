@@ -191,7 +191,7 @@ final class MusicNavigationController: UINavigationController, UINavigationContr
     let tint: UIColor = artworkPage ? .white : appDelegate.storage.settings.accounts.activeSetting.read.themePreference.asColor
     if navigationBar.overrideUserInterfaceStyle != style { navigationBar.overrideUserInterfaceStyle = style }
     if navigationBar.tintColor != tint { navigationBar.tintColor = tint }
-    if artworkPage || controller is HomeVC || controller is LibraryVC {
+    if (artworkPage || controller is HomeVC || controller is LibraryVC), !navigationBar.prefersLargeTitles {
       navigationBar.prefersLargeTitles = true
     }
     if let host = tabBarController as? TabBarVC, host.selectedViewController === self {
