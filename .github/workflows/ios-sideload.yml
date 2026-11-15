@@ -100,6 +100,7 @@ jobs:
             build/validation/player-library-*.png
             build/validation/player-playlist*.png
             build/validation/player-mini-*.png
+            build/validation/player-*-failure.png
           retention-days: 7
       - name: Profile player resources on simulator (not battery power)
         if: ${{ !cancelled() }}

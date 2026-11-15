@@ -550,25 +550,25 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
             try await Task.sleep(for: .milliseconds(900))
             guard tabHost.selectedTab === home, tabHost.tabBar.alpha == 1 else { return }
             smokeLog("Home and Library selection uses the visible native tab bar without a custom glass overlay")
-            if let scroll = dockScrollView(in: tabHost.selectedViewController?.view ?? tabHost.view) {
-              guard try await verifyDockScrollStability(tabHost: tabHost, scroll: scroll) else { return }
-            }
+            smokeLog("Dock before first collapse: player=\(miniPlayer.glassContainer.frame), dock=\(dock.frame), hidden=\(dock.isHidden), transform=\(miniPlayer.glassContainer.transform)")
             tabHost.updatePlayerDockForScroll(delta: -40, atTop: false)
             try await Task.sleep(for: .milliseconds(650))
             let compactFrame = miniPlayer.glassContainer.frame
-            guard dock.isCollapsed, !tabHost.isTabBarHidden, tabHost.tabBar.alpha == 0,
-                  !tabHost.tabBar.isUserInteractionEnabled, tabHost.tabBar.accessibilityElementsHidden,
-                  abs(compactFrame.height - 48) < 0.5,
-                  abs(compactFrame.midY - dock.navigationSlot.frame.midY) < 0.5,
-                  abs(compactFrame.minX - dock.navigationSlot.frame.maxX - 12) < 0.5,
-                  abs(dock.searchSlot.frame.minX - compactFrame.maxX - 12) < 0.5,
-                  miniPlayer.glassContainer.superview === dock else {
+            let compactPassed = dock.isCollapsed && !tabHost.isTabBarHidden && tabHost.tabBar.alpha == 0 &&
+              !tabHost.tabBar.isUserInteractionEnabled && tabHost.tabBar.accessibilityElementsHidden &&
+              abs(compactFrame.height - 48) < 0.5 &&
+              abs(compactFrame.midY - dock.navigationSlot.frame.midY) < 0.5 &&
+              abs(compactFrame.minX - dock.navigationSlot.frame.maxX - 12) < 0.5 &&
+              abs(dock.searchSlot.frame.minX - compactFrame.maxX - 12) < 0.5 &&
+              miniPlayer.glassContainer.superview === dock
+            if !compactPassed {
               smokeLog("Sinking player did not settle between navigation and search")
               smokeLog("Dock compact state collapsed=\(dock.isCollapsed), hidden=\(tabHost.isTabBarHidden), alpha=\(tabHost.tabBar.alpha), interactive=\(tabHost.tabBar.isUserInteractionEnabled), accessibilityHidden=\(tabHost.tabBar.accessibilityElementsHidden), player=\(compactFrame), navigation=\(dock.navigationSlot.frame), search=\(dock.searchSlot.frame), transform=\(miniPlayer.glassContainer.transform), parentMatches=\(miniPlayer.glassContainer.superview === dock)")
               try await compositorScreenshot("player-mini-collapsed-failure.png")
-              return
+              playerPolishChecksPassed = false
+            } else {
+              try dockScreenshot("player-mini-collapsed.png")
             }
-            try dockScreenshot("player-mini-collapsed.png")
             // Reverse while the spring is moving, then return to the top.
             tabHost.updatePlayerDockForScroll(delta: 25, atTop: false)
             try await Task.sleep(for: .milliseconds(80))
@@ -585,6 +585,17 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
             if let scroll = dockScrollView(in: tabHost.selectedViewController?.view ?? tabHost.view) {
               guard try await verifyDockScrollStability(tabHost: tabHost, scroll: scroll) else { return }
             }
+            if let pinned = library.getPlaylist(for: account, id: "playlist-1") {
+              UserDefaults.standard.set([pinned.managedObject.objectID.uriRepresentation().absoluteString],
+                forKey: "libraryPinnedPlaylists." + account.managedObject.objectID.uriRepresentation().absoluteString)
+            }
+            tabHost.selectedTab = library
+            try await Task.sleep(for: .milliseconds(900))
+            if !(try await verifyLibraryLayout(libraryTab: library, compositorScreenshot: compositorScreenshot)) {
+              playerPolishChecksPassed = false
+            }
+            tabHost.selectedTab = home
+            try await Task.sleep(for: .milliseconds(900))
           }
           func descendants(of view: UIView) -> [UIView] {
             view.subviews + view.subviews.flatMap { descendants(of: $0) }
@@ -1790,8 +1801,10 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
           popup.largeCurrentlyPlayingView?.display(element: .lyrics)
           try await Task.sleep(for: .seconds(1))
           // A short, quick downward drag should finish instead of requiring a long swipe.
+          smokeLog("Closing before begin: presenting=\(popup.presentingViewController != nil), dismissed=\(popup.isBeingDismissed), interaction=\(popup.surfaceTransition.interaction != nil), destination=\(String(describing: popup.surfaceTransition.artworkDestination)), mask=\(popup.view.mask != nil)")
           popup.beginInteractiveDismissal()
           try await Task.sleep(for: .milliseconds(80))
+          smokeLog("Closing after begin: dismissed=\(popup.isBeingDismissed), interaction=\(popup.surfaceTransition.interaction != nil), coordinator=\(popup.transitionCoordinator != nil), motion=\(popup.surfaceTransition.artworkMotion != nil), mask=\(popup.view.mask != nil)")
           popup.updateInteractiveDismissal(translation: 28)
           let returningCoverStartWidth = popup.transitionArtwork?.bounds.width ?? 72
           let capsuleTransform = miniPlayer.glassContainer.transform
@@ -1834,6 +1847,8 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
           }
           if !sampledClosingTravel {
             smokeLog("Released downward gesture never interpolated toward the capsule")
+            smokeLog("Closing endpoint: presenting=\(popup.presentingViewController != nil), presented=\(vc.presentedViewController === popup), dismissed=\(popup.isBeingDismissed), mask=\(popup.view.mask != nil), transform=\(popup.view.transform), returningCover=\(sampledReturningCover), flyingCover=\(flyingCover() != nil), capsuleAlpha=\(miniPlayer.glassContainer.alpha)")
+            try await compositorScreenshot("player-dismissal-failure.png")
             playerPolishChecksPassed = false
           } else {
             smokeLog("Released downward gesture contracted continuously to the capsule")
@@ -2157,6 +2172,10 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
             let libraryVC = group.managingNavigationController?.topViewController as? LibraryVC else {
         smokeLog("Library tab did not present the collection layout"); return false
       }
+      defer {
+        libraryVC.dismiss(animated: false)
+        group.managingNavigationController?.popToRootViewController(animated: false)
+      }
       let collection = libraryVC.collectionView!
       collection.layoutIfNeeded()
       if let host = libraryVC.tabBarController as? TabBarVC {
@@ -2245,6 +2264,9 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
       }
       guard detail.navigationItem.title == "" else {
         smokeLog("Playlist title is duplicated above the expanded artwork header"); return false
+      }
+      if let host = detail.tabBarController as? TabBarVC {
+        guard try await verifyDockScrollStability(tabHost: host, scroll: detail.tableView) else { return false }
       }
       try await compositorScreenshot("player-playlist-detail.png")
       detail.tableView.setContentOffset(CGPoint(x: 0, y: header.frame.height), animated: false)

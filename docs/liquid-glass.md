@@ -91,3 +91,15 @@ from 83pt to 151pt while its dock, native bar, scroll offset and viewport frames
 The additional 68pt must belong to the leaf page before appearance, not its navigation
 container. `reserveDockSpace` shares one per-page original inset across navigation and the
 legacy safe-area helper, retaining exactly 56pt + 12pt regardless of dock collapse state.
+
+The complete player regression also exposed a real release stall: the CI recording holds
+the dragged lyrics page at its full size before jumping directly to Home. Interactive
+player transitions now pause, scrub, and continue their own `UIViewPropertyAnimator` through
+`PlayerSurfaceInteraction`, while reporting progress and finish/cancellation to UIKit's
+transition context. The surface and shared cover continue to read the same timing probe.
+Interaction state remains owned until transition completion, including cancellation.
+
+The first-collapse probe runs immediately after detail returns, before any test-only Home
+scroll or forced layout can settle pending work. Failures retain geometry and compositor
+captures and mark the whole suite failed while allowing independent page checks to run.
+Library/playlist layout and scroll probes also run before full-player dismissal checks.

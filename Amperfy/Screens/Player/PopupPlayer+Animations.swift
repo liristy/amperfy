@@ -22,6 +22,69 @@
 import AmperfyKit
 import UIKit
 
+// Drive the property animator directly. Percent-driven Core Animation timing
+// can leave the surface probe paused after a short drag is released, then jump
+// to its endpoint when UIKit completes the transition.
+@MainActor
+final class PlayerSurfaceInteraction: NSObject, UIViewControllerInteractiveTransitioning {
+  private var animationController: PlayerSurfaceAnimator?
+  private var animator: UIViewPropertyAnimator?
+  private var context: UIViewControllerContextTransitioning?
+  private var progress: CGFloat = 0
+  private var endpoint: Bool?
+  var wantsInteractiveStart: Bool { true }
+  var completionSpeed: CGFloat { 1 }
+  var completionCurve: UIView.AnimationCurve { endpoint == false ? .easeInOut : .easeOut }
+
+  func prepare(using controller: UIViewControllerAnimatedTransitioning) {
+    animationController = controller as? PlayerSurfaceAnimator
+  }
+
+  func startInteractiveTransition(_ transitionContext: UIViewControllerContextTransitioning) {
+    guard let animationController,
+          let animator = animationController.interruptibleAnimator(using: transitionContext) as? UIViewPropertyAnimator else {
+      transitionContext.completeTransition(false)
+      return
+    }
+    context = transitionContext
+    self.animator = animator
+    animator.addCompletion { [weak self] _ in
+      self?.context = nil
+      self?.animator = nil
+      self?.animationController = nil
+    }
+    animator.startAnimation()
+    animator.pauseAnimation()
+    animator.fractionComplete = progress
+    transitionContext.updateInteractiveTransition(progress)
+    if let endpoint { settle(completed: endpoint) }
+  }
+
+  func update(_ value: CGFloat) {
+    guard endpoint == nil else { return }
+    progress = min(1, max(0, value))
+    animator?.fractionComplete = progress
+    context?.updateInteractiveTransition(progress)
+  }
+
+  func finish() { end(completed: true) }
+  func cancel() { end(completed: false) }
+
+  private func end(completed: Bool) {
+    guard endpoint == nil else { return }
+    endpoint = completed
+    if animator != nil { settle(completed: completed) }
+  }
+
+  private func settle(completed: Bool) {
+    guard let animator, let context else { return }
+    if completed { context.finishInteractiveTransition() } else { context.cancelInteractiveTransition() }
+    animator.isReversed = !completed
+    animator.continueAnimation(withTimingParameters: UICubicTimingParameters(animationCurve: completionCurve),
+      durationFactor: 1)
+  }
+}
+
 // The complete player expands from, and contracts into, the mini-player capsule.
 // Keep the live content laid out at full size while its surface morphs in both axes.
 // Never swap a rendered screenshot for the real player at the end of the animation.
@@ -29,8 +92,8 @@ import UIKit
 final class PlayerSurfaceTransitionDelegate: NSObject, UIViewControllerTransitioningDelegate {
   weak var sourcePlayer: UIView?
   weak var sourceArtwork: UIImageView?
-  var interaction: UIPercentDrivenInteractiveTransition?
-  var presentationInteraction: UIPercentDrivenInteractiveTransition?
+  var interaction: PlayerSurfaceInteraction?
+  var presentationInteraction: PlayerSurfaceInteraction?
   var artworkMotion: PlayerArtworkMotion?
   var artworkProgress: CGFloat = 0
   var artworkDestination: CGFloat?
@@ -46,7 +109,10 @@ final class PlayerSurfaceTransitionDelegate: NSObject, UIViewControllerTransitio
   }
 
   func interactionControllerForPresentation(using animator: UIViewControllerAnimatedTransitioning)
-    -> UIViewControllerInteractiveTransitioning? { presentationInteraction }
+    -> UIViewControllerInteractiveTransitioning? {
+    presentationInteraction?.prepare(using: animator)
+    return presentationInteraction
+  }
 
   func animationController(forPresented presented: UIViewController,
                            presenting: UIViewController, source: UIViewController)
@@ -59,7 +125,10 @@ final class PlayerSurfaceTransitionDelegate: NSObject, UIViewControllerTransitio
   }
 
   func interactionControllerForDismissal(using animator: UIViewControllerAnimatedTransitioning)
-    -> UIViewControllerInteractiveTransitioning? { interaction }
+    -> UIViewControllerInteractiveTransitioning? {
+    interaction?.prepare(using: animator)
+    return interaction
+  }
 }
 
 // One rendered surface drives the mask and the shared cover. There is no second
