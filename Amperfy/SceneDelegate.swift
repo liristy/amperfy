@@ -2161,6 +2161,11 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
             }), let categoryPath = collection.indexPath(for: category) else {
         smokeLog("Library favorites category or pinned playlist is missing"); return false
       }
+      let theme = appDelegate.storage.settings.accounts.getSetting(appDelegate.storage.settings.accounts.active).read.themePreference.asColor
+      guard let content = (category as? UICollectionViewListCell)?.contentConfiguration as? UIListContentConfiguration,
+            content.imageProperties.tintColor == theme else {
+        smokeLog("Library category icons did not follow account theme"); return false
+      }
       guard let edit = libraryVC.navigationItem.rightBarButtonItems?.first(where: {
         $0.accessibilityIdentifier == "library-edit-categories"
       }), let editAction = edit.action,
@@ -2281,9 +2286,33 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
       let account = library.getAccount(info: info)
       guard let song = library.getSong(for: account, id: "song-1"), let album = song.album,
             let artist = song.artist else { log("Artwork detail fixture missing"); return false }
+      guard let playlist = library.getPlaylists(for: account).first else { return false }
+      try await playlist.fetch(storage: appDelegate.storage,
+        librarySyncer: appDelegate.getMeta(info).librarySyncer,
+        playableDownloadManager: appDelegate.getMeta(info).playableDownloadManager)
+      let playlistVC = PlaylistDetailVC(account: account, playlist: playlist)
+      playlistVC.loadViewIfNeeded()
+      let row = IndexPath(row: 0, section: 0)
+      let playlistLeading = playlistVC.tableView(playlistVC.tableView, leadingSwipeActionsConfigurationForRowAt: row)?.actions ?? []
+      let playlistTrailing = playlistVC.tableView(playlistVC.tableView, trailingSwipeActionsConfigurationForRowAt: row)?.actions ?? []
+      guard !(playlistLeading + playlistTrailing).isEmpty,
+            (playlistLeading + playlistTrailing).allSatisfy({ $0.title == nil && $0.image != nil }) else {
+        log("Wrapped playlist songs still display swipe titles"); return false
+      }
+      if let path = album.artwork?.imagePath { _ = await LibraryEntityImage.loadPreparedImage(at: path) }
       let albumVC = AlbumDetailVC(account: account, album: album)
-      nav.pushViewController(albumVC, animated: false)
-      try await Task.sleep(for: .seconds(2))
+      albumVC.loadViewIfNeeded()
+      let firstBackground = albumVC.tableView.backgroundColor
+      guard firstBackground != UIColor(white: 0.16, alpha: 1) else {
+        log("Prepared artwork palette was not applied before navigation"); return false
+      }
+      nav.pushViewController(albumVC, animated: true)
+      for _ in 0..<60 {
+        try await Task.sleep(for: .milliseconds(16))
+        guard albumVC.tableView.backgroundColor == firstBackground else {
+          log("Album background changed during navigation"); return false
+        }
+      }
       albumVC.view.layoutIfNeeded()
       guard let header = albumVC.detailOperationsView,
             abs(header.artwork.bounds.width - min(340, albumVC.view.bounds.width * 0.694)) < 1,
@@ -2308,7 +2337,8 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
       guard artistVC.tableView.numberOfSections == 2,
             artistVC.tableView.numberOfRows(inSection: 0) == min(5, artistVC.rankedSongs.count),
             artistVC.rankedSongs.map(\.playCount) == artistVC.rankedSongs.map(\.playCount).sorted(by: >),
-            abs(artistVC.artworkHeader.artwork.bounds.width - artistVC.view.bounds.width) < 1 else {
+            abs(artistVC.artworkHeader.artwork.bounds.width - artistVC.view.bounds.width) < 1,
+            artistVC.artworkHeader.artistNameFrame.minY >= artistVC.artworkHeader.artwork.frame.maxY + 16 else {
         log("Artist hero, listening-count ranking or two-section structure failed"); return false
       }
       try await compositorScreenshot("player-artist-detail.png")

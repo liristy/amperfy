@@ -71,10 +71,23 @@ public class LibraryEntityImage: RoundedImage {
   #endif
 
   public static func loadArtworkPalette(at path: String) async -> [UIColor] {
-    if let cached = paletteCache.object(forKey: path as NSString) as? [UIColor] { return cached }
+    if let colors = preparedArtworkPalette(at: path) { return colors }
     guard !Task.isCancelled, areVisualUpdatesEnabled,
           let image = await loadPreparedImage(at: path), !Task.isCancelled,
           areVisualUpdatesEnabled else { return [] }
+    return cacheArtworkPalette(image: image, path: path)
+  }
+
+  // Visible list artwork has already been decoded. Resolve its palette before
+  // navigation starts, rather than scheduling a color change after the first frame.
+  public static func preparedArtworkPalette(at path: String) -> [UIColor]? {
+    if let cached = paletteCache.object(forKey: path as NSString) as? [UIColor] { return cached }
+    guard !Task.isCancelled, areVisualUpdatesEnabled,
+          let image = cache.object(forKey: path as NSString) else { return nil }
+    return cacheArtworkPalette(image: image, path: path)
+  }
+
+  private static func cacheArtworkPalette(image: UIImage, path: String) -> [UIColor] {
     #if DEBUG
       paletteComputationCount += 1
     #endif

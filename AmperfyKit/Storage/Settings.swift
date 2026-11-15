@@ -484,9 +484,21 @@ public struct AmperfySettings: Sendable, Codable {
     var updatedAccounts = accounts
     for info in updatedAccounts.allAccounts {
       updatedAccounts.updateSetting(info) {
-        $0.themePreference = .orange
+        $0.themePreference = .defaultValue
         $0.libraryDisplaySettings = .defaultSettings
       }
+    }
+    accounts = updatedAccounts
+    UserDefaults.standard.set(true, forKey: key)
+  }
+
+  @MainActor
+  public mutating func applyRedThemeDefaultIfNeeded() {
+    let key = "appearance.redDefault.v1"
+    guard !UserDefaults.standard.bool(forKey: key) else { return }
+    var updatedAccounts = accounts
+    for info in updatedAccounts.allAccounts where updatedAccounts.getSetting(info).read.themePreference == .orange {
+      updatedAccounts.updateSetting(info) { $0.themePreference = .defaultValue }
     }
     accounts = updatedAccounts
     UserDefaults.standard.set(true, forKey: key)

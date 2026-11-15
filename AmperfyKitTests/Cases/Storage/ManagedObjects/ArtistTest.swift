@@ -42,11 +42,13 @@ class ArtistTest: XCTestCase {
 
   func testRankingUsesListeningCountsAndStableTies() {
     let album = library.createAlbum(account: account)
+    album.remoteStatus = .available
     album.artist = testArtist
     let featuredArtist = library.createArtist(account: account)
     let songs = [("Beta", 12), ("Alpha", 12), ("Popular", 50), ("Unplayed", 0)].enumerated().map { index, item in
       let song = library.createSong(account: account)
       song.id = "ranking-\(index)"
+      song.size = 1000
       song.title = item.0
       song.playCount = item.1
       song.album = album

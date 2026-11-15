@@ -151,3 +151,24 @@ extension UIViewController {
     navigationItem.leftBarButtonItem = userBarButtonItem!
   }
 }
+
+
+extension UIViewController {
+  // Cached palettes are applied while the destination is still offscreen. A
+  // genuinely cold artwork download fades in only after navigation settles.
+  func applyDetailBackgroundColor(_ color: UIColor) {
+    guard view.backgroundColor != color else { return }
+    guard view.window != nil else { view.backgroundColor = color; return }
+    let update = { [weak self] in
+      guard let self, UIApplication.shared.applicationState == .active else { return }
+      UIView.animate(withDuration: 0.25, delay: 0, options: [.beginFromCurrentState, .allowUserInteraction]) {
+        self.view.backgroundColor = color
+      }
+    }
+    if let coordinator = transitionCoordinator, coordinator.isAnimated {
+      coordinator.animate(alongsideTransition: nil) { context in
+        if !context.isCancelled { update() }
+      }
+    } else { update() }
+  }
+}

@@ -47,3 +47,19 @@ with stable title/ID ties and offline filtering. Song swipe actions show their i
 
 Regression coverage includes dense 1200px artwork with a bounded runtime, dominant/transparent
 color handling, ranking/count updates, and actual album/artist screenshots and dock reversals.
+
+
+### Detail navigation and account colors
+
+Visible decoded artwork resolves its cached or bounded palette synchronously before a
+new detail view's first frame. A cold cover is still loaded asynchronously; its background
+fades after navigation completes. Library returns reuse the current snapshot, with category
+reconfiguration only when the account theme changes. Remote detail sync starts in
+`viewDidAppear`, keeping fetch/parse/snapshot work out of the navigation animation.
+
+Song swipe styling checks the underlying `AbstractPlayable.isSong`, including generic
+wrappers returned by playlist entries. Artist names have a separate region below the hero
+image. Library category icons use the account theme. New accounts default to red; a one-time
+migration changes the previous orange default to red without changing other account colors.
+Regression probes include wrapped playlist swipes, the first displayed album background,
+theme-tinted category icons and non-overlapping artist image/name frames.

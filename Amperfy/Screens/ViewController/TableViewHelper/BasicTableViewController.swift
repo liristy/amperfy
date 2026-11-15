@@ -320,7 +320,7 @@ class BasicTableViewController: KeyCommandTableViewController {
     -> UIContextualAction {
     let action = UIContextualAction(
       style: .normal,
-      title: preCbContainable is Song ? nil : actionType.displayName
+      title: (preCbContainable as? AbstractPlayable)?.isSong == true ? nil : actionType.displayName
     ) { action, view, completionHandler in
       Haptics.success
         .vibrate(isHapticsEnabled: self.appDelegate.storage.settings.user.isHapticsEnabled)

@@ -182,7 +182,7 @@ class PlaylistDetailVC: SingleSnapshotFetchedResultsTableViewController<Playlist
     header.downloadAction = { [weak self] in self?.downloadPlaylist() }
     header.paletteChanged = { [weak self] color in
       guard let self else { return }
-      tableView.backgroundColor = color
+      applyDetailBackgroundColor(color)
     }
     detailOperationsView = header
     tableView.tableHeaderView = header
@@ -224,6 +224,7 @@ class PlaylistDetailVC: SingleSnapshotFetchedResultsTableViewController<Playlist
 
   override func viewWillDisappear(_ animated: Bool) {
     super.viewWillDisappear(animated)
+    guard isMovingFromParent || isBeingDismissed || navigationController?.isBeingDismissed == true else { return }
     let bar = navigationController?.navigationBar
     let restore = { [previousNavStyle, previousNavTint] in
       bar?.overrideUserInterfaceStyle = previousNavStyle ?? .unspecified
@@ -294,6 +295,10 @@ class PlaylistDetailVC: SingleSnapshotFetchedResultsTableViewController<Playlist
       tableView.isEditing = false
     }
     refreshBarButtons()
+  }
+
+  override func viewDidAppear(_ animated: Bool) {
+    super.viewDidAppear(animated)
     Task { @MainActor in
       do {
         try await playlist.fetch(
@@ -476,13 +481,21 @@ final class PlaylistArtworkHeader: UIView {
     guard let path = playlist.artwork?.imagePath ?? playlist.getPlayable(at: 0)?.imagePath(setting: settings.artworkDisplayPreference), path != paletteKey else { return }
     paletteKey = path
     paletteTask?.cancel()
+    if let colors = LibraryEntityImage.preparedArtworkPalette(at: path) {
+      applyPalette(colors)
+      return
+    }
     paletteTask = Task { @MainActor [weak self] in
       let colors = await LibraryEntityImage.loadArtworkPalette(at: path)
       guard let self, !Task.isCancelled, paletteKey == path, let color = colors.first else { return }
-      var r: CGFloat = 0, g: CGFloat = 0, b: CGFloat = 0, a: CGFloat = 0
-      color.getRed(&r, green: &g, blue: &b, alpha: &a)
-      paletteChanged?(UIColor(red: r * 0.28 + 0.04, green: g * 0.28 + 0.04, blue: b * 0.28 + 0.04, alpha: 1))
+      applyPalette(colors)
     }
+  }
+  private func applyPalette(_ colors: [UIColor]) {
+    guard let color = colors.first else { return }
+    var r: CGFloat = 0, g: CGFloat = 0, b: CGFloat = 0, a: CGFloat = 0
+    color.getRed(&r, green: &g, blue: &b, alpha: &a)
+    paletteChanged?(UIColor(red: r * 0.28 + 0.04, green: g * 0.28 + 0.04, blue: b * 0.28 + 0.04, alpha: 1))
   }
   override func layoutSubviews() {
     super.layoutSubviews()

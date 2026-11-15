@@ -73,7 +73,7 @@ class ArtistDetailVC: MultiSourceTableViewController {
         self.artworkHeader.refresh()
       }
     }
-    artworkHeader.paletteChanged = { [weak self] color in self?.tableView.backgroundColor = color }
+    artworkHeader.paletteChanged = { [weak self] color in self?.applyDetailBackgroundColor(color) }
     tableView.tableHeaderView = artworkHeader
     containableAtIndexPathCallback = { [weak self] path in
       guard let self, path.section == 0, path.row < min(5, rankedSongs.count) else { return nil }
@@ -98,10 +98,10 @@ class ArtistDetailVC: MultiSourceTableViewController {
     }
     navigationController?.navigationBar.overrideUserInterfaceStyle = .dark
     navigationController?.navigationBar.tintColor = .white
-    refreshContent()
   }
-  override func viewIsAppearing(_ animated: Bool) {
-    super.viewIsAppearing(animated)
+  override func viewDidAppear(_ animated: Bool) {
+    super.viewDidAppear(animated)
+    refreshVisible()
     Task { @MainActor [weak self] in
       guard let self else { return }
       do { try await artist.fetch(storage: appDelegate.storage, librarySyncer: appDelegate.getMeta(account.info).librarySyncer,
@@ -110,9 +110,6 @@ class ArtistDetailVC: MultiSourceTableViewController {
       needsRefresh = true
       refreshVisible()
     }
-  }
-  override func viewDidAppear(_ animated: Bool) {
-    super.viewDidAppear(animated)
     if let albumToScrollTo, albums.contains(where: { $0.id == albumToScrollTo.id }) {
       tableView.scrollToRow(at: IndexPath(row: 0, section: 1), at: .top, animated: false)
       (tableView.cellForRow(at: IndexPath(row: 0, section: 1)) as? ArtistAlbumStripCell)?.scroll(to: albumToScrollTo)
@@ -160,7 +157,8 @@ class ArtistDetailVC: MultiSourceTableViewController {
     refreshVisible()
   }
   @objc private func refreshVisible() {
-    guard needsRefresh, viewIfLoaded?.window != nil, UIApplication.shared.applicationState == .active,
+    guard needsRefresh, viewIfLoaded?.window != nil, transitionCoordinator == nil,
+          UIApplication.shared.applicationState == .active,
           !tableView.isDragging, !tableView.isDecelerating, !isSingleCellEditingModeActive else { return }
     refreshContent()
   }

@@ -34,6 +34,8 @@ class LibraryVC: KeyCommandCollectionViewController {
   private var syncTask: Task<Void, Never>?
   private var needsRefresh = true
   private var didSync = false
+  private var isPageVisible = false
+  private var displayedTheme: ThemePreference?
   private var pinKey: String { "libraryPinnedPlaylists." + account.managedObject.objectID.uriRepresentation().absoluteString }
   private func pinIdentifier(_ playlist: Playlist) -> String {
     playlist.managedObject.objectID.uriRepresentation().absoluteString
@@ -68,7 +70,7 @@ class LibraryVC: KeyCommandCollectionViewController {
         var content = cell.defaultContentConfiguration()
         content.text = category == .downloads ? "Downloaded".localized : category.displayName
         content.image = category.image.withConfiguration(UIImage.SymbolConfiguration(pointSize: 22, weight: .regular))
-        content.imageProperties.tintColor = .label
+        content.imageProperties.tintColor = appDelegate.storage.settings.accounts.getSetting(account.info).read.themePreference.asColor
         content.imageProperties.reservedLayoutSize = CGSize(width: 28, height: 28)
         content.textProperties.font = .preferredFont(forTextStyle: .title3)
         content.directionalLayoutMargins = NSDirectionalEdgeInsets(top: 8, leading: 20, bottom: 8, trailing: 20)
@@ -106,7 +108,13 @@ class LibraryVC: KeyCommandCollectionViewController {
   override func viewIsAppearing(_ animated: Bool) {
     super.viewIsAppearing(animated)
     navigationController?.navigationBar.prefersLargeTitles = true
-    refreshLibrary()
+    refreshCategoryThemeIfNeeded()
+  }
+
+  override func viewDidAppear(_ animated: Bool) {
+    super.viewDidAppear(animated)
+    isPageVisible = true
+    if needsRefresh { refreshLibrary() }
     guard !didSync, appDelegate.storage.settings.user.isOnlineMode else { return }
     didSync = true
     syncTask = Task { @MainActor [weak self] in
@@ -119,12 +127,28 @@ class LibraryVC: KeyCommandCollectionViewController {
     }
   }
 
+  override func viewWillDisappear(_ animated: Bool) {
+    super.viewWillDisappear(animated)
+    isPageVisible = false
+  }
+
+  private func refreshCategoryThemeIfNeeded() {
+    let theme = appDelegate.storage.settings.accounts.getSetting(account.info).read.themePreference
+    guard theme != displayedTheme else { return }
+    displayedTheme = theme
+    var snapshot = source.snapshot()
+    snapshot.reconfigureItems(snapshot.itemIdentifiers.filter {
+      if case .category = $0 { return true }; return false
+    })
+    source.apply(snapshot, animatingDifferences: false)
+  }
+
   @objc private func becameActive() {
-    if viewIfLoaded?.window != nil, needsRefresh { refreshLibrary() }
+    if isPageVisible, needsRefresh { refreshLibrary() }
   }
   @objc private func libraryChanged() {
     needsRefresh = true
-    if viewIfLoaded?.window != nil, UIApplication.shared.applicationState == .active { refreshLibrary() }
+    if isPageVisible, transitionCoordinator == nil, UIApplication.shared.applicationState == .active { refreshLibrary() }
   }
   @objc private func objectsChanged(_ note: Notification) {
     // Playback progress mutates SongMO every few seconds. It must not rebuild
@@ -139,6 +163,7 @@ class LibraryVC: KeyCommandCollectionViewController {
   private func refreshLibrary() {
     guard source != nil else { return }
     needsRefresh = false
+    displayedTheme = appDelegate.storage.settings.accounts.getSetting(account.info).read.themePreference
     playlists = appDelegate.storage.main.library.getPlaylists(for: account)
     recentAlbums = AlbumFetchedResultsController(coreDataCompanion: appDelegate.storage.main, account: account,
       sortType: .newest, isGroupedInAlphabeticSections: false, fetchLimit: 40)

@@ -42,8 +42,11 @@ class UtilitiesTest: XCTestCase {
     XCTAssertTrue(hidden.isEmpty)
     XCTAssertNil(LibraryEntityImage.preparedImage(at: path.path))
     LibraryEntityImage.visualUpdatesAllowed = { true }
+    _ = await LibraryEntityImage.loadPreparedImage(at: path.path)
+    let immediate = try XCTUnwrap(LibraryEntityImage.preparedArtworkPalette(at: path.path))
+    XCTAssertFalse(immediate.isEmpty)
     let visible = await LibraryEntityImage.loadArtworkPalette(at: path.path)
-    XCTAssertFalse(visible.isEmpty)
+    XCTAssertEqual(immediate, visible)
     XCTAssertNotNil(LibraryEntityImage.preparedImage(at: path.path))
   }
 

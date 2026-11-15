@@ -272,6 +272,7 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
 
     storage.applyMultiAccountSettingsUpdateIfNeeded()
     storage.settings.applyPlayerAppearanceDefaultsIfNeeded()
+    storage.settings.applyRedThemeDefaultIfNeeded()
     storage.settings.applyStreamingScrobbleDefaultIfNeeded()
     libraryUpdater.performAccountCleanUpIfNeccessaryInBackground()
 

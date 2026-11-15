@@ -128,7 +128,7 @@ class AlbumDetailVC: SingleSnapshotFetchedResultsTableViewController<SongMO> {
       guard let self, let artist = album.artist else { return }
       navigationController?.pushViewController(AppStoryboard.Main.segueToArtistDetail(account: account, artist: artist), animated: true)
     }
-    header.paletteChanged = { [weak self] color in self?.tableView.backgroundColor = color }
+    header.paletteChanged = { [weak self] color in self?.applyDetailBackgroundColor(color) }
     detailOperationsView = header
     tableView.tableHeaderView = header
     header.refresh()
@@ -212,6 +212,10 @@ class AlbumDetailVC: SingleSnapshotFetchedResultsTableViewController<SongMO> {
     super.viewIsAppearing(animated)
     extendSafeAreaToAccountForMiniPlayer()
 
+  }
+
+  override func viewDidAppear(_ animated: Bool) {
+    super.viewDidAppear(animated)
     Task { @MainActor in
       do {
         try await album.fetch(
@@ -225,10 +229,6 @@ class AlbumDetailVC: SingleSnapshotFetchedResultsTableViewController<SongMO> {
       }
       self.detailOperationsView?.refresh()
     }
-  }
-
-  override func viewDidAppear(_ animated: Bool) {
-    super.viewDidAppear(animated)
     defer { songToScrollTo = nil }
     guard let songToScrollTo = songToScrollTo,
           let indexPath = fetchedResultsController.fetchResultsController
@@ -287,12 +287,10 @@ final class MusicArtworkHeader: UIView {
   private let playButton = UIButton(type: .system)
   private let shuffleButton = UIButton(type: .system)
   private let secondaryButton = UIButton(type: .system)
-  private let fade = CAGradientLayer()
   private let entity: AbstractLibraryEntity & PlayableContainable
   private let artistHero: Bool
   private var paletteKey: String?
   private var paletteTask: Task<Void, Never>?
-  private var baseColor = UIColor(white: 0.16, alpha: 1)
   var playAction: ((Bool) -> Void)?
   var secondaryAction: (() -> Void)?
   var artistAction: (() -> Void)?
@@ -307,8 +305,6 @@ final class MusicArtworkHeader: UIView {
     artwork.imageContentMode = .scaleAspectFill
     artwork.clipsToBounds = true
     artwork.accessibilityIdentifier = artistHero ? "artist-hero-artwork" : "album-header-artwork"
-    fade.locations = [0, 0.5, 1]
-    artwork.layer.addSublayer(fade)
     titleLabel.font = .systemFont(ofSize: artistHero ? 32 : 22, weight: .bold)
     titleLabel.textColor = .white
     titleLabel.textAlignment = .center
@@ -358,7 +354,10 @@ final class MusicArtworkHeader: UIView {
     if window != nil { refresh() } else { stopVisualWork() }
   }
   func preferredHeight(width: CGFloat) -> CGFloat {
-    if artistHero { return min(600, width * 1.25) + 8 }
+    if artistHero {
+      let nameHeight = max(40, titleLabel.sizeThatFits(CGSize(width: max(1, width - 40), height: 100)).height)
+      return min(500, width * 1.15) + 18 + nameHeight + 18 + 56 + 22
+    }
     let side = min(340, width * 0.694)
     let titleHeight = max(28, titleLabel.sizeThatFits(CGSize(width: max(1, width - 40), height: 80)).height)
     return 16 + side + 18 + titleHeight + 27 + 20 + 18 + 44 + 22
@@ -387,25 +386,33 @@ final class MusicArtworkHeader: UIView {
     guard let path = entity.artwork?.imagePath, path != paletteKey else { return }
     paletteKey = path
     paletteTask?.cancel()
+    if let colors = LibraryEntityImage.preparedArtworkPalette(at: path) {
+      applyPalette(colors)
+      return
+    }
     paletteTask = Task { @MainActor [weak self] in
       let colors = await LibraryEntityImage.loadArtworkPalette(at: path)
       guard !Task.isCancelled, let self, UIApplication.shared.applicationState == .active,
             self.paletteKey == path, let color = colors.first else { return }
-      var r: CGFloat = 0, g: CGFloat = 0, b: CGFloat = 0, a: CGFloat = 0
-      color.getRed(&r, green: &g, blue: &b, alpha: &a)
-      self.baseColor = UIColor(red: r * 0.25 + 0.08, green: g * 0.25 + 0.08, blue: b * 0.25 + 0.08, alpha: 1)
-      self.paletteChanged?(self.baseColor)
-      self.setNeedsLayout()
+      self.applyPalette(colors)
     }
   }
+  private func applyPalette(_ colors: [UIColor]) {
+    guard let color = colors.first else { return }
+    var r: CGFloat = 0, g: CGFloat = 0, b: CGFloat = 0, a: CGFloat = 0
+    color.getRed(&r, green: &g, blue: &b, alpha: &a)
+    paletteChanged?(UIColor(red: r * 0.25 + 0.08, green: g * 0.25 + 0.08, blue: b * 0.25 + 0.08, alpha: 1))
+  }
+  var artistNameFrame: CGRect { titleLabel.frame }
   override func layoutSubviews() {
     super.layoutSubviews()
     let width = bounds.width
     if artistHero {
-      artwork.frame = CGRect(x: 0, y: 0, width: width, height: bounds.height)
+      artwork.frame = CGRect(x: 0, y: 0, width: width, height: min(500, width * 1.15))
       artwork.layer.cornerRadius = 0
-      titleLabel.frame = CGRect(x: 20, y: bounds.height - 150, width: width - 40, height: 54)
-      playButton.frame = CGRect(x: (width - 56) / 2, y: bounds.height - 82, width: 56, height: 56)
+      let nameHeight = max(40, titleLabel.sizeThatFits(CGSize(width: max(1, width - 40), height: 100)).height)
+      titleLabel.frame = CGRect(x: 20, y: artwork.frame.maxY + 18, width: width - 40, height: nameHeight)
+      playButton.frame = CGRect(x: (width - 56) / 2, y: titleLabel.frame.maxY + 18, width: 56, height: 56)
       shuffleButton.frame = CGRect(x: playButton.frame.minX - 68, y: playButton.frame.minY + 6, width: 44, height: 44)
       secondaryButton.frame = CGRect(x: playButton.frame.maxX + 24, y: shuffleButton.frame.minY, width: 44, height: 44)
     } else {
@@ -420,9 +427,5 @@ final class MusicArtworkHeader: UIView {
       shuffleButton.frame = CGRect(x: playButton.frame.minX - 58, y: y, width: 44, height: 44)
       secondaryButton.frame = CGRect(x: playButton.frame.maxX + 14, y: y, width: 44, height: 44)
     }
-    CATransaction.begin(); CATransaction.setDisableActions(true)
-    fade.frame = artwork.bounds
-    fade.colors = artistHero ? [UIColor.clear.cgColor, baseColor.withAlphaComponent(0.05).cgColor, baseColor.cgColor] : []
-    CATransaction.commit()
   }
 }
