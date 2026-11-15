@@ -592,8 +592,14 @@ final class PlayerSurfaceAnimator: NSObject, UIViewControllerAnimatedTransitioni
     }
     animator.scrubsLinearly = true
     let presenting = isPresenting
-    animator.addCompletion { [weak self, maskedViews, flyingArtwork, flyingShadow] _ in
+    animator.addCompletion { [weak self, maskedViews, flyingArtwork, flyingShadow] position in
       let completed = !context.transitionWasCancelled
+      #if DEBUG && targetEnvironment(simulator)
+        if ProcessInfo.processInfo.arguments.contains("--smoke-player") {
+          let message = "Player surface completion: presenting=\(presenting), position=\(position), cancelled=\(context.transitionWasCancelled)\n"
+          FileHandle.standardOutput.write(Data(message.utf8))
+        }
+      #endif
       popup.surfaceTransition.artworkMotion?.complete(at: completed ? 1 : 0)
       // Restore nested artwork masks before their ancestor content masks.
       for entry in maskedViews.reversed() { entry.view.mask = entry.original }

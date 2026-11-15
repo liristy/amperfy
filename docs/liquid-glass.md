@@ -98,6 +98,8 @@ player dismissals now pause, scrub, and continue their own `UIViewPropertyAnimat
 `PlayerSurfaceInteraction`, while reporting progress and finish/cancellation to UIKit's
 transition context. The surface and shared cover continue to read the same timing probe.
 Interaction state remains owned until transition completion, including cancellation.
+The UIKit dismissal callback does not clear that ownership; only the surface animator's
+completion releases it, so a short cancellation cannot discard its animator early.
 
 The first-collapse probe runs immediately after detail returns, before any test-only Home
 scroll or forced layout can settle pending work. Failures retain geometry and compositor

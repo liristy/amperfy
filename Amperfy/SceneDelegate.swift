@@ -744,6 +744,8 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
                 flyingCover() == nil, flyingShadow() == nil,
                 pausedPopup.largeCurrentlyPlayingView?.transitionArtworkShadow?.mask == nil else {
             smokeLog("Reversing the final closing phase did not restore all content masks")
+            playerTransitionDiagnostic(popup: pausedPopup, host: vc, miniPlayer: miniPlayer,
+              phase: "long cancellation", hasFlyingCover: flyingCover() != nil)
             return
           }
           smokeLog("Opening kept one cover; closing drag preserved scale and foreground; reversal restored masks")
@@ -890,6 +892,9 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
                 popup.transitionArtwork?.layer.opacity == 1,
                 miniPlayer.artworkImage.layer.opacity == 1, flyingCover() == nil else {
             smokeLog("Cancelled player dismissal did not restore the player")
+            playerTransitionDiagnostic(popup: popup, host: vc, miniPlayer: miniPlayer,
+              phase: "short cancellation", hasFlyingCover: flyingCover() != nil)
+            try await compositorScreenshot("player-dismissal-cancel-failure.png")
             return
           }
           smokeLog("Cancelled dismissal restored the player")
@@ -1863,6 +1868,9 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
                 sampledReturningCover, flyingCover() == nil,
                 miniPlayer.artworkImage.layer.opacity == 1 else {
             smokeLog("Quick downward drag did not dismiss the player")
+            playerTransitionDiagnostic(popup: popup, host: vc, miniPlayer: miniPlayer,
+              phase: "quick finish", hasFlyingCover: flyingCover() != nil)
+            try await compositorScreenshot("player-dismissal-endpoint-failure.png")
             return
           }
           smokeLog("Whole-player capsule morph, shared cover flight in both directions, cancellation and quick dismissal passed")
@@ -2048,6 +2056,18 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
       }
       let marker = URL.documentsDirectory.appendingPathComponent("login-smoke-ready")
       try? "ready".write(to: marker, atomically: true, encoding: .utf8)
+    }
+
+    @MainActor private func playerTransitionDiagnostic(popup: PopupPlayerVC, host: UIViewController,
+      miniPlayer: MiniPlayerView, phase: String, hasFlyingCover: Bool) {
+      let artwork = popup.transitionArtwork
+      let relationship = "presented=\(host.presentedViewController === popup), presenting=\(popup.presentingViewController != nil), dismissing=\(popup.isBeingDismissed)"
+      let surface = "frame=\(popup.view.frame), transform=\(popup.view.transform), alpha=\(popup.view.alpha), opacity=\(popup.view.layer.opacity), mask=\(popup.view.mask != nil)"
+      let cover = "hidden=\(String(describing: artwork?.isHidden)), opacity=\(String(describing: artwork?.layer.opacity)), mask=\(artwork?.mask != nil), flying=\(hasFlyingCover), miniOpacity=\(miniPlayer.artworkImage.layer.opacity)"
+      let state = "interaction=\(popup.surfaceTransition.interaction != nil), motion=\(popup.surfaceTransition.artworkMotion != nil), destination=\(String(describing: popup.surfaceTransition.artworkDestination)), playing=\(appDelegate.player.isPlaying)"
+      for text in [relationship, surface, cover, state] {
+        FileHandle.standardOutput.write(Data(("Player \(phase): " + text + "\n").utf8))
+      }
     }
 
     @MainActor private func dockScrollView(in view: UIView) -> UIScrollView? {

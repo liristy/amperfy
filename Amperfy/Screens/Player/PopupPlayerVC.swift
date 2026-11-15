@@ -441,7 +441,9 @@ class PopupPlayerVC: UIViewController, UIScrollViewDelegate, UIGestureRecognizer
     let interaction = PlayerSurfaceInteraction()
     // Let the surface spring and the cover's easing retain their own curves.
     surfaceTransition.interaction = interaction
-    dismiss(animated: true) { [weak self] in self?.surfaceTransition.interaction = nil }
+    // The surface animator owns this interaction until its completion. UIKit's
+    // dismissal callback can run before a custom cancellation has settled.
+    dismiss(animated: true)
   }
 
   func updateInteractiveDismissal(translation: CGFloat) {
