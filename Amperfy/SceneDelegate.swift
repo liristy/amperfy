@@ -701,10 +701,16 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
           @MainActor @Sendable func compositorScreenshot(_ name: String) async throws {
             let request = URL.documentsDirectory.appendingPathComponent("player-screenshot-request")
             let complete = URL.documentsDirectory.appendingPathComponent("player-screenshot-complete")
+            let started = Date()
             try? FileManager.default.removeItem(at: complete)
             try name.write(to: request, atomically: true, encoding: .utf8)
-            for _ in 0..<150 {
-              if FileManager.default.fileExists(atPath: complete.path) { return }
+            // Shared CI hosts can need more than 15s for simctl's compositor
+            // capture. This wait does not change animation sampling windows.
+            for _ in 0..<300 {
+              if FileManager.default.fileExists(atPath: complete.path) {
+                smokeLog("Compositor screenshot completed: \(name), seconds=\(Date().timeIntervalSince(started))")
+                return
+              }
               try await Task.sleep(for: .milliseconds(100))
             }
             throw NSError(domain: "PlayerSmoke", code: 1,
