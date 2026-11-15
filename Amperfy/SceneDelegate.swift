@@ -708,7 +708,8 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
             // capture. This wait does not change animation sampling windows.
             for _ in 0..<300 {
               if FileManager.default.fileExists(atPath: complete.path) {
-                smokeLog("Compositor screenshot completed: \(name), seconds=\(Date().timeIntervalSince(started))")
+                let message = "Compositor screenshot completed: \(name), seconds=\(Date().timeIntervalSince(started))\n"
+                FileHandle.standardOutput.write(Data(message.utf8))
                 return
               }
               try await Task.sleep(for: .milliseconds(100))
