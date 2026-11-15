@@ -2067,7 +2067,8 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
                 abs(scroll.adjustedContentInset.bottom - inset.bottom) < 0.5,
                 abs(currentViewport.minY - viewport.minY) < 0.5,
                 abs(currentViewport.height - viewport.height) < 0.5 else {
-            FileHandle.standardOutput.write(Data("Dock collapse moved the list viewport, inset, offset or anchor\n".utf8))
+            let detail = "Dock stability failure delta=\(delta): offset \(offset) -> \(scroll.contentOffset), inset \(inset) -> \(scroll.adjustedContentInset), viewport \(viewport) -> \(currentViewport), dock \(dockFrame) -> \(dock.frame), native \(nativeFrame) -> \(tabHost.tabBar.frame), safeArea=\(tabHost.view.safeAreaInsets), content=\(scroll.contentSize), scroll=\(type(of: scroll))\n"
+            FileHandle.standardOutput.write(Data(detail.utf8))
             return false
           }
         }
