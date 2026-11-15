@@ -69,8 +69,10 @@ class LibraryVC: KeyCommandCollectionViewController {
         let cell = view.dequeueReusableCell(withReuseIdentifier: "category", for: path) as! UICollectionViewListCell
         var content = cell.defaultContentConfiguration()
         content.text = category == .downloads ? "Downloaded".localized : category.displayName
-        content.image = category.image.withConfiguration(UIImage.SymbolConfiguration(pointSize: 22, weight: .regular))
-        content.imageProperties.tintColor = appDelegate.storage.settings.accounts.getSetting(account.info).read.themePreference.asColor
+        content.image = category.image.withRenderingMode(.alwaysTemplate)
+          .withConfiguration(UIImage.SymbolConfiguration(pointSize: 22, weight: .regular))
+        // Inherit the live app tint, including changes made in a settings sheet.
+        content.imageProperties.tintColor = nil
         content.imageProperties.reservedLayoutSize = CGSize(width: 28, height: 28)
         content.textProperties.font = .preferredFont(forTextStyle: .title3)
         content.directionalLayoutMargins = NSDirectionalEdgeInsets(top: 8, leading: 20, bottom: 8, trailing: 20)

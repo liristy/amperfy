@@ -2163,7 +2163,7 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
       }
       let theme = appDelegate.storage.settings.accounts.getSetting(appDelegate.storage.settings.accounts.active).read.themePreference.asColor
       guard let content = (category as? UICollectionViewListCell)?.contentConfiguration as? UIListContentConfiguration,
-            content.imageProperties.tintColor == theme else {
+            content.imageProperties.resolvedTintColor(for: category.tintColor) == theme else {
         smokeLog("Library category icons did not follow account theme"); return false
       }
       guard let edit = libraryVC.navigationItem.rightBarButtonItems?.first(where: {
