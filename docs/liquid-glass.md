@@ -94,7 +94,7 @@ legacy safe-area helper, retaining exactly 56pt + 12pt regardless of dock collap
 
 The complete player regression also exposed a real release stall: the CI recording holds
 the dragged lyrics page at its full size before jumping directly to Home. Interactive
-player transitions now pause, scrub, and continue their own `UIViewPropertyAnimator` through
+player dismissals now pause, scrub, and continue their own `UIViewPropertyAnimator` through
 `PlayerSurfaceInteraction`, while reporting progress and finish/cancellation to UIKit's
 transition context. The surface and shared cover continue to read the same timing probe.
 Interaction state remains owned until transition completion, including cancellation.

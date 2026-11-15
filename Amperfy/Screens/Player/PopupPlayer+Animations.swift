@@ -22,7 +22,7 @@
 import AmperfyKit
 import UIKit
 
-// Drive the property animator directly. Percent-driven Core Animation timing
+// Drive the dismissal property animator directly. Percent-driven Core Animation timing
 // can leave the surface probe paused after a short drag is released, then jump
 // to its endpoint when UIKit completes the transition.
 @MainActor
@@ -48,7 +48,13 @@ final class PlayerSurfaceInteraction: NSObject, UIViewControllerInteractiveTrans
     }
     context = transitionContext
     self.animator = animator
-    animator.addCompletion { [weak self] _ in
+    #if DEBUG && targetEnvironment(simulator)
+      trace("start duration=\(animator.duration), progress=\(progress), interactive=\(transitionContext.isInteractive)")
+    #endif
+    animator.addCompletion { [weak self] position in
+      #if DEBUG && targetEnvironment(simulator)
+        self?.trace("completion position=\(position)")
+      #endif
       self?.context = nil
       self?.animator = nil
       self?.animationController = nil
@@ -78,11 +84,21 @@ final class PlayerSurfaceInteraction: NSObject, UIViewControllerInteractiveTrans
 
   private func settle(completed: Bool) {
     guard let animator, let context else { return }
+    #if DEBUG && targetEnvironment(simulator)
+      trace("release finish=\(completed), progress=\(progress), duration=\(animator.duration), state=\(animator.state), running=\(animator.isRunning)")
+    #endif
     if completed { context.finishInteractiveTransition() } else { context.cancelInteractiveTransition() }
     animator.isReversed = !completed
     animator.continueAnimation(withTimingParameters: UICubicTimingParameters(animationCurve: completionCurve),
       durationFactor: 1)
   }
+
+  #if DEBUG && targetEnvironment(simulator)
+    private func trace(_ message: String) {
+      guard ProcessInfo.processInfo.arguments.contains("--smoke-player") else { return }
+      FileHandle.standardOutput.write(Data(("Player interaction: " + message + "\n").utf8))
+    }
+  #endif
 }
 
 // The complete player expands from, and contracts into, the mini-player capsule.
@@ -93,7 +109,7 @@ final class PlayerSurfaceTransitionDelegate: NSObject, UIViewControllerTransitio
   weak var sourcePlayer: UIView?
   weak var sourceArtwork: UIImageView?
   var interaction: PlayerSurfaceInteraction?
-  var presentationInteraction: PlayerSurfaceInteraction?
+  var presentationInteraction: UIPercentDrivenInteractiveTransition?
   var artworkMotion: PlayerArtworkMotion?
   var artworkProgress: CGFloat = 0
   var artworkDestination: CGFloat?
@@ -110,7 +126,6 @@ final class PlayerSurfaceTransitionDelegate: NSObject, UIViewControllerTransitio
 
   func interactionControllerForPresentation(using animator: UIViewControllerAnimatedTransitioning)
     -> UIViewControllerInteractiveTransitioning? {
-    presentationInteraction?.prepare(using: animator)
     return presentationInteraction
   }
 

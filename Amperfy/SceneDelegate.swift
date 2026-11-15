@@ -717,6 +717,7 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
                 abs(hiddenCover.transform.a - 0.73) < 0.01, flyingCover() == nil, flyingShadow() == nil,
                 pausedPopup.largeCurrentlyPlayingView?.transitionArtworkShadow?.mask == nil else {
             smokeLog("Paused opening did not hand off to the real scaled cover")
+            smokeLog("Paused opening endpoint: coverMask=\(hiddenCover.mask != nil), miniMask=\(miniPlayer.artworkImage.mask != nil), scale=\(hiddenCover.transform.a), flyingCover=\(flyingCover() != nil), flyingShadow=\(flyingShadow() != nil), pageMask=\(pausedPopup.view.mask != nil), presenting=\(pausedPopup.isBeingPresented)")
             return
           }
           pausedPopup.beginInteractiveDismissal()
