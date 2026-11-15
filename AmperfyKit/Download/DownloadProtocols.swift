@@ -31,6 +31,10 @@ public struct DownloadRequest: Hashable, Sendable {
   let id: String
   let title: String
   let info: DownloadElementInfo
+
+  public static func == (lhs: Self, rhs: Self) -> Bool { lhs.id == rhs.id }
+
+  public func hash(into hasher: inout Hasher) { hasher.combine(id) }
 }
 
 // MARK: - DownloadManageable

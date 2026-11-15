@@ -228,6 +228,27 @@ final class MOCK_LibrarySyncer: LibrarySyncer {
 
 // MARK: - MOCK_DownloadManagerDelegate
 
+private final class CacheRequestProbe: URLProtocol, @unchecked Sendable {
+  static let starts = OSAllocatedUnfairLock(initialState: 0)
+  override class func canInit(with request: URLRequest) -> Bool { request.url?.host == "cache-test.invalid" }
+  override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
+  override func startLoading() { Self.starts.withLock { $0 += 1 } }
+  override func stopLoading() {}
+}
+
+private struct CacheDownloadProbeDelegate: DownloadManagerDelegate {
+  var requestPredicate: NSPredicate { DownloadMO.onlyPlayablesPredicate }
+  let parallelDownloadsCount = 4
+  let httpHeaders = [String: String]()
+  func prepareDownload(downloadInfo: DownloadElementInfo, storage: AsyncCoreDataAccessWrapper) async throws -> URL {
+    URL(string: "https://cache-test.invalid/audio")!
+  }
+  func validateDownloadedData(fileURL: URL?, downloadURL: URL?) -> ResponseError? { nil }
+  func completedDownload(downloadInfo: DownloadElementInfo, fileURL: URL, fileMimeType: String?,
+                         storage: AsyncCoreDataAccessWrapper) async {}
+  func failedDownload(downloadInfo: DownloadElementInfo, storage: AsyncCoreDataAccessWrapper) async {}
+}
+
 final class MOCK_DownloadManagerDelegate: DownloadManagerDelegate {
   var requestPredicate: NSPredicate { NSPredicate(value: true) }
   let parallelDownloadsCount = 2
@@ -1074,6 +1095,145 @@ class MusicPlayerTest: XCTestCase {
     XCTAssertEqual(otherPriority, URLSessionTask.defaultPriority)
     await manager.finishDownload(downloadRequest: currentDownload, task: nil, error: .alreadyDownloaded)
     XCTAssertEqual(queue.maxConcurrentOperationCount, 2)
+  }
+
+  func testConcurrentSingleAndBatchCacheRequestsCreateOneRecordPerSong() async throws {
+    let other = library.createSong(account: account)
+    other.id = "cache-other"
+    other.title = songToDownload.title
+    library.saveContext()
+    let first = try XCTUnwrap(songToDownload.threadSafeInfo)
+    let second = try XCTUnwrap(other.threadSafeInfo)
+    let asyncStorage = AsyncCoreDataAccessWrapper(persistentContainer: cdHelper.persistentContainer)
+    let requests = DownloadRequestManager(accountObjectId: account.managedObject.objectID, storage: asyncStorage,
+                                         getDownloadDelegateCB: { CacheDownloadProbeDelegate() })
+    let created = await withTaskGroup(of: [DownloadRequest].self) { group in
+      for index in 0..<60 {
+        group.addTask {
+          if index.isMultiple(of: 2) {
+            return await requests.add(downloadInfos: [first, second, first, second])
+          }
+          if let request = await requests.add(downloadInfo: first) { return [request] }
+          return []
+        }
+      }
+      var result = [DownloadRequest]()
+      for await batch in group { result.append(contentsOf: batch) }
+      return result
+    }
+    XCTAssertEqual(created.count, 2)
+    let rowCount = try await asyncStorage.performAndGet { $0.library.getAllDownloads().count }
+    XCTAssertEqual(rowCount, 2)
+    XCTAssertEqual(Set(created.map { $0.id }).count, 2, "Same titles with different media IDs must remain separate")
+  }
+
+  func testRepeatedCacheRequestsPreserveRunningTaskAndRetryOnlyMissingOrFailedCache() async throws {
+    let info = try XCTUnwrap(songToDownload.threadSafeInfo)
+    let asyncStorage = AsyncCoreDataAccessWrapper(persistentContainer: cdHelper.persistentContainer)
+    let requests = DownloadRequestManager(accountObjectId: account.managedObject.objectID, storage: asyncStorage,
+                                         getDownloadDelegateCB: { CacheDownloadProbeDelegate() })
+    let initial = await requests.add(downloadInfo: info)
+    let id = try XCTUnwrap(initial?.objectID)
+    let queuedAgain = await requests.add(downloadInfo: info)
+    XCTAssertNil(queuedAgain)
+    let started = Date(timeIntervalSince1970: 1000)
+    try await asyncStorage.perform { companion in
+      let download = Download(managedObject: companion.context.object(with: id) as! DownloadMO)
+      download.startDate = started
+    }
+    for _ in 0..<10 {
+      let single = await requests.add(downloadInfo: info)
+      let batch = await requests.add(downloadInfos: [info, info])
+      XCTAssertNil(single)
+      XCTAssertTrue(batch.isEmpty)
+    }
+    let unchanged = try await asyncStorage.performAndGet { companion in
+      Download(managedObject: companion.context.object(with: id) as! DownloadMO).startDate
+    }
+    XCTAssertEqual(unchanged, started)
+    try await asyncStorage.perform { companion in
+      Download(managedObject: companion.context.object(with: id) as! DownloadMO).isDownloading = false
+    }
+    let missing = await requests.add(downloadInfo: info)
+    XCTAssertEqual(missing?.objectID, id)
+    let duplicateRetry = await requests.add(downloadInfo: info)
+    XCTAssertNil(duplicateRetry)
+    try await asyncStorage.perform { companion in
+      Download(managedObject: companion.context.object(with: id) as! DownloadMO).error = .fetchFailed
+    }
+    let failed = await requests.add(downloadInfo: info)
+    XCTAssertEqual(failed?.objectID, id)
+    // Simulate a cache completion not yet merged into the caller's main context.
+    try await asyncStorage.perform { companion in
+      let playable = AbstractPlayable(managedObject: companion.context.object(with: info.objectId) as! AbstractPlayableMO)
+      playable.relFilePath = URL(string: "cache/completed.flac")
+    }
+    let cached = await requests.add(downloadInfo: info)
+    let cachedBatch = await requests.add(downloadInfos: [info, info])
+    XCTAssertNil(cached)
+    XCTAssertTrue(cachedBatch.isEmpty)
+  }
+
+  func testRepairQueueKeepsCacheAndRequestIdentityIgnoresDuplicateRowsAndTitles() async throws {
+    let info = try XCTUnwrap(songCached.threadSafeInfo)
+    let cachePath = try XCTUnwrap(songCached.relFilePath)
+    let old = library.createDownload(account: account, id: songCached.uniqueID)
+    old.element = songCached
+    let current = library.createDownload(account: account, id: songCached.uniqueID)
+    current.element = songCached
+    current.isDownloading = false
+    _ = library.createDownload(account: account, id: "orphan")
+    library.saveContext()
+    let first = DownloadRequest(objectID: old.managedObject.objectID, id: songCached.uniqueID, title: "Old", info: info)
+    let second = DownloadRequest(objectID: current.managedObject.objectID, id: songCached.uniqueID, title: "New", info: info)
+    XCTAssertEqual(Set([first, second]).count, 1)
+    let asyncStorage = AsyncCoreDataAccessWrapper(persistentContainer: cdHelper.persistentContainer)
+    let requests = DownloadRequestManager(accountObjectId: account.managedObject.objectID, storage: asyncStorage,
+                                         getDownloadDelegateCB: { CacheDownloadProbeDelegate() })
+    await requests.repairDuplicateDownloads()
+    let rowCount = try await asyncStorage.performAndGet { $0.library.getAllDownloads().count }
+    XCTAssertEqual(rowCount, 1)
+    let savedPath = try await asyncStorage.performAndGet { companion in
+      AbstractPlayable(managedObject: companion.context.object(with: info.objectId) as! AbstractPlayableMO).relFilePath
+    }
+    XCTAssertEqual(savedPath, cachePath)
+    let cached = await requests.add(downloadInfo: info)
+    XCTAssertNil(cached)
+  }
+
+  func testRepeatedAutoCacheEnqueuesStartOneURLSessionTransfer() async throws {
+    storage.settings.user.isOfflineMode = false
+    CacheRequestProbe.starts.withLock { $0 = 0 }
+    let asyncStorage = AsyncCoreDataAccessWrapper(persistentContainer: cdHelper.persistentContainer)
+    let requests = DownloadRequestManager(accountObjectId: account.managedObject.objectID, storage: asyncStorage,
+                                         getDownloadDelegateCB: { CacheDownloadProbeDelegate() })
+    let manager = DownloadManager(name: "Cache deduplication test", storage: asyncStorage, requestManager: requests,
+      getDownloadDelegateCB: { CacheDownloadProbeDelegate() }, eventLogger: eventLogger,
+      settings: storage.settings, networkMonitor: networkMonitor, notificationHandler: EventNotificationHandler(),
+      urlCleanser: backendApi, limitCacheSize: false, isFailWithPopupError: false)
+    let config = URLSessionConfiguration.ephemeral
+    config.protocolClasses = [CacheRequestProbe.self]
+    let session = URLSession(configuration: config, delegate: manager, delegateQueue: nil)
+    defer { manager.stop(); session.invalidateAndCancel() }
+    manager.initialize(urlSession: session, isCheckForCachedNeeded: true, validationCB: nil)
+    await manager._start()
+    for _ in 0..<40 {
+      manager.download(object: songToDownload)
+      manager.download(objects: [songToDownload, songToDownload])
+    }
+    for _ in 0..<500 {
+      if CacheRequestProbe.starts.withLock({ $0 }) > 0 { break }
+      try await Task.sleep(for: .milliseconds(10))
+    }
+    // Re-enter startup/network queue setup while a real URLSession task is active.
+    await manager._start()
+    for _ in 0..<20 { manager.download(object: songToDownload) }
+    try await Task.sleep(for: .milliseconds(300))
+    let transfers = await session.allTasks
+    XCTAssertEqual(CacheRequestProbe.starts.withLock { $0 }, 1)
+    XCTAssertEqual(transfers.count, 1)
+    let rowCount = try await asyncStorage.performAndGet { $0.library.getAllDownloads().count }
+    XCTAssertEqual(rowCount, 1)
   }
 
   private func startCachedSong(at time: Double) async throws {

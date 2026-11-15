@@ -94,6 +94,8 @@ actor DownloadManager: NSObject, DownloadManageable {
   private let urlCleanser: URLCleanser
 
   private var isRunning = false
+  private var hasReconciledDownloads = false
+  private var isReconcilingDownloads = false
   private var taskOperations = [DownloadRequest: DownloadOperation]()
   private var priorityDownloadID: String?
   private var normalDownloadLimit = 1
@@ -285,6 +287,13 @@ actor DownloadManager: NSObject, DownloadManageable {
 
   func _start() async {
     isRunning = true
+    if !hasReconciledDownloads {
+      guard !isReconcilingDownloads else { return }
+      isReconcilingDownloads = true
+      await requestManager.repairDuplicateDownloads()
+      hasReconciledDownloads = true
+      isReconcilingDownloads = false
+    }
     await setupDownloadQueue()
   }
 
@@ -380,7 +389,8 @@ actor DownloadManager: NSObject, DownloadManageable {
 
   private func setupDownloadQueue() async {
     guard isAllowedToTriggerDownload else { return }
-    let downloadRequests = await requestManager.getRequestedDownloads()
+    let activeIDs = Set(taskOperations.keys.map { $0.id })
+    let downloadRequests = await requestManager.getRequestedDownloads(excluding: activeIDs)
     for downloadRequest in downloadRequests {
       addDownloadTaskOperation(downloadRequest: downloadRequest)
     }
@@ -590,7 +600,7 @@ actor DownloadManager: NSObject, DownloadManageable {
   }
 
   private var isAllowedToTriggerDownload: Bool {
-    isRunning &&
+    isRunning && hasReconciledDownloads &&
       settings.user.isOnlineMode &&
       networkMonitor.isConnectedToNetwork &&
       (!isCacheSizeLimited || !storageExceedsCacheLimit())

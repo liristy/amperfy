@@ -35,10 +35,30 @@ typealias GetDownloadManagerDelegateCB = @MainActor () -> DownloadManagerDelegat
 
 // MARK: - DownloadRequestManager
 
-final class DownloadRequestManager: Sendable {
+actor DownloadRequestManager {
   private let accountObjectId: NSManagedObjectID
   private let storage: AsyncCoreDataAccessWrapper
   private let getDownloadDelegateCB: GetDownloadManagerDelegateCB
+  private var mutationInProgress = false
+  private var mutationWaiters = [CheckedContinuation<Void, Never>]()
+
+  // Each storage call creates its own background context. Actor isolation alone
+  // is not enough: another add can enter while the first context is saving.
+  private func acquireMutation() async {
+    if mutationInProgress {
+      await withCheckedContinuation { mutationWaiters.append($0) }
+    } else {
+      mutationInProgress = true
+    }
+  }
+
+  private func releaseMutation() {
+    if mutationWaiters.isEmpty {
+      mutationInProgress = false
+    } else {
+      mutationWaiters.removeFirst().resume()
+    }
+  }
 
   init(
     accountObjectId: NSManagedObjectID,
@@ -51,6 +71,8 @@ final class DownloadRequestManager: Sendable {
   }
 
   func add(downloadInfo: DownloadElementInfo) async -> DownloadRequest? {
+    await acquireMutation()
+    defer { releaseMutation() }
     let request = try? await storage.performAndGet { asyncCompanion -> DownloadRequest? in
       let asyncObject = Download.createDownloadableObject(
         inContext: asyncCompanion.context,
@@ -70,6 +92,8 @@ final class DownloadRequestManager: Sendable {
 
   func add(downloadInfos: [DownloadElementInfo]) async -> [DownloadRequest] {
     guard !downloadInfos.isEmpty else { return [] }
+    await acquireMutation()
+    defer { releaseMutation() }
     return try! await storage.performAndGet { asyncCompanion in
       var asyncRequests = [DownloadRequest]()
       var objects = [(DownloadElementInfo, Downloadable)]()
@@ -100,11 +124,17 @@ final class DownloadRequestManager: Sendable {
     let account = library.getAccount(managedObjectId: accountObjectId)
     let ids = Set(objects.compactMap { $0.1.uniqueID })
     let existingDownloadsDict = library.getDownloadsDict(account: account, ids: ids)
+    var seen = Set<String>()
 
     var downloadMapping = [(DownloadElementInfo, Downloadable, Download)]()
     for (info, object) in objects {
+      guard seen.insert(object.uniqueID).inserted else { continue }
+      // Recheck in the current context: caching may have completed since the
+      // caller checked its main-context object.
+      guard info.type != .playable || !object.isCached else { continue }
       if let existingDownload = existingDownloadsDict[object.uniqueID] {
-        if existingDownload.errorDate != nil || !object.isCached {
+        if !existingDownload.isDownloading,
+           existingDownload.errorDate != nil || (existingDownload.finishDate != nil && !object.isCached) {
           existingDownload.reset()
           hasCoreDataChanges = true
           downloadMapping.append((info, object, existingDownload))
@@ -126,31 +156,60 @@ final class DownloadRequestManager: Sendable {
   }
 
   nonisolated private func addLowPrio(object: Downloadable, library: LibraryStorage) -> Download? {
-    let account = library.getAccount(managedObjectId: accountObjectId)
-    if let existingDownload = library.getDownload(account: account, id: object.uniqueID) {
-      // Retry completed/failed artwork requests when their cache is missing.
-      // Leave queued and running requests alone so reused cells cannot duplicate them.
-      if object.threadSafeInfo?.type == .artwork,
-         !existingDownload.isDownloading,
-         existingDownload.errorDate != nil || (existingDownload.finishDate != nil && !object.isCached) {
-        existingDownload.reset()
-        library.saveContext()
-        return existingDownload
-      }
-      if let threadSafeInfo = object.threadSafeInfo,
-         threadSafeInfo.type == .playable,
-         existingDownload.errorDate != nil || !object.isCached {
-        existingDownload.reset()
-        library.saveContext()
-        return existingDownload
-      }
-      return nil
-    }
+    guard let info = object.threadSafeInfo else { return nil }
+    return addLowPrio(objects: [(info, object)], library: library).first?.2
+  }
 
-    let newDownload = library.createDownload(account: account, id: object.uniqueID)
-    newDownload.element = object
-    library.saveContext()
-    return newDownload
+  /// Repair records created by older concurrent enqueues before starting tasks.
+  /// This removes queue metadata only; cached audio/artwork files are retained.
+  func repairDuplicateDownloads() async {
+    await acquireMutation()
+    defer { releaseMutation() }
+    let predicate = await getDownloadDelegateCB().requestPredicate.predicateFormat
+    try? await storage.perform { companion in
+      let account = companion.library.getAccount(managedObjectId: self.accountObjectId)
+      let fetch: NSFetchRequest<DownloadMO> = DownloadMO.creationDateSortedFetchRequest
+      fetch.predicate = NSCompoundPredicate(andPredicateWithSubpredicates: [
+        companion.library.getFetchPredicate(forAccount: account),
+        NSCompoundPredicate(orPredicateWithSubpredicates: [
+          NSPredicate(format: predicate),
+          NSPredicate(format: "playable == nil AND artwork == nil"),
+        ]),
+      ])
+      let rows = try companion.context.fetch(fetch)
+      var retained = [String: (Download, DownloadElementInfo)]()
+      var removed = [Download]()
+      for row in rows {
+        let download = Download(managedObject: row)
+        guard let element = download.element, let info = element.threadSafeInfo else {
+          removed.append(download)
+          continue
+        }
+        let id = element.uniqueID
+        if let previous = retained[id] {
+          if element.isCached, download.isFinishedSuccessfully, !previous.0.isFinishedSuccessfully {
+            removed.append(previous.0)
+            retained[id] = (download, info)
+          } else {
+            removed.append(download)
+          }
+        } else {
+          retained[id] = (download, info)
+        }
+      }
+      guard !removed.isEmpty else { return }
+      removed.forEach { companion.library.deleteDownload($0) }
+      companion.context.processPendingChanges()
+      // Restore the inverse link in stores whose concurrent writes left more
+      // than one download pointing at the same playable/artwork.
+      for (id, (download, info)) in retained {
+        let element = Download.createDownloadableObject(inContext: companion.context, info: info)
+        download.managedObject.playable = nil
+        download.managedObject.artwork = nil
+        download.element = element
+        download.id = id
+      }
+    }
   }
 
   func removeFinishedDownload(for uniqueID: String) async {
@@ -183,7 +242,7 @@ final class DownloadRequestManager: Sendable {
     }
   }
 
-  func getRequestedDownloads() async -> [DownloadRequest] {
+  func getRequestedDownloads(excluding activeIDs: Set<String> = []) async -> [DownloadRequest] {
     let predicateFormat = await getDownloadDelegateCB().requestPredicate.predicateFormat
     let requestedDownloads = try? await storage.performAndGet { asyncCompanion in
       let account = asyncCompanion.library.getAccount(managedObjectId: self.accountObjectId)
@@ -198,6 +257,7 @@ final class DownloadRequestManager: Sendable {
       let downloadsMO = try? asyncCompanion.context.fetch(fetchRequest)
       let downloadRequests = downloadsMO?.compactMap { downloadMo -> DownloadRequest? in
         let download = Download(managedObject: downloadMo)
+        guard !activeIDs.contains(download.id) else { return nil }
         download.startDate = nil
         let id = download.id
         guard let element = download.element else { return nil }
@@ -234,23 +294,27 @@ final class DownloadRequestManager: Sendable {
     }
   }
 
-  func clearAllDownloadsAsyncIfAllHaveFinished() {
-    Task {
-      let downloadPredicateFormat = await getDownloadDelegateCB().requestPredicate.predicateFormat
-      let notStartedDownloadCount = try? await storage.performAndGet { asyncCompanion in
-        let account = asyncCompanion.library.getAccount(managedObjectId: self.accountObjectId)
-        let request: NSFetchRequest<DownloadMO> = DownloadMO.creationDateSortedFetchRequest
-        request.predicate = NSCompoundPredicate(andPredicateWithSubpredicates: [
-          NSPredicate(format: downloadPredicateFormat),
-          NSPredicate(format: "%K == nil", #keyPath(DownloadMO.startDate)),
-          asyncCompanion.library.getFetchPredicate(forAccount: account),
-        ])
-        return (try? asyncCompanion.context.count(for: request)) ?? 0
-      }
+  nonisolated func clearAllDownloadsAsyncIfAllHaveFinished() {
+    Task { await clearAllDownloadsIfAllHaveFinished() }
+  }
 
-      if notStartedDownloadCount == 0 {
-        await clearAllDownloads()
-      }
+  private func clearAllDownloadsIfAllHaveFinished() async {
+    await acquireMutation()
+    defer { releaseMutation() }
+    let downloadPredicateFormat = await getDownloadDelegateCB().requestPredicate.predicateFormat
+    let notStartedDownloadCount = try? await storage.performAndGet { asyncCompanion in
+      let account = asyncCompanion.library.getAccount(managedObjectId: self.accountObjectId)
+      let request: NSFetchRequest<DownloadMO> = DownloadMO.creationDateSortedFetchRequest
+      request.predicate = NSCompoundPredicate(andPredicateWithSubpredicates: [
+        NSPredicate(format: downloadPredicateFormat),
+        NSPredicate(format: "%K == nil", #keyPath(DownloadMO.startDate)),
+        asyncCompanion.library.getFetchPredicate(forAccount: account),
+      ])
+      return (try? asyncCompanion.context.count(for: request)) ?? 0
+    }
+
+    if notStartedDownloadCount == 0 {
+      await clearAllDownloads()
     }
   }
 
