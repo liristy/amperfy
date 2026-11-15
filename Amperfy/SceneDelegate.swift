@@ -550,6 +550,9 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
             try await Task.sleep(for: .milliseconds(900))
             guard tabHost.selectedTab === home, tabHost.tabBar.alpha == 1 else { return }
             smokeLog("Home and Library selection uses the visible native tab bar without a custom glass overlay")
+            if let scroll = dockScrollView(in: tabHost.selectedViewController?.view ?? tabHost.view) {
+              guard try await verifyDockScrollStability(tabHost: tabHost, scroll: scroll) else { return }
+            }
             tabHost.updatePlayerDockForScroll(delta: -40, atTop: false)
             try await Task.sleep(for: .milliseconds(650))
             let compactFrame = miniPlayer.glassContainer.frame
@@ -561,6 +564,8 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
                   abs(dock.searchSlot.frame.minX - compactFrame.maxX - 12) < 0.5,
                   miniPlayer.glassContainer.superview === dock else {
               smokeLog("Sinking player did not settle between navigation and search")
+              smokeLog("Dock compact state collapsed=\(dock.isCollapsed), hidden=\(tabHost.isTabBarHidden), alpha=\(tabHost.tabBar.alpha), interactive=\(tabHost.tabBar.isUserInteractionEnabled), accessibilityHidden=\(tabHost.tabBar.accessibilityElementsHidden), player=\(compactFrame), navigation=\(dock.navigationSlot.frame), search=\(dock.searchSlot.frame), transform=\(miniPlayer.glassContainer.transform), parentMatches=\(miniPlayer.glassContainer.superview === dock)")
+              try await compositorScreenshot("player-mini-collapsed-failure.png")
               return
             }
             try dockScreenshot("player-mini-collapsed.png")
