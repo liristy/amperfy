@@ -101,7 +101,7 @@ class ArtistDetailVC: MultiSourceTableViewController {
   }
   override func viewDidAppear(_ animated: Bool) {
     super.viewDidAppear(animated)
-    refreshVisible()
+    if needsRefresh { refreshContent() }
     Task { @MainActor [weak self] in
       guard let self else { return }
       do { try await artist.fetch(storage: appDelegate.storage, librarySyncer: appDelegate.getMeta(account.info).librarySyncer,

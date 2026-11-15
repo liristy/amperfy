@@ -162,6 +162,10 @@ class LibraryVC: KeyCommandCollectionViewController {
 
   private func refreshLibrary() {
     guard source != nil else { return }
+    guard isPageVisible || source.snapshot().numberOfItems == 0 else {
+      needsRefresh = true
+      return
+    }
     needsRefresh = false
     displayedTheme = appDelegate.storage.settings.accounts.getSetting(account.info).read.themePreference
     playlists = appDelegate.storage.main.library.getPlaylists(for: account)
