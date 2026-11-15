@@ -22,7 +22,8 @@ devices = json.loads(subprocess.check_output(
 for runtime, entries in devices.items():
     if "iOS-26" not in runtime:
         continue
-    for device in entries:
+    # Match the 440x956pt reference device before falling back to another iPhone.
+    for device in sorted(entries, key=lambda d: d["name"] != "iPhone 17 Pro Max"):
         if device["name"].startswith("iPhone"):
             print(device["udid"])
             sys.exit(0)

@@ -31,11 +31,11 @@
                             </subviews>
                             <constraints>
                                 <constraint firstItem="4sr-YU-gYi" firstAttribute="top" secondItem="ia9-ph-a9C" secondAttribute="top" priority="1000" relation="greaterThanOrEqual" constant="8" id="12M-TF-w9C"/>
-                                <constraint firstAttribute="bottom" secondItem="4sr-YU-gYi" secondAttribute="bottom" priority="1000" relation="greaterThanOrEqual" constant="28" id="AQW-tz-8of"/>
+                                <constraint firstAttribute="bottom" secondItem="4sr-YU-gYi" secondAttribute="bottom" priority="1000" relation="greaterThanOrEqual" constant="12" id="AQW-tz-8of"/>
                                 <constraint firstAttribute="trailing" relation="greaterThanOrEqual" secondItem="4sr-YU-gYi" secondAttribute="trailing" id="art-width-bound"/>
                                 <constraint firstItem="4sr-YU-gYi" firstAttribute="centerX" secondItem="ia9-ph-a9C" secondAttribute="centerX" id="QAU-Hs-QvW"/>
                                 <constraint firstItem="4sr-YU-gYi" firstAttribute="leading" secondItem="ia9-ph-a9C" secondAttribute="leading" priority="750" constant="0" id="T6t-e0-8me"/>
-                                <constraint firstItem="4sr-YU-gYi" firstAttribute="centerY" secondItem="ia9-ph-a9C" secondAttribute="centerY" priority="700" constant="-10" id="dVP-va-0hv"/>
+                                <constraint firstItem="4sr-YU-gYi" firstAttribute="centerY" secondItem="ia9-ph-a9C" secondAttribute="centerY" priority="700" constant="16" id="dVP-va-0hv"/>
                             </constraints>
                         </view>
                         <view contentMode="scaleToFill" translatesAutoresizingMaskIntoConstraints="NO" id="syN-Kp-zH0" userLabel="Details View">

@@ -473,7 +473,7 @@ final class PlayerTransportButton: UIButton {
 // MARK: - PlayerControlView
 
 class PlayerControlView: UIView {
-  static let frameHeight: CGFloat = 268
+  static let frameHeight: CGFloat = 288
   static private let margin = UIEdgeInsets(
     top: 0,
     left: 0,

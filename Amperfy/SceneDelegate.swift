@@ -911,6 +911,36 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
             smokeLog("Full player typography no longer matches the reference layout")
             return
           }
+          if let slider = popup.controlView?.timeSlider {
+            popup.view.layoutIfNeeded()
+            let cover = fullPlayer.artworkImage.convert(fullPlayer.artworkImage.bounds, to: popup.view)
+            let title = fullPlayer.titleLabel.convert(fullPlayer.titleLabel.bounds, to: popup.view)
+            let artist = fullPlayer.artistLabel.convert(fullPlayer.artistLabel.bounds, to: popup.view)
+            let track = slider.convert(slider.trackRect(forBounds: slider.bounds), to: popup.view)
+            let coverGap = title.minY - cover.maxY
+            let progressGap = track.minY - artist.maxY
+            smokeLog("Full player spacing: viewport=\(popup.view.bounds), content=\(fullPlayer.frame), host=\(popup.largePlayerPlaceholderView.bounds), cover=\(cover), title=\(title), artist=\(artist), track=\(track), gaps=\(coverGap),\(progressGap)")
+            guard fullPlayer.frame == popup.largePlayerPlaceholderView.bounds,
+                  abs(cover.midX - popup.view.bounds.midX) < 1,
+                  coverGap >= 16, coverGap <= 64,
+                  progressGap >= 16, progressGap <= 64 else {
+              smokeLog("Full player lost the reference cover/metadata/progress spacing")
+              try await compositorScreenshot("player-reference-spacing-failure.png")
+              return
+            }
+            // The supplied 1320x2868px reference is a 440x956pt screen.
+            if abs(popup.view.bounds.width - 440) < 1, abs(popup.view.bounds.height - 956) < 1 {
+              guard abs(cover.minX - 24) < 2, abs(cover.minY - 131) < 4,
+                    abs(cover.width - 392) < 2,
+                    abs(title.minY - 562) < 4, abs(track.minY - 638) < 4 else {
+                smokeLog("Full player departed from the supplied 440x956pt reference")
+                try await compositorScreenshot("player-reference-spacing-failure.png")
+                return
+              }
+            }
+            try await compositorScreenshot("player-reference-spacing.png")
+            smokeLog("Full player cover, metadata and progress spacing matched the supplied reference")
+          }
           if let controls = popup.controlView {
             guard let seekSlider = controls.timeSlider else { return }
             let seekBounds = seekSlider.bounds

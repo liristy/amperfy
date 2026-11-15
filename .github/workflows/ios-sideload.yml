@@ -89,6 +89,7 @@ jobs:
           path: |
             build/validation/player.stdout.log
             build/validation/player.stderr.log
+            build/validation/player-reference-spacing*.png
             build/validation/server.log
             build/validation/*-preview.jpg
             build/validation/player-queue-glass-*.png

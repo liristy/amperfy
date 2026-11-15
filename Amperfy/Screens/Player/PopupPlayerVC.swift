@@ -157,7 +157,14 @@ class PopupPlayerVC: UIViewController, UIScrollViewDelegate, UIGestureRecognizer
       )) {
       largeCurrentlyPlayingView = createdLargeCurrentlyPlayingView
       createdLargeCurrentlyPlayingView.prepare(toWorkOnRootView: self)
+      createdLargeCurrentlyPlayingView.translatesAutoresizingMaskIntoConstraints = false
       largePlayerPlaceholderView.addSubview(createdLargeCurrentlyPlayingView)
+      NSLayoutConstraint.activate([
+        createdLargeCurrentlyPlayingView.leadingAnchor.constraint(equalTo: largePlayerPlaceholderView.leadingAnchor),
+        createdLargeCurrentlyPlayingView.trailingAnchor.constraint(equalTo: largePlayerPlaceholderView.trailingAnchor),
+        createdLargeCurrentlyPlayingView.topAnchor.constraint(equalTo: largePlayerPlaceholderView.topAnchor),
+        createdLargeCurrentlyPlayingView.bottomAnchor.constraint(equalTo: largePlayerPlaceholderView.bottomAnchor),
+      ])
     }
 
     closeButtonPlaceholderView.isHidden = true
@@ -170,18 +177,18 @@ class PopupPlayerVC: UIViewController, UIScrollViewDelegate, UIGestureRecognizer
     handle.translatesAutoresizingMaskIntoConstraints = false
     handle.isUserInteractionEnabled = false
     handle.backgroundColor = .white.withAlphaComponent(0.45)
-    handle.layer.cornerRadius = 2.5
+    handle.layer.cornerRadius = 2
     closePlayer.addSubview(handle)
     view.addSubview(closePlayer)
     NSLayoutConstraint.activate([
       closePlayer.centerXAnchor.constraint(equalTo: view.centerXAnchor),
-      closePlayer.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor, constant: -20),
+      closePlayer.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor, constant: -11),
       closePlayer.widthAnchor.constraint(equalToConstant: 64),
       closePlayer.heightAnchor.constraint(equalToConstant: 40),
       handle.centerXAnchor.constraint(equalTo: closePlayer.centerXAnchor),
       handle.centerYAnchor.constraint(equalTo: closePlayer.centerYAnchor),
-      handle.widthAnchor.constraint(equalToConstant: 36),
-      handle.heightAnchor.constraint(equalToConstant: 5),
+      handle.widthAnchor.constraint(equalToConstant: 60),
+      handle.heightAnchor.constraint(equalToConstant: 4),
     ])
     configureAdaptiveLayout()
 
