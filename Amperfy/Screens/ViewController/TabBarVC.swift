@@ -58,15 +58,22 @@ class TabBarVC: UITabBarController {
     #if DEBUG && targetEnvironment(simulator)
       let arguments = ProcessInfo.processInfo.arguments
       if arguments.contains("--smoke-chrome") {
-        return arguments.contains("--smoke-chrome-clear-underlay") ||
-          arguments.contains("--smoke-chrome-regular-underlay") || arguments.contains("--smoke-chrome-clear-host")
+        return arguments.contains("--smoke-chrome-legacy-clear") ||
+          arguments.contains("--smoke-chrome-clear-outside")
       }
     #endif
-    return true
+    return false
+  }
+  private var placesNavigationGlassOutsideBar: Bool {
+    #if DEBUG && targetEnvironment(simulator)
+      return ProcessInfo.processInfo.arguments.contains("--smoke-chrome-clear-outside")
+    #else
+      return false
+    #endif
   }
   private var dockGlassStyle: UIGlassEffect.Style {
     #if DEBUG && targetEnvironment(simulator)
-      if ProcessInfo.processInfo.arguments.contains("--smoke-chrome-regular-underlay") { return .regular }
+      if ProcessInfo.processInfo.arguments.contains("--smoke-chrome-baseline") { return .regular }
     #endif
     return .clear
   }
@@ -322,9 +329,13 @@ class TabBarVC: UITabBarController {
     if let navigationGlass {
       let frame = CGRect(x: 20, y: 0, width: max(0, tabBar.bounds.width - 40),
                          height: min(FloatingPlayerDock.navigationHeight, tabBar.bounds.height))
-      if navigationGlass.frame != frame { navigationGlass.frame = frame }
-      navigationGlass.isHidden = dockKeyboardVisible || dock.isHidden
-      if tabBar.subviews.first !== navigationGlass { tabBar.sendSubviewToBack(navigationGlass) }
+      let glassParent = tabBar.superview ?? view
+      let resolvedFrame = placesNavigationGlassOutsideBar ? tabBar.convert(frame, to: glassParent) : frame
+      if navigationGlass.frame != resolvedFrame { navigationGlass.frame = resolvedFrame }
+      navigationGlass.isHidden = dockKeyboardVisible || dock.isHidden || dock.isCollapsed
+      if placesNavigationGlassOutsideBar {
+        if tabBar.superview != nil { glassParent.insertSubview(navigationGlass, belowSubview: tabBar) }
+      } else if tabBar.subviews.first !== navigationGlass { tabBar.sendSubviewToBack(navigationGlass) }
     }
     #if DEBUG && targetEnvironment(simulator)
       if ProcessInfo.processInfo.arguments.contains("--smoke-chrome-standalone") {
@@ -362,7 +373,7 @@ class TabBarVC: UITabBarController {
       bottomAccessory = nil
       miniPlayer.glassContainer.removeFromSuperview()
       miniPlayer.glassContainer.translatesAutoresizingMaskIntoConstraints = true
-      let glass = UIGlassEffect(style: .regular)
+      let glass = UIGlassEffect(style: dockGlassStyle)
       glass.isInteractive = true
       if usesExplicitNavigationGlass {
         let playerGlass = UIGlassEffect(style: dockGlassStyle)
@@ -377,16 +388,22 @@ class TabBarVC: UITabBarController {
         appearance.configureWithTransparentBackground()
         tabBar.standardAppearance = appearance
         tabBar.scrollEdgeAppearance = appearance
+        tabBar.backgroundImage = UIImage()
+        tabBar.shadowImage = UIImage()
+        tabBar.isTranslucent = true
         let effect = UIGlassEffect(style: dockGlassStyle)
         effect.isInteractive = true
         let background = UIVisualEffectView(effect: effect)
         background.cornerConfiguration = .capsule()
         background.isUserInteractionEnabled = false
-        tabBar.insertSubview(background, at: 0)
+        if placesNavigationGlassOutsideBar, let parent = tabBar.superview {
+          parent.insertSubview(background, belowSubview: tabBar)
+        }
+        else { tabBar.insertSubview(background, at: 0) }
         navigationGlass = background
       } else { miniPlayer.glassContainer.effect = glass }
       let dock = FloatingPlayerDock(miniPlayer: miniPlayer,
-        glassStyle: usesExplicitNavigationGlass ? dockGlassStyle : .regular)
+        glassStyle: dockGlassStyle)
       dock.onSearch = { [weak self] in
         guard let self else { return }
         self.tabBar.alpha = 1

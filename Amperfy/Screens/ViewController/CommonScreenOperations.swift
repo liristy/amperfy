@@ -259,6 +259,9 @@ final class MusicNavigationController: UINavigationController, UINavigationContr
     if let table = controller as? UITableViewController { scroll = table.tableView }
     else if let collection = controller as? UICollectionViewController { scroll = collection.collectionView }
     else { scroll = controller.view as? UIScrollView }
+    // Keep the outgoing page's automatic edge treatment from becoming a
+    // separate white backdrop while the incoming page moves below the glass.
+    if let scroll, !scroll.bottomEdgeEffect.isHidden { scroll.bottomEdgeEffect.isHidden = true }
     for owner in [controller, self, host] as [UIViewController] {
       if owner.contentScrollView(for: .bottom) !== scroll {
         owner.setContentScrollView(scroll, for: .bottom)
@@ -407,13 +410,24 @@ final class MusicNavigationController: UINavigationController, UINavigationContr
       func rect(_ value: CGRect) -> [CGFloat] { [value.minX, value.minY, value.width, value.height] }
       func event(_ name: String) {
         let top = nav.topViewController
-        events.append(["name": name, "time": CACurrentMediaTime(),
+        var value: [String: Any] = ["name": name, "time": CACurrentMediaTime(),
           "bar_frame": rect(host.tabBar.convert(host.tabBar.bounds, to: window)),
           "marker_frame": rect(marker.frame),
           "animated": nav.transitionCoordinator?.isAnimated == true,
           "bar_style": host.tabBar.traitCollection.userInterfaceStyle.rawValue,
           "page": String(describing: type(of: top)),
-          "page_frame": rect(top?.view.layer.presentation()?.frame ?? top?.view.frame ?? .zero)])
+          "page_frame": rect(top?.view.layer.presentation()?.frame ?? top?.view.frame ?? .zero)]
+        if name.hasSuffix(".source") || name.hasSuffix(".settled") {
+          func describe(_ view: UIView, depth: Int) -> [String: Any] {
+            var node: [String: Any] = ["type": String(describing: type(of: view)),
+              "frame": rect(view.frame), "alpha": view.alpha, "hidden": view.isHidden]
+            if let effect = view as? UIVisualEffectView { node["effect"] = String(describing: effect.effect) }
+            if depth < 7 { node["children"] = view.subviews.map { describe($0, depth: depth + 1) } }
+            return node
+          }
+          value["bar_tree"] = describe(host.tabBar, depth: 0)
+        }
+        events.append(value)
       }
       func settle(_ phase: String, endColor: UIColor) async throws {
         for _ in 0..<150 {
@@ -481,8 +495,9 @@ final class MusicNavigationController: UINavigationController, UINavigationContr
       try await settle("list.pop", endColor: .green)
       try require(nav.topViewController === list, "Playlist return did not restore its source row")
       try require(host.miniPlayer?.glassContainer.effect is UIGlassEffect, "System player material was replaced")
-      let audioCheck = !ProcessInfo.processInfo.arguments.contains("--smoke-chrome-baseline") &&
-        !ProcessInfo.processInfo.arguments.contains("--smoke-chrome-slide")
+      // The route/state regression is independent of backdrop placement. Run it
+      // once per runtime; the full UI suite also checks it in the production path.
+      let audioCheck = ProcessInfo.processInfo.arguments.contains("--smoke-chrome-no-edge") && !dark
       if audioCheck {
         host.miniPlayer?.openPlayerView()
         for _ in 0..<80 {

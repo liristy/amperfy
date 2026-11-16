@@ -82,7 +82,7 @@ def main():
             if time.monotonic() > deadline:
                 raise TimeoutError("Initial fixture login did not complete")
             time.sleep(0.5)
-        for policy in ("baseline", "regular-underlay", "clear-underlay", "clear-host"):
+        for policy in ("baseline", "no-edge", "legacy-clear", "clear-outside"):
             for appearance in ("light", "dark"):
                 name = f"{policy}-{appearance}"
                 for path in documents.glob("chrome-review-*"):
@@ -134,9 +134,9 @@ def main():
             "runtime_major": options.runtime_major,
             "variants": variants, "simulator": booted[0]["name"],
             "baseline": "Previous coordinator-animated interface-style change",
-            "regular-underlay": "Explicit system regular glass behind transparent native tab controls; matching player glass",
-            "clear-underlay": "Explicit system clear glass behind transparent native tab controls; matching player glass (production)",
-            "clear-host": "Same clear glass plus root view traits with isolated content traits",
+            "no-edge": "Native managed navigation glass without the bottom scroll edge treatment; clear mini player (production candidate)",
+            "legacy-clear": "Native tab controls with empty public background image and explicit clear glass; no bottom edge treatment",
+            "clear-outside": "Same transparent configuration with clear glass outside the managed tab bar; no bottom edge treatment",
         }, indent=2))
     finally:
         if recorder:
