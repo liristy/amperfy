@@ -87,6 +87,23 @@ public class LibraryEntityImage: RoundedImage {
     return cacheArtworkPalette(image: image, path: path)
   }
 
+  // Detail navigation needs its final backdrop before the first visible frame,
+  // even when the large decoded cover was evicted. Read only a tiny thumbnail;
+  // do not decode/retain a full-size UI image or perform work in the background.
+  public static func initialArtworkPalette(at path: String) -> [UIColor]? {
+    if let colors = preparedArtworkPalette(at: path) { return colors }
+    guard !Task.isCancelled, areVisualUpdatesEnabled,
+          let source = CGImageSourceCreateWithURL(URL(fileURLWithPath: path) as CFURL,
+            [kCGImageSourceShouldCache: false] as CFDictionary),
+          let thumbnail = CGImageSourceCreateThumbnailAtIndex(source, 0, [
+            kCGImageSourceCreateThumbnailFromImageAlways: true,
+            kCGImageSourceCreateThumbnailWithTransform: true,
+            kCGImageSourceThumbnailMaxPixelSize: 64,
+            kCGImageSourceShouldCacheImmediately: true,
+          ] as CFDictionary) else { return nil }
+    return cacheArtworkPalette(image: UIImage(cgImage: thumbnail), path: path)
+  }
+
   private static func cacheArtworkPalette(image: UIImage, path: String) -> [UIColor] {
     #if DEBUG
       paletteComputationCount += 1

@@ -60,6 +60,38 @@ class ArtworkTest: XCTestCase {
     XCTAssertTrue(prepared === cached)
   }
 
+  func testColdLocalDetailPaletteIsReadyBeforeImageDecodeAndNeverExtractsInBackground() throws {
+    let format = UIGraphicsImageRendererFormat()
+    format.scale = 1
+    let image = UIGraphicsImageRenderer(size: CGSize(width: 2400, height: 1600), format: format).image { context in
+      UIColor.red.setFill()
+      context.fill(CGRect(x: 0, y: 0, width: 2400, height: 1600))
+    }
+    let path = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".png")
+    let previousPolicy = LibraryEntityImage.visualUpdatesAllowed
+    defer {
+      LibraryEntityImage.visualUpdatesAllowed = previousPolicy
+      try? FileManager.default.removeItem(at: path)
+    }
+    try XCTUnwrap(image.pngData()).write(to: path)
+    let before = LibraryEntityImage.paletteComputationCount
+    LibraryEntityImage.visualUpdatesAllowed = { false }
+    XCTAssertNil(LibraryEntityImage.initialArtworkPalette(at: path.path))
+    XCTAssertEqual(LibraryEntityImage.paletteComputationCount, before)
+    LibraryEntityImage.visualUpdatesAllowed = { true }
+    let colors = try XCTUnwrap(LibraryEntityImage.initialArtworkPalette(at: path.path))
+    let dominant = try XCTUnwrap(colors.first)
+    var red: CGFloat = 0, green: CGFloat = 0, blue: CGFloat = 0, alpha: CGFloat = 0
+    XCTAssertTrue(dominant.getRed(&red, green: &green, blue: &blue, alpha: &alpha))
+    XCTAssertGreaterThan(red, 0.8)
+    XCTAssertLessThan(green, 0.2)
+    XCTAssertLessThan(blue, 0.2)
+    XCTAssertNil(LibraryEntityImage.preparedImage(at: path.path), "First-paint color must not retain a large decoded cover")
+    XCTAssertEqual(LibraryEntityImage.paletteComputationCount, before + 1)
+    XCTAssertEqual(LibraryEntityImage.initialArtworkPalette(at: path.path), colors)
+    XCTAssertEqual(LibraryEntityImage.paletteComputationCount, before + 1)
+  }
+
   func testUnreadableArtworkDoesNotProduceAnImage() async throws {
     let path = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
     defer { try? FileManager.default.removeItem(at: path) }

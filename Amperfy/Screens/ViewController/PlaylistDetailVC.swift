@@ -450,7 +450,7 @@ final class PlaylistArtworkHeader: UIView {
     guard let path = playlist.artwork?.imagePath ?? playlist.getPlayable(at: 0)?.imagePath(setting: settings.artworkDisplayPreference), path != paletteKey else { return }
     paletteKey = path
     paletteTask?.cancel()
-    if let colors = LibraryEntityImage.preparedArtworkPalette(at: path) {
+    if let colors = LibraryEntityImage.initialArtworkPalette(at: path) {
       applyPalette(colors)
       return
     }

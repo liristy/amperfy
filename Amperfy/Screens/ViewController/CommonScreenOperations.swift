@@ -155,11 +155,14 @@ extension UIViewController {
 
 
 extension UIViewController {
-  // Cached palettes are applied while the destination is still offscreen. A
-  // genuinely cold artwork download fades in only after navigation settles.
+  // Prepare the backdrop before appearance. A palette arriving during a push
+  // joins that transition; never queue a second recolor after it completes.
   func applyDetailBackgroundColor(_ color: UIColor) {
     guard view.backgroundColor != color else { return }
-    guard view.window != nil else { view.backgroundColor = color; return }
+    guard view.window != nil else {
+      UIView.performWithoutAnimation { view.backgroundColor = color }
+      return
+    }
     let update = { [weak self] in
       guard let self, UIApplication.shared.applicationState == .active else { return }
       UIView.animate(withDuration: 0.25, delay: 0, options: [.beginFromCurrentState, .allowUserInteraction]) {
@@ -167,8 +170,11 @@ extension UIViewController {
       }
     }
     if let coordinator = transitionCoordinator, coordinator.isAnimated {
-      coordinator.animate(alongsideTransition: nil) { context in
-        if !context.isCancelled { update() }
+      let joined = coordinator.animate(alongsideTransition: { [weak self] _ in
+        self?.view.backgroundColor = color
+      }, completion: nil)
+      if !joined {
+        UIView.performWithoutAnimation { view.backgroundColor = color }
       }
     } else { update() }
   }

@@ -2315,6 +2315,8 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
       }
       try await compositorScreenshot("player-playlists-layout.png")
       list.tableView(list.tableView, didSelectRowAt: playlistPath)
+      guard let enteringDetail = group.managingNavigationController?.topViewController as? PlaylistDetailVC,
+            try await verifyPlaylistBackdropTransition(enteringDetail) else { return false }
       try await Task.sleep(for: .seconds(2))
       guard let detail = group.managingNavigationController?.topViewController as? PlaylistDetailVC,
             let header = detail.detailOperationsView,
@@ -2366,6 +2368,58 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
       }
       group.managingNavigationController?.popToRootViewController(animated: false)
       smokeLog("Library grid, playlist list, scrolling detail and native zoom passed")
+      return true
+    }
+
+    @MainActor private func verifyPlaylistBackdropTransition(_ detail: PlaylistDetailVC) async throws -> Bool {
+      func log(_ message: String) { FileHandle.standardOutput.write(Data((message + "\n").utf8)) }
+      guard let host = detail.tabBarController as? TabBarVC,
+            host.miniPlayer?.glassContainer.effect is UIGlassEffect,
+            let initial = detail.view.backgroundColor,
+            initial != UIColor(white: 0.12, alpha: 1) else {
+        log("Playlist did not start with a prepared backdrop and native glass material")
+        return false
+      }
+      try await Task.sleep(for: .milliseconds(80))
+      guard UIAccessibility.isReduceMotionEnabled || detail.transitionCoordinator?.isAnimated == true else {
+        log("Playlist palette timing probe did not exercise an animated push")
+        return false
+      }
+      // Deliver an artwork palette while the real native zoom is still running.
+      // This must affect its backdrop now, without a second change after didShow.
+      let incoming = UIColor(red: 0.62, green: 0.08, blue: 0.45, alpha: 1)
+      detail.detailOperationsView?.paletteChanged?(incoming)
+      func changed(_ color: CGColor?) -> Bool {
+        guard let color else { return false }
+        var r: CGFloat = 0, g: CGFloat = 0, b: CGFloat = 0, a: CGFloat = 0
+        var ir: CGFloat = 0, ig: CGFloat = 0, ib: CGFloat = 0, ia: CGFloat = 0
+        guard UIColor(cgColor: color).getRed(&r, green: &g, blue: &b, alpha: &a),
+              initial.getRed(&ir, green: &ig, blue: &ib, alpha: &ia) else { return false }
+        return max(abs(r-ir), max(abs(g-ig), abs(b-ib))) > 0.01
+      }
+      var changedDuringPush = false
+      for _ in 0..<90 {
+        try await Task.sleep(for: .milliseconds(16))
+        if detail.transitionCoordinator?.isAnimated == true,
+           changed(detail.view.layer.presentation()?.backgroundColor ?? detail.view.layer.backgroundColor ?? detail.view.backgroundColor?.cgColor) {
+          changedDuringPush = true
+        }
+        if detail.transitionCoordinator == nil { break }
+      }
+      guard detail.view.backgroundColor == incoming,
+            UIAccessibility.isReduceMotionEnabled || changedDuringPush else {
+        log("Playlist backdrop waited for navigation completion before accepting its palette")
+        return false
+      }
+      for _ in 0..<20 {
+        try await Task.sleep(for: .milliseconds(16))
+        guard detail.view.backgroundColor == incoming else {
+          log("Playlist recolored again after navigation completion")
+          return false
+        }
+      }
+      UIView.performWithoutAnimation { detail.view.backgroundColor = initial }
+      log("Playlist first-frame backdrop, palette delivery during native zoom and system glass material passed")
       return true
     }
 

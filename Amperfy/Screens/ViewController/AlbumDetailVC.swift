@@ -358,7 +358,7 @@ final class MusicArtworkHeader: UIView {
     guard let path = entity.artwork?.imagePath, path != paletteKey else { return }
     paletteKey = path
     paletteTask?.cancel()
-    if let colors = LibraryEntityImage.preparedArtworkPalette(at: path) {
+    if let colors = LibraryEntityImage.initialArtworkPalette(at: path) {
       applyPalette(colors)
       return
     }
