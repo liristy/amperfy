@@ -2606,6 +2606,53 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
               "state": UIApplication.shared.applicationState.rawValue,
               "palette_computations": LibraryEntityImage.paletteComputationCount], name: "player-resource-track-change.json")
             try await Task.sleep(for: .seconds(60))
+            // The external profiler has finished its CPU window and returned
+            // this same process to the foreground. Do not refresh either view
+            // from the test: lifecycle handling must restore the current cover.
+            for _ in 0..<100 {
+              if UIApplication.shared.applicationState == .active { break }
+              try await Task.sleep(for: .milliseconds(100))
+            }
+            guard UIApplication.shared.applicationState == .active,
+                  let current = player.currentlyPlaying, current.id == newID,
+                  let path = current.imagePath(setting: appDelegate.storage.settings.accounts
+                    .getSetting(accountInfo).read.artworkDisplayPreference) else {
+              throw NSError(domain: "ResourceProfile", code: 9,
+                            userInfo: [NSLocalizedDescriptionKey: "Background track did not survive foreground return"])
+            }
+            var expected: Data?
+            var fullMatches = false
+            for _ in 0..<50 {
+              expected = LibraryEntityImage.preparedImage(at: path)?.pngData()
+              fullMatches = expected != nil && popup.transitionArtwork?.image?.pngData() == expected
+              if fullMatches { break }
+              try await Task.sleep(for: .milliseconds(100))
+            }
+            let miniWasDetached = miniPlayer.window == nil
+            let miniBeforeDismissal = expected != nil && miniPlayer.artworkImage.image?.pngData() == expected
+            popup.beginInteractiveDismissal()
+            try await Task.sleep(for: .milliseconds(80))
+            popup.updateInteractiveDismissal(translation: 28)
+            popup.endInteractiveDismissal(translation: 28, velocity: 900)
+            for _ in 0..<50 {
+              if popup.presentingViewController == nil, popup.view.mask == nil { break }
+              try await Task.sleep(for: .milliseconds(100))
+            }
+            let dismissed = popup.presentingViewController == nil && popup.view.mask == nil
+            let miniAfterDismissal = expected != nil && miniPlayer.artworkImage.image?.pngData() == expected
+            guard fullMatches, miniBeforeDismissal, miniAfterDismissal, dismissed,
+                  miniPlayer.window != nil, miniPlayer.artworkImage.mask == nil else {
+              throw NSError(domain: "ResourceProfile", code: 10,
+                userInfo: [NSLocalizedDescriptionKey:
+                  "Stale background cover: full=\(fullMatches), miniBefore=\(miniBeforeDismissal), miniAfter=\(miniAfterDismissal), dismissed=\(dismissed), detached=\(miniWasDetached)"])
+            }
+            try write(["old_id": oldID, "current_id": current.id,
+              "state": UIApplication.shared.applicationState.rawValue,
+              "mini_was_detached": miniWasDetached,
+              "full_matches_current": fullMatches,
+              "mini_before_dismissal_matches_current": miniBeforeDismissal,
+              "mini_after_dismissal_matches_current": miniAfterDismissal,
+              "dismissed": dismissed], name: "player-resource-artwork-return.json")
           } else if phase == "playing_queue_scroll" {
             let maximum = max(0, popup.tableView.contentSize.height - popup.tableView.bounds.height)
             for step in 0..<30 {

@@ -98,7 +98,7 @@ def main():
                            if device["state"] == "Booted" and device["name"].startswith("iPhone"))
     device_id = device["udid"]
     documents = Path(command("xcrun", "simctl", "get_app_container", device_id, bundle_id, "data")) / "Documents"
-    for name in ("phase", "background", "foreground", "track-change", "ready", "failed"):
+    for name in ("phase", "background", "foreground", "track-change", "artwork-return", "ready", "failed"):
         (documents / f"player-resource-{name}.json").unlink(missing_ok=True)
     # The preceding UI suite's recording/server have stopped. Do not record
     # video, take screenshots, or run sample/Instruments during these windows.
@@ -187,6 +187,17 @@ def main():
                 row["foreground_lifecycle"] = foreground
                 if foreground["palette_computations"] != background_event["palette_computations"]:
                     raise RuntimeError("Artwork palette computation ran while app was in background")
+                if name == "playing_background":
+                    artwork_return = wait_for(documents / "player-resource-artwork-return.json",
+                                              lambda value: value.get("dismissed") is True, documents)
+                    if (artwork_return.get("current_id") != row["background_track_change"]["new_id"] or
+                            artwork_return.get("state") != 0 or
+                            not all(artwork_return.get(key) is True for key in (
+                                "full_matches_current", "mini_before_dismissal_matches_current",
+                                "mini_after_dismissal_matches_current"))):
+                        raise RuntimeError(f"Player cover did not follow the background track: {artwork_return}")
+                    row["background_artwork_return"] = artwork_return
+                    print("Background track change, foreground return and full-player dismissal retained the current mini-player cover", flush=True)
         wait_for(documents / "player-resource-ready.json", lambda value: value.get("completed") is True, documents)
         fields = ["phase", "wall_seconds", "cpu_seconds", "cpu_one_core_percent", "rss_mean_mib", "rss_peak_mib"]
         with (output / "summary.csv").open("w", newline="") as stream:
@@ -206,7 +217,7 @@ def main():
             encoding="utf-8")
     except Exception:
         # Preserve app staging diagnostics even when no measurement window ran.
-        for name in ("phase", "background", "foreground", "track-change", "ready", "failed"):
+        for name in ("phase", "background", "foreground", "track-change", "artwork-return", "ready", "failed"):
             value = read_json(documents / f"player-resource-{name}.json")
             if value is not None:
                 (output / f"player-resource-{name}.json").write_text(json.dumps(value, indent=2, ensure_ascii=False) + "\n")

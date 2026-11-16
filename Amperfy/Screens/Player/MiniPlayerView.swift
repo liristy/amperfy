@@ -618,6 +618,8 @@ class MiniPlayerView: UIView, UIGestureRecognizerDelegate {
     #endif
 
     player.addNotifier(notifier: self)
+    NotificationCenter.default.addObserver(self, selector: #selector(resumePlayerDisplay),
+      name: UIApplication.didBecomeActiveNotification, object: nil)
 
     registerForTraitChanges(
       [UITraitUserInterfaceStyle.self, UITraitHorizontalSizeClass.self],
@@ -636,6 +638,20 @@ class MiniPlayerView: UIView, UIGestureRecognizerDelegate {
   }
 
   public var tabAccessoryTraitChangeCB: VoidFunctionCallback?
+
+  @objc private func resumePlayerDisplay() {
+    guard UIApplication.shared.applicationState == .active else { return }
+    // A full-screen player detaches the presenting view. Rebind the mini-player
+    // even while detached so its closing-animation destination has the new cover.
+    refreshPlayer()
+  }
+
+  override func didMoveToWindow() {
+    super.didMoveToWindow()
+    guard window != nil, UIApplication.shared.applicationState == .active else { return }
+    refreshPlayer()
+  }
+
   private var compactPresentationOverride: Bool?
 
   func setCompactPresentation(_ compact: Bool?) {
