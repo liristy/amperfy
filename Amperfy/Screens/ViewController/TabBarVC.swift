@@ -73,9 +73,21 @@ class TabBarVC: UITabBarController {
   }
   private var dockGlassStyle: UIGlassEffect.Style {
     #if DEBUG && targetEnvironment(simulator)
-      if ProcessInfo.processInfo.arguments.contains("--smoke-chrome-baseline") { return .regular }
+      let arguments = ProcessInfo.processInfo.arguments
+      if arguments.contains("--smoke-chrome-baseline") || arguments.contains("--smoke-chrome-regular-mini") {
+        return .regular
+      }
     #endif
     return .clear
+  }
+  private var automaticallyAdaptsNavigationGlass: Bool {
+    #if DEBUG && targetEnvironment(simulator)
+      let arguments = ProcessInfo.processInfo.arguments
+      if arguments.contains("--smoke-chrome") {
+        return !arguments.contains("--smoke-chrome-baseline") && !arguments.contains("--smoke-chrome-forced")
+      }
+    #endif
+    return true
   }
   #if DEBUG && targetEnvironment(simulator)
     private var glassReviewTabBar: UITabBar?
@@ -445,7 +457,10 @@ class TabBarVC: UITabBarController {
   }
 
   func applyNavigationChrome(style: UIUserInterfaceStyle) {
-    if tabBar.overrideUserInterfaceStyle != style { tabBar.overrideUserInterfaceStyle = style }
+    // Native tab glass adapts to its real backdrop. Keep its appearance trait
+    // stable instead of starting a separate light/dark transition on each push.
+    let nativeStyle: UIUserInterfaceStyle = automaticallyAdaptsNavigationGlass ? .unspecified : style
+    if tabBar.overrideUserInterfaceStyle != nativeStyle { tabBar.overrideUserInterfaceStyle = nativeStyle }
     if playerDock?.overrideUserInterfaceStyle != style { playerDock?.overrideUserInterfaceStyle = style }
     #if DEBUG && targetEnvironment(simulator)
       if ProcessInfo.processInfo.arguments.contains("--smoke-chrome-same-appearance"),
