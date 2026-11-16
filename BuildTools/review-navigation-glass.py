@@ -4,6 +4,7 @@ Uses only the throwaway CI simulator and loopback fixtures. The original behavio
 the immediate material update, and native slide navigation share the same binary.
 Pixel/animation review happens from the compositor videos, not drawHierarchy.
 """
+import argparse
 import json
 from pathlib import Path
 import shutil
@@ -31,12 +32,16 @@ def wait_file(path, failed=None, timeout=100):
 
 
 def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--runtime-major", type=int, default=26)
+    parser.add_argument("--app-source-sha")
+    args = parser.parse_args()
     devices = json.loads(command("xcrun", "simctl", "list", "devices", "available", "-j"))["devices"]
-    booted = [d for runtime, values in devices.items() if "iOS-26" in runtime
+    booted = [d for runtime, values in devices.items() if f"iOS-{args.runtime_major}-" in runtime
               for d in values if d["state"] == "Booted" and d["name"].startswith("iPhone")]
     booted.sort(key=lambda d: d["name"] != "iPhone 17 Pro Max")
     if not booted:
-        raise RuntimeError("The build step did not boot its throwaway iOS 26 simulator")
+        raise RuntimeError(f"The build step did not boot its throwaway iOS {args.runtime_major} simulator")
     device = booted[0]["udid"]
     app = Path("build/validation/DerivedData/Build/Products/Debug-iphonesimulator/Amperfy.app").resolve()
     bundle = command("/usr/libexec/PlistBuddy", "-c", "Print CFBundleIdentifier", str(app / "Info.plist"))
@@ -86,10 +91,16 @@ def main():
                 command(*args)
                 failed = documents / "chrome-review-failed.json"
                 wait_file(documents / "chrome-review-prepared.json", failed)
-                with (output / f"{name}.record.log").open("w") as log:
+                recording_log = output / f"{name}.record.log"
+                with recording_log.open("w") as log:
                     recorder = subprocess.Popen(["xcrun", "simctl", "io", device, "recordVideo", "--codec=h264",
                                                  str(output / f"{name}.mp4")], stdout=log, stderr=subprocess.STDOUT)
-                    time.sleep(1)
+                    deadline = time.monotonic() + 45
+                    while "Recording started" not in recording_log.read_text():
+                        if recorder.poll() is not None or time.monotonic() > deadline:
+                            raise RuntimeError("Compositor recorder did not start: " + recording_log.read_text())
+                        time.sleep(0.1)
+                    time.sleep(0.3)
                     (documents / "chrome-review-recording").touch()
                     try:
                         result = wait_file(documents / "chrome-review-ready.json", failed, timeout=45)
@@ -102,10 +113,14 @@ def main():
                         recorder = None
                         for path in documents.glob("chrome-review-*.json"):
                             shutil.copy2(path, output / f"{name}-{path.name}")
+                if not (output / f"{name}.mp4").is_file() or (output / f"{name}.mp4").stat().st_size < 10000:
+                    raise RuntimeError("Compositor recording is missing or empty for " + name)
                 variants.append(name)
                 print(f"Recorded actual native glass: {name}", flush=True)
         (output / "source.json").write_text(json.dumps({
-            "source_commit": command("git", "rev-parse", "HEAD"),
+            "source_commit": args.app_source_sha or command("git", "rev-parse", "HEAD"),
+            "harness_commit": command("git", "rev-parse", "HEAD"),
+            "runtime_major": args.runtime_major,
             "variants": variants, "simulator": booted[0]["name"],
             "baseline": "Previous coordinator-animated interface-style change",
             "immediate": "Native zoom with interface-style committed without animation",

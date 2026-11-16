@@ -26,7 +26,21 @@ cleanup() {
   xcrun simctl spawn "$device_id" log show --last 5m --style compact --predicate 'process == "Amperfy"' > build/validation/simulator.log 2>&1 || true
 }
 trap cleanup EXIT
-sleep 1
+# Fixture audio generation can outlast an arbitrary sleep on a shared runner.
+# Do not launch the one-shot login request before the loopback server is ready.
+python3 - <<'PY'
+import time, urllib.request
+deadline = time.monotonic() + 90
+while time.monotonic() < deadline:
+    try:
+        with urllib.request.urlopen('http://127.0.0.1:8765/rest/ping.view', timeout=2) as response:
+            if response.status == 200:
+                break
+    except OSError:
+        time.sleep(0.2)
+else:
+    raise SystemExit('Loopback fixture server did not become ready before login')
+PY
 
 for language in zh-Hans en; do
   # Only the throwaway CI simulator is reset; each language must complete a fresh login.

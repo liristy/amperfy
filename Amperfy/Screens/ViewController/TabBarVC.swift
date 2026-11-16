@@ -71,7 +71,9 @@ class TabBarVC: UITabBarController {
       image: TabNavigatorItem.search.icon, identifier: "Tabs.Search") { _ in
       let search = AppStoryboard.Main.segueToSearch(account: self.account)
       self.searchViewController = search
-      return MusicNavigationController(rootViewController: search)
+      let navigation = MusicNavigationController(rootViewController: search)
+      navigation.chromeHost = self
+      return navigation
     }
 
     homeTab = UITab(
@@ -79,10 +81,12 @@ class TabBarVC: UITabBarController {
       image: TabNavigatorItem.home.icon,
       identifier: "Tabs.Home"
     ) { _ in
-      MusicNavigationController(
+      let navigation = MusicNavigationController(
         rootViewController: TabNavigatorItem.home
           .getController(account: self.account)
       )
+      navigation.chromeHost = self
+      return navigation
     }
     fixTabs.append(homeTab!)
 
@@ -128,12 +132,16 @@ class TabBarVC: UITabBarController {
     ) { tab in
       AppStoryboard.Main.segueToLibrary(account: self.account)
     }
-    libraryGroup!.managingNavigationController = MusicNavigationController()
+    let libraryNavigation = MusicNavigationController()
+    libraryNavigation.chromeHost = self
+    libraryGroup!.managingNavigationController = libraryNavigation
     libraryGroup!.allowsReordering = true
     fixTabs.append(libraryGroup!)
     fixTabs.append(UITab(title: "Listening Statistics".localized,
       image: UIImage(systemName: "chart.bar.xaxis"), identifier: "Tabs.Listening") { _ in
-      MusicNavigationController(rootViewController: ListeningStatisticsVC(account: self.account))
+      let navigation = MusicNavigationController(rootViewController: ListeningStatisticsVC(account: self.account))
+      navigation.chromeHost = self
+      return navigation
     })
     fixTabs.append(searchTab!)
 
@@ -468,8 +476,17 @@ class TabBarVC: UITabBarController {
 
   public func push(vc: UIViewController) {
     guard let libraryGroup else { return }
+    #if DEBUG && targetEnvironment(simulator)
+      if ProcessInfo.processInfo.arguments.contains("--smoke-chrome-baseline") {
+        libraryGroup.managingNavigationController?.pushViewController(vc, animated: true)
+        selectedTab = libraryGroup
+        return
+      }
+    #endif
+    // Select the navigation owner before UIKit starts the push. Reselecting
+    // the same group afterwards can reset its glass during that transition.
+    if selectedTab !== libraryGroup { selectedTab = libraryGroup }
     libraryGroup.managingNavigationController?.pushViewController(vc, animated: true)
-    selectedTab = libraryGroup
   }
 }
 

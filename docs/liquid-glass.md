@@ -77,12 +77,18 @@ remote refresh is limited to once per minute on return.
 
 The dock anchor and bottom inset use the settled tab-bar position, avoiding transient frame
 readbacks during a push/pop. Bottom chrome has an explicit light/dark interface style for the
-active page. Material interface-style changes are committed without animation before the
-navigation transition transaction; only cancellation restoration uses its completion.
+active page. The navigation controller has a weak reference to its chrome host and prepares
+its material before calling UIKit's push/pop methods. The destination tab is selected before
+the push and an already-selected group is not reselected afterwards. No nested navigation
+or tab-bar layout is forced from `willShow`; cancellation still restores the original page.
 `review-navigation-glass.py` records the actual compositor for pinned-playlist and list-row
 push/pop paths in explicit light and dark appearances. The same binary includes DEBUG-only
 baseline and native-slide comparisons. Window-level color markers and event timestamps align
 frames without calling `drawHierarchy` or capturing screenshots during the animations.
+Recording waits for the compositor's actual start acknowledgement before releasing the app.
+The iOS 27.2 review restores the same successfully unit-tested simulator executable, verifies
+its source stamp, executable hash and app/project source fingerprints, and runs it without
+recompiling against a different SDK.
 
 Artwork's internal nib margins ignore safe-area insets: the enclosing page handles those.
 The artist's square photo and name have a 12pt visible gap. The regression probe measures the

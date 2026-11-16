@@ -184,14 +184,58 @@ extension UIViewController {
 // One owner updates native navigation and the floating dock in the same transition.
 // Detail controllers must not restore shared bar properties after a pop completes.
 final class MusicNavigationController: UINavigationController, UINavigationControllerDelegate {
-  #if DEBUG && targetEnvironment(simulator)
-    override func pushViewController(_ controller: UIViewController, animated: Bool) {
+  weak var chromeHost: TabBarVC?
+
+  private var recordsPreviousChromeBehavior: Bool {
+    #if DEBUG && targetEnvironment(simulator)
+      return ProcessInfo.processInfo.arguments.contains("--smoke-chrome-baseline")
+    #else
+      return false
+    #endif
+  }
+
+  override func pushViewController(_ controller: UIViewController, animated: Bool) {
+    #if DEBUG && targetEnvironment(simulator)
       if ProcessInfo.processInfo.arguments.contains("--smoke-chrome-slide") {
         controller.preferredTransition = nil
       }
-      super.pushViewController(controller, animated: animated)
+    #endif
+    prepareChromeBeforeNavigation(to: controller)
+    super.pushViewController(controller, animated: animated)
+  }
+
+  override func popViewController(animated: Bool) -> UIViewController? {
+    if viewControllers.count > 1 {
+      prepareChromeBeforeNavigation(to: viewControllers[viewControllers.count - 2])
     }
-  #endif
+    return super.popViewController(animated: animated)
+  }
+
+  override func popToViewController(_ controller: UIViewController, animated: Bool) -> [UIViewController]? {
+    if topViewController !== controller, viewControllers.contains(where: { $0 === controller }) {
+      prepareChromeBeforeNavigation(to: controller)
+    }
+    return super.popToViewController(controller, animated: animated)
+  }
+
+  override func popToRootViewController(animated: Bool) -> [UIViewController]? {
+    if viewControllers.count > 1, let root = viewControllers.first {
+      prepareChromeBeforeNavigation(to: root)
+    }
+    return super.popToRootViewController(animated: animated)
+  }
+
+  private func prepareChromeBeforeNavigation(to controller: UIViewController) {
+    guard !recordsPreviousChromeBehavior else { return }
+    // UIKit can capture its bar surfaces before willShow. Resolve the target
+    // material while no navigation transition exists; never force a nested
+    // navigation/tab-bar layout from inside UIKit's transition callback.
+    guard let host = chromeHost ?? (tabBarController as? TabBarVC), host.isViewLoaded,
+          host.activeNavigationController === self else { return }
+    host.reserveDockSpace(for: controller)
+    let style: UIUserInterfaceStyle = usesArtworkChrome(for: controller) ? .dark : .unspecified
+    UIView.performWithoutAnimation { host.applyNavigationChrome(style: style) }
+  }
 
   override func viewDidLoad() {
     super.viewDidLoad()
@@ -199,9 +243,13 @@ final class MusicNavigationController: UINavigationController, UINavigationContr
     navigationBar.prefersLargeTitles = true
   }
 
-  private func applyAppearance(for controller: UIViewController) {
-    let artworkPage = controller is AlbumDetailVC || controller is PlaylistDetailVC ||
+  private func usesArtworkChrome(for controller: UIViewController) -> Bool {
+    controller is AlbumDetailVC || controller is PlaylistDetailVC ||
       controller is ArtistDetailVC || controller is ArtistRankingVC
+  }
+
+  private func applyAppearance(for controller: UIViewController) {
+    let artworkPage = usesArtworkChrome(for: controller)
     let style: UIUserInterfaceStyle = artworkPage ? .dark : .unspecified
     let tint: UIColor = artworkPage ? .white : appDelegate.storage.settings.accounts.activeSetting.read.themePreference.asColor
     if navigationBar.overrideUserInterfaceStyle != style { navigationBar.overrideUserInterfaceStyle = style }
@@ -209,7 +257,8 @@ final class MusicNavigationController: UINavigationController, UINavigationContr
     if (artworkPage || controller is HomeVC || controller is LibraryVC), !navigationBar.prefersLargeTitles {
       navigationBar.prefersLargeTitles = true
     }
-    if let host = tabBarController as? TabBarVC {
+    let host = (tabBarController as? TabBarVC) ?? (recordsPreviousChromeBehavior ? nil : chromeHost)
+    if let host {
       host.reserveDockSpace(for: controller)
       if host.activeNavigationController === self { host.applyNavigationChrome(style: style) }
     }
@@ -236,21 +285,20 @@ final class MusicNavigationController: UINavigationController, UINavigationContr
         return
       }
     #endif
-    // Interface-style changes rebuild the system glass material. Commit them
-    // before the navigation animation, rather than inheriting its transaction.
-    // The material itself continues sampling the live scrolling content.
-    UIView.performWithoutAnimation {
-      applyAppearance(for: controller)
-      navigationBar.layoutIfNeeded()
-      tabBarController?.tabBar.layoutIfNeeded()
-      (tabBarController as? TabBarVC)?.playerDock?.layoutIfNeeded()
+    // The bottom material is already prepared. Keep navigation-item colors in
+    // UIKit's normal transition so Home's source/destination buttons still blend.
+    guard animated, let coordinator = transitionCoordinator else {
+      UIView.performWithoutAnimation { applyAppearance(for: controller) }
+      return
     }
-    guard animated, let coordinator = transitionCoordinator else { return }
-    coordinator.animate(alongsideTransition: nil, completion: { [weak self] context in
+    let joined = coordinator.animate(alongsideTransition: { [weak self] _ in
+      self?.applyAppearance(for: controller)
+    }, completion: { [weak self] context in
       if context.isCancelled, let original = context.viewController(forKey: .from) {
         UIView.performWithoutAnimation { self?.applyAppearance(for: original) }
       }
     })
+    if !joined { UIView.performWithoutAnimation { applyAppearance(for: controller) } }
   }
 
   func navigationController(_ navigationController: UINavigationController,
@@ -359,7 +407,7 @@ final class MusicNavigationController: UINavigationController, UINavigationContr
         event(phase + ".settled")
       }
       try write(["prepared": true], to: "chrome-review-prepared.json")
-      for _ in 0..<200 {
+      for _ in 0..<600 {
         if FileManager.default.fileExists(atPath: directory.appendingPathComponent("chrome-review-recording").path) { break }
         try await Task.sleep(for: .milliseconds(100))
       }
