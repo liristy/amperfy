@@ -2574,6 +2574,9 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
         appDelegate.storage.settings.user.isPlayerVisualizerDisplayed = false
         appDelegate.player.isAutoCachePlayedItems = false
         let player = appDelegate.player
+        // The preceding shortcut check leaves shuffle enabled. This fixture
+        // repeats two covers, so shuffled neighbors can have the same song ID.
+        if player.isShuffle { player.toggleShuffle() }
         player.setRepeatMode(.off)
         var profileSongs = [song]
         if let second = library.getSong(for: account, id: "song-2") {
@@ -2650,13 +2653,22 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
             guard UIApplication.shared.applicationState == .background else {
               throw NSError(domain: "ResourceProfile", code: 7)
             }
-            player.play(playerIndex: PlayerIndex(queueType: .next, index: 0))
+            let target = PlayerIndex(queueType: .next, index: 0)
+            guard let next = player.getPlayable(at: target), next.id != oldID else {
+              throw NSError(domain: "ResourceProfile", code: 11,
+                            userInfo: [NSLocalizedDescriptionKey:
+                              "Profile queue did not stage a different cover: current=\(oldID), next=\(player.getPlayable(at: target)?.id ?? "nil"), shuffle=\(player.isShuffle)"])
+            }
+            player.play(playerIndex: target)
             try await Task.sleep(for: .seconds(2))
             let newID = player.currentlyPlaying?.id ?? ""
-            guard newID != oldID, player.isPlaying else {
-              throw NSError(domain: "ResourceProfile", code: 8)
+            guard newID == next.id, newID != oldID, player.isPlaying else {
+              throw NSError(domain: "ResourceProfile", code: 8,
+                            userInfo: [NSLocalizedDescriptionKey:
+                              "Background switch did not settle: old=\(oldID), expected=\(next.id), current=\(newID), playing=\(player.isPlaying)"])
             }
             try write(["phase": phase, "old_id": oldID, "new_id": newID,
+              "expected_id": next.id, "shuffle": player.isShuffle,
               "state": UIApplication.shared.applicationState.rawValue,
               "palette_computations": LibraryEntityImage.paletteComputationCount], name: "player-resource-track-change.json")
             try await Task.sleep(for: .seconds(60))
