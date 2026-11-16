@@ -3,6 +3,10 @@ name: qMusic Build & Release
 on:
   workflow_dispatch:
     inputs:
+      run_simulator_regression:
+        description: 'Explicitly opt in to simulator checks; normal IPA builds use device testing'
+        type: boolean
+        default: false
       validation_only:
         description: 'Run regression checks without rebuilding the device IPA'
         type: boolean
@@ -40,7 +44,9 @@ concurrency:
 
 jobs:
   tests:
-    if: github.event.repository.private == false && inputs.native_runtime_only != true
+    # Device recordings are the default review path; do not start a simulator
+    # from a normal package build, push or pull request.
+    if: github.event.repository.private == false && inputs.run_simulator_regression == true && inputs.native_runtime_only != true
     runs-on: macos-26
     timeout-minutes: 55
     env:
@@ -175,7 +181,7 @@ jobs:
 
 
   native-glass-runtime:
-    if: github.event.repository.private == false && inputs.native_runtime_only == true
+    if: github.event.repository.private == false && inputs.run_simulator_regression == true && inputs.native_runtime_only == true
     runs-on: xcode-27
     timeout-minutes: 50
     permissions:
@@ -278,7 +284,7 @@ jobs:
           EOF
 
   release:
-    if: github.event_name == 'push' && (startsWith(github.ref, 'refs/tags/v') || github.ref == 'refs/heads/master')
+    if: ${{ !cancelled() && needs.build.result == 'success' && (needs.tests.result == 'success' || needs.tests.result == 'skipped') && github.event_name == 'push' && (startsWith(github.ref, 'refs/tags/v') || github.ref == 'refs/heads/master') }}
     needs: [tests, build]
     runs-on: ubuntu-latest
     timeout-minutes: 10

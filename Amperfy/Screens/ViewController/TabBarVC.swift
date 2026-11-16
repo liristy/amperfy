@@ -82,7 +82,9 @@ class TabBarVC: UITabBarController {
         return .regular
       }
     #endif
-    return .clear
+    // Match the native tab bar's regular glass. Clear glass makes the player
+    // and collapsed buttons noticeably more transparent than the navigation.
+    return .regular
   }
   private var automaticallyAdaptsNavigationGlass: Bool {
     #if DEBUG && targetEnvironment(simulator)
