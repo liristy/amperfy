@@ -329,7 +329,7 @@ class TabBarVC: UITabBarController {
     if let navigationGlass {
       let frame = CGRect(x: 20, y: 0, width: max(0, tabBar.bounds.width - 40),
                          height: min(FloatingPlayerDock.navigationHeight, tabBar.bounds.height))
-      let glassParent = tabBar.superview ?? view
+      let glassParent: UIView = tabBar.superview ?? view
       let resolvedFrame = placesNavigationGlassOutsideBar ? tabBar.convert(frame, to: glassParent) : frame
       if navigationGlass.frame != resolvedFrame { navigationGlass.frame = resolvedFrame }
       navigationGlass.isHidden = dockKeyboardVisible || dock.isHidden || dock.isCollapsed
