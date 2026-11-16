@@ -1240,19 +1240,7 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
               }
               smokeLog("Inline native system-volume control preserved application gain and playback; hardware volume requires a physical device")
             #endif
-            controls.renderAudioOutput(.init(portType: .bluetoothA2DP, name: "airpods", uid: "smoke-airpods4"))
-            controls.refreshPlayer()
-            controls.renderAudioOutput(nil, settled: false)
-            controls.renderAudioOutput(.init(portType: .builtInSpeaker, name: "iPhone", uid: "speaker"), settled: false)
-            controls.renderAudioOutput(.init(portType: .bluetoothHFP, name: "Bluetooth", uid: "smoke-airpods4"))
-            guard controls.audioOutputIconName == "airpods.gen3",
-                  controls.airplayButton.menu != nil else {
-              smokeLog("Playback refresh or empty route reset the AirPods 4 icon")
-              return
-            }
-            controls.renderAudioOutput(.init(portType: .builtInSpeaker, name: "iPhone", uid: "speaker"))
-            guard controls.audioOutputIconName == "airplay.audio", controls.airplayButton.menu == nil else { return }
-            smokeLog("AirPods 3/4 symbol, model override, refresh stability and real disconnect reset passed")
+            try await controls.verifyAudioOutputStabilityForSmoke()
           }
           try await compositorScreenshot("player-artwork-landscape.png")
           // Leave enough time for the real engine to preload the second stream.

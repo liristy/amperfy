@@ -43,6 +43,9 @@ class PlayerUIHandler: NSObject {
   var usesGlassModeButtons = false
 
   private var style: PlayerUIStyle
+  #if !targetEnvironment(macCatalyst)
+    private var routePickerVolume: MPVolumeView?
+  #endif
 
   init(player: PlayerFacade, style: PlayerUIStyle) {
     self.player = player
@@ -396,19 +399,30 @@ class PlayerUIHandler: NSObject {
         }
       }
     #else
-      let rect = CGRect(x: -100, y: 0, width: 0, height: 0)
-      let airplayVolume = MPVolumeView(frame: rect)
-      airplayVolume.showsVolumeSlider = false
-      rootView.addSubview(airplayVolume)
+      let airplayVolume = prepareAirplayVolume(in: rootView)
       for view: UIView in airplayVolume.subviews {
         if let button = view as? UIButton {
           button.sendActions(for: .touchUpInside)
           break
         }
       }
-      airplayVolume.removeFromSuperview()
     #endif
   }
+
+  #if !targetEnvironment(macCatalyst)
+    func prepareAirplayVolume(in rootView: UIView) -> MPVolumeView {
+      if let routePickerVolume, routePickerVolume.superview === rootView { return routePickerVolume }
+      routePickerVolume?.removeFromSuperview()
+      let picker = MPVolumeView(frame: CGRect(x: -100, y: 0, width: 0, height: 0))
+      picker.showsVolumeSlider = false
+      picker.showsRouteButton = true
+      picker.isAccessibilityElement = false
+      picker.accessibilityElementsHidden = true
+      rootView.addSubview(picker)
+      routePickerVolume = picker
+      return picker
+    }
+  #endif
 
   var isLyricsButtonAllowedToDisplay: Bool {
     appDelegate.player.playerMode == .music && appDelegate.storage.settings.accounts

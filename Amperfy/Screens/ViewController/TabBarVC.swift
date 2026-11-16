@@ -348,6 +348,13 @@ class TabBarVC: UITabBarController {
   func applyNavigationChrome(style: UIUserInterfaceStyle) {
     if tabBar.overrideUserInterfaceStyle != style { tabBar.overrideUserInterfaceStyle = style }
     if playerDock?.overrideUserInterfaceStyle != style { playerDock?.overrideUserInterfaceStyle = style }
+    #if DEBUG && targetEnvironment(simulator)
+      if ProcessInfo.processInfo.arguments.contains("--smoke-chrome-bar-style") {
+        let resolved = style == .unspecified ? traitCollection.userInterfaceStyle : style
+        let barStyle: UIBarStyle = resolved == .dark ? .black : .default
+        if tabBar.barStyle != barStyle { tabBar.barStyle = barStyle }
+      }
+    #endif
   }
 
   private func updateDockSelection() {

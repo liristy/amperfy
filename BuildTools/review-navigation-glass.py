@@ -1,7 +1,7 @@
 """Record actual system-glass navigation in controlled light/dark appearances.
 
 Uses only the throwaway CI simulator and loopback fixtures. The original behavior,
-the immediate material update, and native slide navigation share the same binary.
+the explicit bottom scroll binding, and native bar-style control share a binary.
 Pixel/animation review happens from the compositor videos, not drawHierarchy.
 """
 import argparse
@@ -73,7 +73,7 @@ def main():
             if time.monotonic() > deadline:
                 raise TimeoutError("Initial fixture login did not complete")
             time.sleep(0.5)
-        for policy in ("baseline", "immediate", "slide"):
+        for policy in ("baseline", "immediate", "bar-style"):
             for appearance in ("light", "dark"):
                 name = f"{policy}-{appearance}"
                 for path in documents.glob("chrome-review-*"):
@@ -113,6 +113,8 @@ def main():
                         recorder = None
                         for path in documents.glob("chrome-review-*.json"):
                             shutil.copy2(path, output / f"{name}-{path.name}")
+                        for path in documents.glob("chrome-review-*.png"):
+                            shutil.copy2(path, output / f"{name}-{path.name}")
                 if not (output / f"{name}.mp4").is_file() or (output / f"{name}.mp4").stat().st_size < 10000:
                     raise RuntimeError("Compositor recording is missing or empty for " + name)
                 variants.append(name)
@@ -123,8 +125,8 @@ def main():
             "runtime_major": options.runtime_major,
             "variants": variants, "simulator": booted[0]["name"],
             "baseline": "Previous coordinator-animated interface-style change",
-            "immediate": "Native zoom with interface-style committed without animation",
-            "slide": "Immediate interface-style with the native slide transition",
+            "immediate": "Native zoom with prebound leaf bottom scroll view and immediate interface-style",
+            "bar-style": "Same binding and native zoom with explicit native UIBarStyle",
         }, indent=2))
     finally:
         if recorder:

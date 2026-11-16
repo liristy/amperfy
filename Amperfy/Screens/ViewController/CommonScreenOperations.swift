@@ -233,6 +233,7 @@ final class MusicNavigationController: UINavigationController, UINavigationContr
     guard let host = chromeHost ?? (tabBarController as? TabBarVC), host.isViewLoaded,
           host.activeNavigationController === self else { return }
     host.reserveDockSpace(for: controller)
+    bindBottomContent(of: controller, to: host)
     let style: UIUserInterfaceStyle = usesArtworkChrome(for: controller) ? .dark : .unspecified
     UIView.performWithoutAnimation { host.applyNavigationChrome(style: style) }
   }
@@ -248,6 +249,23 @@ final class MusicNavigationController: UINavigationController, UINavigationContr
       controller is ArtistDetailVC || controller is ArtistRankingVC
   }
 
+  private func bindBottomContent(of controller: UIViewController, to host: TabBarVC) {
+    guard !recordsPreviousChromeBehavior else { return }
+    // A UITabGroup owns a separate navigation container. Tell the shared bar
+    // which leaf scroll view it should observe before UIKit captures the push,
+    // rather than leaving it attached to the departing page until didShow.
+    controller.loadViewIfNeeded()
+    let scroll: UIScrollView?
+    if let table = controller as? UITableViewController { scroll = table.tableView }
+    else if let collection = controller as? UICollectionViewController { scroll = collection.collectionView }
+    else { scroll = controller.view as? UIScrollView }
+    for owner in [controller, self, host] as [UIViewController] {
+      if owner.contentScrollView(for: .bottom) !== scroll {
+        owner.setContentScrollView(scroll, for: .bottom)
+      }
+    }
+  }
+
   private func applyAppearance(for controller: UIViewController) {
     let artworkPage = usesArtworkChrome(for: controller)
     let style: UIUserInterfaceStyle = artworkPage ? .dark : .unspecified
@@ -260,7 +278,10 @@ final class MusicNavigationController: UINavigationController, UINavigationContr
     let host = (tabBarController as? TabBarVC) ?? (recordsPreviousChromeBehavior ? nil : chromeHost)
     if let host {
       host.reserveDockSpace(for: controller)
-      if host.activeNavigationController === self { host.applyNavigationChrome(style: style) }
+      if host.activeNavigationController === self {
+        bindBottomContent(of: controller, to: host)
+        host.applyNavigationChrome(style: style)
+      }
     }
   }
 
@@ -460,7 +481,23 @@ final class MusicNavigationController: UINavigationController, UINavigationContr
       try await settle("list.pop", endColor: .green)
       try require(nav.topViewController === list, "Playlist return did not restore its source row")
       try require(host.miniPlayer?.glassContainer.effect is UIGlassEffect, "System player material was replaced")
+      let audioCheck = !ProcessInfo.processInfo.arguments.contains("--smoke-chrome-baseline") &&
+        !ProcessInfo.processInfo.arguments.contains("--smoke-chrome-slide")
+      if audioCheck {
+        host.miniPlayer?.openPlayerView()
+        for _ in 0..<80 {
+          if let popup = host.presentedViewController as? PopupPlayerVC,
+             !popup.isBeingPresented, popup.view.mask == nil { break }
+          try await Task.sleep(for: .milliseconds(100))
+        }
+        guard let popup = host.presentedViewController as? PopupPlayerVC, let controls = popup.controlView else {
+          throw NSError(domain: "NavigationGlassSmoke", code: 8)
+        }
+        try await controls.verifyAudioOutputStabilityForSmoke()
+        popup.dismiss(animated: false)
+      }
       try write(["appearance": dark ? "dark" : "light", "events": events,
+                 "audio_output_checked": audioCheck,
                  "window": rect(window.bounds), "completed": true], to: "chrome-review-ready.json")
     }
   }

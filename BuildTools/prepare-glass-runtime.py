@@ -88,7 +88,12 @@ def main():
     device_type = "com.apple.CoreSimulator.SimDeviceType.iPhone-17-Pro-Max"
     device = command("xcrun", "simctl", "create", "qMusic Glass iPhone 17 Pro Max", device_type, runtime["identifier"])
     command("xcrun", "simctl", "boot", device)
-    command("xcrun", "simctl", "bootstatus", device, "-b")
+    # The first boot of a fresh iOS 27.2 runtime can migrate simulator services
+    # for several minutes. Preserve its progress instead of hiding it in a
+    # three-minute check_output timeout.
+    with (output / "boot.log").open("w") as log:
+        subprocess.run(["xcrun", "simctl", "bootstatus", device, "-b"],
+                       stdout=log, stderr=subprocess.STDOUT, check=True, timeout=600)
     (output / "runtime.json").write_text(json.dumps({
         "runtime": runtime["identifier"], "version": runtime["version"],
         "device_type": device_type, "application_source": os.environ["SIMULATOR_SOURCE_SHA"],

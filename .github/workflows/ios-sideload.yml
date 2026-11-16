@@ -63,6 +63,7 @@ jobs:
           python3 -m unittest discover -s BuildTools -p test_build_cache_mtimes.py
           python3 BuildTools/build-cache-mtimes.py restore build/validation/DerivedData/source-mtimes.json
       - name: Build simulator and validate affected library tests
+        id: library-checks
         # Leave time to upload diagnostics if the simulator stalls.
         timeout-minutes: 35
         env:
@@ -91,6 +92,7 @@ jobs:
           if-no-files-found: warn
           retention-days: 7
       - name: Validate complete iPhone UI
+        if: ${{ !cancelled() && steps.library-checks.outcome == 'success' }}
         timeout-minutes: 15
         run: bash BuildTools/test-iphone-changes.sh --ui-only
       - name: Record source timestamps
