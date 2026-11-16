@@ -1,7 +1,7 @@
 """Record actual system-glass navigation in controlled light/dark appearances.
 
-Uses only the throwaway CI simulator and loopback fixtures. Compare the previous
-managed bar and explicit system regular/clear glass behind the native controls.
+Uses only the throwaway CI simulator and loopback fixtures. Compare immediate
+native appearance changes with the previous automatic material adaptation.
 Pixel/animation review happens from the compositor videos, not drawHierarchy.
 """
 import argparse
@@ -82,7 +82,8 @@ def main():
             if time.monotonic() > deadline:
                 raise TimeoutError("Initial fixture login did not complete")
             time.sleep(0.5)
-        for policy in ("baseline", "no-edge", "forced", "regular-mini"):
+        policies = ("baseline", "no-edge", "no-tint")
+        for policy in policies:
             for appearance in ("light", "dark"):
                 name = f"{policy}-{appearance}"
                 for path in documents.glob("chrome-review-*"):
@@ -134,9 +135,8 @@ def main():
             "runtime_major": options.runtime_major,
             "variants": variants, "simulator": booted[0]["name"],
             "baseline": "Previous coordinator-animated interface-style change",
-            "no-edge": "Stable native tab traits with automatic backdrop adaptation, no bottom edge treatment and clear mini player (production candidate)",
-            "forced": "Previous forced native light/dark traits with no bottom edge treatment; clear mini player",
-            "regular-mini": "Automatic native tab traits with the previous regular mini-player material",
+            "no-edge": "Immediate native material tint at tap; native zoom and return transitions retained (production)",
+            "no-tint": "App appearance without immediate material tint; backdrop adapts automatically",
         }, indent=2))
     finally:
         if recorder:

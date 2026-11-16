@@ -415,6 +415,10 @@ final class MusicNavigationController: UINavigationController, UINavigationContr
           "marker_frame": rect(marker.frame),
           "animated": nav.transitionCoordinator?.isAnimated == true,
           "bar_style": host.tabBar.traitCollection.userInterfaceStyle.rawValue,
+          "bar_override": host.tabBar.overrideUserInterfaceStyle.rawValue,
+          "host_style": host.traitCollection.userInterfaceStyle.rawValue,
+          "host_override": host.overrideUserInterfaceStyle.rawValue,
+          "bar_tint_alpha": host.tabBar.standardAppearance.backgroundColor?.cgColor.alpha ?? 0,
           "page": String(describing: type(of: top)),
           "page_frame": rect(top?.view.layer.presentation()?.frame ?? top?.view.frame ?? .zero)]
         if name.hasSuffix(".source") || name.hasSuffix(".settled") {

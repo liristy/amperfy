@@ -54,6 +54,10 @@ class TabBarVC: UITabBarController {
   private var navigationGlass: UIVisualEffectView?
   private var originalTabAppearance: UITabBarAppearance?
   private var originalTabEdgeAppearance: UITabBarAppearance?
+  private var untintedNavigationAppearance: UITabBarAppearance?
+  private var untintedNavigationEdgeAppearance: UITabBarAppearance?
+  private var untintedNavigationItemColor: UIColor?
+  private var navigationTintIsArtwork: Bool?
   private var usesExplicitNavigationGlass: Bool {
     #if DEBUG && targetEnvironment(simulator)
       let arguments = ProcessInfo.processInfo.arguments
@@ -85,6 +89,15 @@ class TabBarVC: UITabBarController {
       let arguments = ProcessInfo.processInfo.arguments
       if arguments.contains("--smoke-chrome") {
         return !arguments.contains("--smoke-chrome-baseline") && !arguments.contains("--smoke-chrome-forced")
+      }
+    #endif
+    return true
+  }
+  private var usesImmediateNavigationTint: Bool {
+    #if DEBUG && targetEnvironment(simulator)
+      let arguments = ProcessInfo.processInfo.arguments
+      if arguments.contains("--smoke-chrome") {
+        return !arguments.contains("--smoke-chrome-baseline") && !arguments.contains("--smoke-chrome-no-tint")
       }
     #endif
     return true
@@ -188,6 +201,10 @@ class TabBarVC: UITabBarController {
 
     delegate = self
     tabs = fixTabs
+    registerForTraitChanges([UITraitUserInterfaceStyle.self]) { (host: TabBarVC, _: UITraitCollection) in
+      guard host.automaticallyAdaptsNavigationGlass else { return }
+      (host.activeNavigationController as? MusicNavigationController)?.synchronizeAppearance()
+    }
 
     NotificationCenter.default.addObserver(
       self,
@@ -253,6 +270,7 @@ class TabBarVC: UITabBarController {
       miniPlayer.setCompactPresentation(nil)
       updateDockContentInset(visible: false)
     }
+    restoreNavigationTint()
     if let navigationGlass {
       navigationGlass.removeFromSuperview()
       self.navigationGlass = nil
@@ -459,9 +477,25 @@ class TabBarVC: UITabBarController {
   func applyNavigationChrome(style: UIUserInterfaceStyle) {
     // Native tab glass adapts to its real backdrop. Keep its appearance trait
     // stable instead of starting a separate light/dark transition on each push.
-    let nativeStyle: UIUserInterfaceStyle = automaticallyAdaptsNavigationGlass ? .unspecified : style
+    var nativeStyle = style
+    if automaticallyAdaptsNavigationGlass {
+      if #available(iOS 27.0, *) {
+        nativeStyle = .unspecified
+      } else {
+        // iOS 26 can inherit the incoming leaf's dark traits even when the bar
+        // override is unspecified. Match the app's appearance explicitly so
+        // a push does not start an independent material-mode transition.
+        nativeStyle = traitCollection.userInterfaceStyle
+      }
+      #if DEBUG && targetEnvironment(simulator)
+        if ProcessInfo.processInfo.arguments.contains("--smoke-chrome-inherited") { nativeStyle = .unspecified }
+      #endif
+    }
     if tabBar.overrideUserInterfaceStyle != nativeStyle { tabBar.overrideUserInterfaceStyle = nativeStyle }
     if playerDock?.overrideUserInterfaceStyle != style { playerDock?.overrideUserInterfaceStyle = style }
+    if usesImmediateNavigationTint, playerDock != nil {
+      applyImmediateNavigationTint(isArtwork: style == .dark)
+    }
     #if DEBUG && targetEnvironment(simulator)
       if ProcessInfo.processInfo.arguments.contains("--smoke-chrome-same-appearance"),
          tabBar.scrollEdgeAppearance == nil {
@@ -477,6 +511,58 @@ class TabBarVC: UITabBarController {
       }
       glassReviewTabBar?.overrideUserInterfaceStyle = style
     #endif
+  }
+
+  private func applyImmediateNavigationTint(isArtwork: Bool) {
+    guard navigationTintIsArtwork != isArtwork else { return }
+    if untintedNavigationAppearance == nil {
+      untintedNavigationAppearance = tabBar.standardAppearance.copy() as? UITabBarAppearance
+      untintedNavigationEdgeAppearance = tabBar.scrollEdgeAppearance?.copy() as? UITabBarAppearance
+      untintedNavigationItemColor = tabBar.unselectedItemTintColor
+    }
+    let wasArtwork = navigationTintIsArtwork == true
+    navigationTintIsArtwork = isArtwork
+    guard isArtwork || wasArtwork, let original = untintedNavigationAppearance else { return }
+    let standard = original.copy() as! UITabBarAppearance
+    let edge = (untintedNavigationEdgeAppearance ?? original).copy() as! UITabBarAppearance
+    if isArtwork {
+      // Tint the real system material at the tap, without waiting for its
+      // automatic light/dark adaptation. The backdrop and selection lens stay native.
+      for appearance in [standard, edge] {
+        appearance.backgroundColor = UIColor.black.withAlphaComponent(0.45)
+        for layout in [appearance.stackedLayoutAppearance, appearance.inlineLayoutAppearance,
+                       appearance.compactInlineLayoutAppearance] {
+          layout.normal.iconColor = .white
+          var attributes = layout.normal.titleTextAttributes
+          attributes[.foregroundColor] = UIColor.white
+          layout.normal.titleTextAttributes = attributes
+        }
+      }
+    }
+    UIView.performWithoutAnimation {
+      CATransaction.begin()
+      CATransaction.setDisableActions(true)
+      tabBar.standardAppearance = standard
+      tabBar.scrollEdgeAppearance = isArtwork ? edge : untintedNavigationEdgeAppearance
+      tabBar.unselectedItemTintColor = isArtwork ? .white : untintedNavigationItemColor
+      tabBar.setNeedsLayout()
+      tabBar.layoutIfNeeded()
+      CATransaction.commit()
+    }
+  }
+
+  private func restoreNavigationTint() {
+    if let original = untintedNavigationAppearance, navigationTintIsArtwork == true {
+      UIView.performWithoutAnimation {
+        tabBar.standardAppearance = original
+        tabBar.scrollEdgeAppearance = untintedNavigationEdgeAppearance
+        tabBar.unselectedItemTintColor = untintedNavigationItemColor
+      }
+    }
+    untintedNavigationAppearance = nil
+    untintedNavigationEdgeAppearance = nil
+    untintedNavigationItemColor = nil
+    navigationTintIsArtwork = nil
   }
 
   private func updateDockSelection() {

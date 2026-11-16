@@ -2512,6 +2512,14 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
       let left = (home.navigationItem.leftBarButtonItem?.customView as? UIButton)?.tintColor
       let right = home.navigationItem.rightBarButtonItem?.tintColor
       let dockFrame = tabHost.playerDock?.frame
+      let appAppearance = tabHost.tabBar.traitCollection.userInterfaceStyle
+      func nativeBarMatchesAppAppearance() -> Bool {
+        let expected: UIUserInterfaceStyle
+        if #available(iOS 27.0, *) { expected = .unspecified }
+        else { expected = appAppearance }
+        return tabHost.tabBar.overrideUserInterfaceStyle == expected &&
+          tabHost.tabBar.traitCollection.userInterfaceStyle == appAppearance
+      }
       let controllers: [UIViewController] = [AlbumDetailVC(account: account, album: album),
         PlaylistDetailVC(account: account, playlist: playlist), ArtistDetailVC(account: account, artist: artist)]
       for controller in controllers {
@@ -2519,15 +2527,16 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
         for _ in 0..<45 {
           try await Task.sleep(for: .milliseconds(16))
           guard tabHost.playerDock?.frame == dockFrame,
-                tabHost.tabBar.overrideUserInterfaceStyle == .dark else {
-            log("Detail push moved dock geometry or delayed bottom-bar contrast"); return false
+                nativeBarMatchesAppAppearance(),
+                tabHost.playerDock?.overrideUserInterfaceStyle == .dark else {
+            log("Detail push changed native bar appearance or dock geometry"); return false
           }
         }
         nav.popViewController(animated: true)
         for _ in 0..<60 {
           try await Task.sleep(for: .milliseconds(16))
           guard nav.navigationBar.overrideUserInterfaceStyle == .unspecified,
-                tabHost.tabBar.overrideUserInterfaceStyle == .unspecified,
+                nativeBarMatchesAppAppearance(),
                 tabHost.playerDock?.frame == dockFrame,
                 (home.navigationItem.leftBarButtonItem?.customView as? UIButton)?.tintColor == left,
                 home.navigationItem.rightBarButtonItem?.tintColor == right else {
