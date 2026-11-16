@@ -150,6 +150,19 @@ class TabBarVC: UITabBarController {
 
     delegate = self
     tabs = fixTabs
+    #if DEBUG && targetEnvironment(simulator)
+      let reviewArguments = ProcessInfo.processInfo.arguments
+      let reviewsPreviousAppearance = reviewArguments.contains("--smoke-chrome-baseline") ||
+        reviewArguments.contains("--smoke-chrome-standalone")
+    #else
+      let reviewsPreviousAppearance = false
+    #endif
+    if !reviewsPreviousAppearance {
+      // Keep the system's own default glass in both modes. A nil edge appearance
+      // synthesizes a transparent variant. Use one material when the incoming
+      // page takes over scroll observation, without a second appearance handoff.
+      tabBar.scrollEdgeAppearance = tabBar.standardAppearance
+    }
 
     NotificationCenter.default.addObserver(
       self,
@@ -376,6 +389,12 @@ class TabBarVC: UITabBarController {
     if tabBar.overrideUserInterfaceStyle != style { tabBar.overrideUserInterfaceStyle = style }
     if playerDock?.overrideUserInterfaceStyle != style { playerDock?.overrideUserInterfaceStyle = style }
     #if DEBUG && targetEnvironment(simulator)
+      if ProcessInfo.processInfo.arguments.contains("--smoke-chrome-same-appearance"),
+         tabBar.scrollEdgeAppearance == nil {
+        // Diagnostic: keep UIKit's default material while removing the switch
+        // between its standard and automatically transparent scroll-edge modes.
+        tabBar.scrollEdgeAppearance = tabBar.standardAppearance
+      }
       if ProcessInfo.processInfo.arguments.contains("--smoke-chrome-host-style") {
         activeNavigationController?.view.overrideUserInterfaceStyle =
           ProcessInfo.processInfo.arguments.contains("--smoke-chrome-dark") ? .dark : .light

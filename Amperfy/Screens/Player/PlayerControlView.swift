@@ -491,6 +491,7 @@ class PlayerControlView: UIView {
   #endif
   private var audioRouteTask: Task<Void, Never>?
   private var needsForegroundRouteConfirmation = false
+  private var pendingPhysicalRouteChange = false
   #if DEBUG && targetEnvironment(simulator)
     private var audioOutputProviderForSmoke: (() -> AudioOutput?)?
   #endif
@@ -806,10 +807,14 @@ class PlayerControlView: UIView {
       }
       let originalEnabled = airplayButton.isEnabled
       let originalSelected = airplayButton.isSelected
+      let originalBackgroundConfirmation = needsForegroundRouteConfirmation
+      let originalPhysicalChange = pendingPhysicalRouteChange
       audioRouteTask?.cancel()
       defer {
         audioRouteTask?.cancel()
         audioOutputProviderForSmoke = nil
+        needsForegroundRouteConfirmation = originalBackgroundConfirmation
+        pendingPhysicalRouteChange = originalPhysicalChange
         airplayButton.isHighlighted = false
         airplayButton.isSelected = originalSelected
         airplayButton.isEnabled = originalEnabled
@@ -842,11 +847,12 @@ class PlayerControlView: UIView {
       try await Task.sleep(for: .milliseconds(1100))
       try check(audioOutputIconName == "airpods.gen3" && visibleSymbolMatches("airpods.gen3"),
                 "A Bluetooth profile UID/name change lost the confirmed headphone icon")
-      supplied = nil
+      supplied = speaker
+      deferAudioRouteRefresh(physicalChange: false, actualBackground: false)
       audioRouteChanged(Notification(name: UIApplication.didBecomeActiveNotification))
-      try await Task.sleep(for: .milliseconds(1100))
+      try await Task.sleep(for: .milliseconds(1800))
       try check(audioOutputIconName == "airpods.gen3" && visibleSymbolMatches("airpods.gen3"),
-                "Returning from a route picker replaced the confirmed headphone icon with an empty snapshot")
+                "A route-picker interruption was mistaken for suspension and replaced the confirmed headphone icon")
       supplied = AudioOutput(portType: .bluetoothA2DP, name: "Studio headset", uid: "smoke-other-device")
       scheduleAudioOutputRefresh(confirmsInternalFallback: true, allowsBluetoothContinuity: false)
       try await Task.sleep(for: .milliseconds(1100))
@@ -854,10 +860,11 @@ class PlayerControlView: UIView {
                 "A different Bluetooth endpoint borrowed the previous device's model")
       renderAudioOutput(a2dp)
       supplied = speaker
-      scheduleAudioOutputRefresh(confirmsInternalFallback: true, allowsBluetoothContinuity: false)
+      deferAudioRouteRefresh(physicalChange: true, actualBackground: false)
+      audioRouteChanged(Notification(name: UIApplication.didBecomeActiveNotification))
       try await Task.sleep(for: .milliseconds(1100))
       try check(audioOutputIconName == "airplay.audio" && visibleSymbolMatches("airplay.audio") && airplayButton.menu == nil,
-                "A confirmed disconnect retained the previous headphone icon or its device menu")
+                "A disconnect during a route-picker interruption retained the previous headphone icon or its menu")
       renderAudioOutput(a2dp)
       scheduleAudioOutputRefresh(confirmAfterBackground: true)
       try await Task.sleep(for: .milliseconds(1800))
@@ -908,24 +915,32 @@ class PlayerControlView: UIView {
     Task { @MainActor [weak self] in
       guard let self else { return }
       let becameActive = notificationName == UIApplication.didBecomeActiveNotification
-      guard window != nil, UIApplication.shared.applicationState == .active else {
-        needsForegroundRouteConfirmation = true
-        audioRouteTask?.cancel()
-        return
-      }
       let physical = reason.map {
         [AVAudioSession.RouteChangeReason.oldDeviceUnavailable.rawValue,
          AVAudioSession.RouteChangeReason.newDeviceAvailable.rawValue,
          AVAudioSession.RouteChangeReason.override.rawValue,
          AVAudioSession.RouteChangeReason.noSuitableRouteForCategory.rawValue].contains($0)
       } ?? false
+      guard window != nil, UIApplication.shared.applicationState == .active else {
+        deferAudioRouteRefresh(physicalChange: physical,
+          actualBackground: UIApplication.shared.applicationState == .background)
+        return
+      }
       let confirmBackground = becameActive && needsForegroundRouteConfirmation
       if becameActive { needsForegroundRouteConfirmation = false }
-      scheduleAudioOutputRefresh(confirmsInternalFallback: physical,
+      let confirmedRouteChange = physical || pendingPhysicalRouteChange
+      pendingPhysicalRouteChange = false
+      scheduleAudioOutputRefresh(confirmsInternalFallback: confirmedRouteChange,
         confirmAfterBackground: confirmBackground,
-        previousBluetoothUIDs: physical ? [] : previousBluetoothUIDs,
-        allowsBluetoothContinuity: !physical)
+        previousBluetoothUIDs: confirmedRouteChange ? [] : previousBluetoothUIDs,
+        allowsBluetoothContinuity: !confirmedRouteChange)
     }
+  }
+
+  private func deferAudioRouteRefresh(physicalChange: Bool, actualBackground: Bool) {
+    pendingPhysicalRouteChange = pendingPhysicalRouteChange || physicalChange
+    needsForegroundRouteConfirmation = needsForegroundRouteConfirmation || actualBackground
+    audioRouteTask?.cancel()
   }
 
   @objc private func audioOutputEnteredBackground() {
@@ -938,8 +953,11 @@ class PlayerControlView: UIView {
     if window != nil {
       let confirm = needsForegroundRouteConfirmation
       needsForegroundRouteConfirmation = false
-      scheduleAudioOutputRefresh(confirmsInternalFallback: displayedAudioOutput == nil,
-                                 confirmAfterBackground: confirm)
+      let physical = pendingPhysicalRouteChange
+      pendingPhysicalRouteChange = false
+      scheduleAudioOutputRefresh(confirmsInternalFallback: displayedAudioOutput == nil || physical,
+                                 confirmAfterBackground: confirm,
+                                 allowsBluetoothContinuity: !physical)
     } else { audioRouteTask?.cancel() }
   }
 

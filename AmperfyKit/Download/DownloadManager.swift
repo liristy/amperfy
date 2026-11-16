@@ -237,7 +237,6 @@ actor DownloadManager: NSObject, DownloadManageable {
       }
 
       let request = await self.requestManager.add(downloadInfo: downloadInfo)
-      guard await self.isAllowedToTriggerDownload else { return }
       await self.enqueue(request: request, id: downloadInfo.objectId.uriRepresentation().absoluteString,
                          prioritized: prioritized, isAudio: downloadInfo.type == .playable,
                          revision: revision)
@@ -250,11 +249,9 @@ actor DownloadManager: NSObject, DownloadManageable {
     // older playback request must not steal priority back from the new song.
     if prioritized, revision >= appliedPriorityRevision {
       appliedPriorityRevision = revision
-      if request != nil || taskOperations.keys.contains(where: { $0.id == id }) {
-        prioritizeDownload(id: id, isAudio: isAudio)
-      }
+      prioritizeDownload(id: id, isAudio: isAudio)
     }
-    if let request { addDownloadTaskOperation(downloadRequest: request) }
+    if isAllowedToTriggerDownload, let request { addDownloadTaskOperation(downloadRequest: request) }
   }
 
   @MainActor
@@ -366,7 +363,8 @@ actor DownloadManager: NSObject, DownloadManageable {
     }
 
     taskOperations.removeAll()
-    priorityDownloadID = nil
+    // Keep the playback head across temporary connectivity loss. User cancellation
+    // clears it in _cancelDownloads; reconnect should not revive FIFO ahead of it.
     taskQueue.maxConcurrentOperationCount = normalDownloadLimit
     taskQueue.cancelAllOperations()
     guard let urlSessionTasks = await urlSession?.allTasks else { return }
@@ -422,10 +420,8 @@ actor DownloadManager: NSObject, DownloadManageable {
     }
     taskOperations[downloadRequest] = asyncOperation
     asyncOperation.queuePriority = downloadRequest.id == priorityDownloadID ? .veryHigh : .normal
+    if downloadRequest.id == priorityDownloadID { updateDownloadPriorities() }
     taskQueue.addOperation(asyncOperation)
-    if downloadRequest.id == priorityDownloadID {
-      taskQueue.maxConcurrentOperationCount = normalDownloadLimit + 1
-    }
   }
 
   private func prioritizeDownload(id: String, isAudio: Bool) {
@@ -457,7 +453,8 @@ actor DownloadManager: NSObject, DownloadManageable {
 
   func networkPriority(for request: DownloadRequest) -> Float {
     if request.id == priorityDownloadID { return URLSessionTask.highPriority }
-    return priorityDownloadID != nil && priorityDownloadIsAudio ?
+    let priorityIsQueued = taskOperations.keys.contains { $0.id == priorityDownloadID }
+    return priorityIsQueued && priorityDownloadIsAudio ?
       URLSessionTask.lowPriority : URLSessionTask.defaultPriority
   }
 
@@ -465,7 +462,7 @@ actor DownloadManager: NSObject, DownloadManageable {
     guard isAllowedToTriggerDownload else {
       taskOperations[downloadRequest]?.complete()
       taskOperations.removeValue(forKey: downloadRequest)
-      finishPriorityDownload(downloadRequest)
+      updateDownloadPriorities()
       return
     }
     try? await storage.perform { asyncCompanion in

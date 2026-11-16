@@ -857,6 +857,9 @@ class MusicPlayerTest: XCTestCase {
 
   func testAutoCacheWaitsForCurrentThenFollowsEditedPlaybackOrder() async throws {
     try await startScrobbleStream()
+    // The seeded Core Data account is independent of the configured accounts
+    // list that installs download-completion observers.
+    storage.settings.accounts.updateSetting(account.info) { $0.artworkDisplayPreference = .serverArtworkOnly }
     testPlayer.isAutoCachePlayedItems = true
     let audio = MOCK_SongDownloader(), covers = MOCK_SongDownloader(), syncer = MOCK_LibrarySyncer()
     let notifications = EventNotificationHandler()
@@ -1193,6 +1196,45 @@ class MusicPlayerTest: XCTestCase {
       task.priority == (info.request.id == backlog[0].uniqueID ? URLSessionTask.highPriority : URLSessionTask.lowPriority)
     })
     XCTAssertEqual(CacheRequestProbe.starts.withLock { $0 }, 5, "Promotion must reuse the running transfer")
+  }
+
+  func testPlayingAudioPrioritySurvivesAnExistingOfflineRequest() async throws {
+    storage.settings.user.isOfflineMode = false
+    networkMonitor.isConnectedToNetwork = false
+    let asyncStorage = AsyncCoreDataAccessWrapper(persistentContainer: cdHelper.persistentContainer)
+    let requests = DownloadRequestManager(accountObjectId: account.managedObject.objectID, storage: asyncStorage,
+                                         getDownloadDelegateCB: { CacheDownloadProbeDelegate() })
+    let manager = DownloadManager(name: "Offline playback priority test", storage: asyncStorage, requestManager: requests,
+      getDownloadDelegateCB: { CacheDownloadProbeDelegate() }, eventLogger: eventLogger,
+      settings: storage.settings, networkMonitor: networkMonitor, notificationHandler: EventNotificationHandler(),
+      urlCleanser: backendApi, limitCacheSize: false, isFailWithPopupError: false)
+    let queue = await manager.taskQueue
+    queue.isSuspended = true
+    let session = URLSession(configuration: .ephemeral)
+    defer { manager.stop(); session.invalidateAndCancel() }
+    manager.initialize(urlSession: session, isCheckForCachedNeeded: true, validationCB: nil)
+    let later = library.createSong(account: account)
+    later.id = "offline-later"; later.title = "Later"
+    library.saveContext()
+    let laterRequest = await requests.add(downloadInfo: try XCTUnwrap(later.threadSafeInfo))
+    let currentRequest = await requests.add(downloadInfo: try XCTUnwrap(songToDownload.threadSafeInfo))
+    let laterDownload = try XCTUnwrap(laterRequest)
+    let currentDownload = try XCTUnwrap(currentRequest)
+    await manager._start()
+    manager.downloadWithPriority(object: songToDownload)
+    for _ in 0..<100 {
+      if await manager.networkPriority(for: currentDownload) == URLSessionTask.highPriority { break }
+      try await Task.sleep(for: .milliseconds(10))
+    }
+    networkMonitor.isConnectedToNetwork = true
+    await manager._start()
+    XCTAssertEqual(queue.operationCount, 2)
+    XCTAssertEqual(queue.operations.filter { $0.queuePriority == .veryHigh }.count, 1)
+    XCTAssertEqual(queue.maxConcurrentOperationCount, 5)
+    let currentPriority = await manager.networkPriority(for: currentDownload)
+    let laterPriority = await manager.networkPriority(for: laterDownload)
+    XCTAssertEqual(currentPriority, URLSessionTask.highPriority)
+    XCTAssertEqual(laterPriority, URLSessionTask.lowPriority)
   }
 
   func testConcurrentSingleAndBatchCacheRequestsCreateOneRecordPerSong() async throws {

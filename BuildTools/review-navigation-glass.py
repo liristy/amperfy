@@ -1,7 +1,7 @@
 """Record actual system-glass navigation in controlled light/dark appearances.
 
-Uses only the throwaway CI simulator and loopback fixtures. The original behavior,
-the explicit bottom scroll binding, and native bar-style control share a binary.
+Uses only the throwaway CI simulator and loopback fixtures. Compare the previous
+managed bar, consistent default material, host traits and an independent native bar.
 Pixel/animation review happens from the compositor videos, not drawHierarchy.
 """
 import argparse
@@ -82,7 +82,7 @@ def main():
             if time.monotonic() > deadline:
                 raise TimeoutError("Initial fixture login did not complete")
             time.sleep(0.5)
-        for policy in ("baseline", "host-style", "standalone"):
+        for policy in ("baseline", "host-style", "same-appearance", "standalone"):
             for appearance in ("light", "dark"):
                 name = f"{policy}-{appearance}"
                 for path in documents.glob("chrome-review-*"):
@@ -134,7 +134,8 @@ def main():
             "runtime_major": options.runtime_major,
             "variants": variants, "simulator": booted[0]["name"],
             "baseline": "Previous coordinator-animated interface-style change",
-            "host-style": "Native zoom with root view traits and isolated content traits",
+            "host-style": "Consistent default material plus root view traits and isolated content traits",
+            "same-appearance": "Managed native bar with the default appearance shared by standard and scroll-edge modes",
             "standalone": "Independent public UITabBar at the same position, outside controller navigation appearance machinery",
         }, indent=2))
     finally:

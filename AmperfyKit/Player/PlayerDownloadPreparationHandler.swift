@@ -78,6 +78,9 @@ public class PlayerDownloadPreparationHandler {
     preparedMetadata.formIntersection(ids)
     for playable in upcomingItems {
       prepareArtwork(for: playable)
+      // Current audio/artwork has priority, but metadata speculation belongs
+      // to upcoming tracks. Do not refetch the current song through both paths.
+      guard playable.uniqueID != musicPlayer.currentlyPlaying?.uniqueID else { continue }
       guard !musicPlayer.isOfflineMode, let accountInfo = playable.account?.info else { continue }
       guard let song = playable.asSong, !song.id.isEmpty,
             song.playableManagedObject.title?.isEmpty != false ||

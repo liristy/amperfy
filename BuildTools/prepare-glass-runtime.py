@@ -39,7 +39,9 @@ def main():
             raise RuntimeError("A full source commit and its exact cache key are required")
         query = urllib.parse.urlencode({"key": key, "ref": os.environ["GITHUB_REF"]})
         url = f"https://api.github.com/repos/{os.environ['GITHUB_REPOSITORY']}/actions/caches?{query}"
-        deadline = time.monotonic() + 1800
+        # The producer allows 35 minutes for a cold incremental compile + tests.
+        # Do not let the independent runtime consumer expire before that window.
+        deadline = time.monotonic() + 2400
         while time.monotonic() < deadline:
             request = urllib.request.Request(url, headers={
                 "Authorization": "Bearer " + os.environ["GH_TOKEN"],
