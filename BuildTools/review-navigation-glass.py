@@ -35,13 +35,13 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--runtime-major", type=int, default=26)
     parser.add_argument("--app-source-sha")
-    args = parser.parse_args()
+    options = parser.parse_args()
     devices = json.loads(command("xcrun", "simctl", "list", "devices", "available", "-j"))["devices"]
-    booted = [d for runtime, values in devices.items() if f"iOS-{args.runtime_major}-" in runtime
+    booted = [d for runtime, values in devices.items() if f"iOS-{options.runtime_major}-" in runtime
               for d in values if d["state"] == "Booted" and d["name"].startswith("iPhone")]
     booted.sort(key=lambda d: d["name"] != "iPhone 17 Pro Max")
     if not booted:
-        raise RuntimeError(f"The build step did not boot its throwaway iOS {args.runtime_major} simulator")
+        raise RuntimeError(f"The build step did not boot its throwaway iOS {options.runtime_major} simulator")
     device = booted[0]["udid"]
     app = Path("build/validation/DerivedData/Build/Products/Debug-iphonesimulator/Amperfy.app").resolve()
     bundle = command("/usr/libexec/PlistBuddy", "-c", "Print CFBundleIdentifier", str(app / "Info.plist"))
@@ -118,9 +118,9 @@ def main():
                 variants.append(name)
                 print(f"Recorded actual native glass: {name}", flush=True)
         (output / "source.json").write_text(json.dumps({
-            "source_commit": args.app_source_sha or command("git", "rev-parse", "HEAD"),
+            "source_commit": options.app_source_sha or command("git", "rev-parse", "HEAD"),
             "harness_commit": command("git", "rev-parse", "HEAD"),
-            "runtime_major": args.runtime_major,
+            "runtime_major": options.runtime_major,
             "variants": variants, "simulator": booted[0]["name"],
             "baseline": "Previous coordinator-animated interface-style change",
             "immediate": "Native zoom with interface-style committed without animation",

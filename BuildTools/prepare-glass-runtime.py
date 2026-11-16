@@ -75,16 +75,20 @@ def main():
     if not app.is_dir():
         raise RuntimeError("The source-matched cache has no simulator application")
     runtimes = json.loads(command("xcrun", "simctl", "list", "runtimes", "-j"))["runtimes"]
-    runtime = next((r for r in runtimes if r.get("isAvailable") and r.get("version", "").startswith("27.2")
-                    and "SimRuntime.iOS-" in r["identifier"]), None)
+    output = Path("build/navigation-glass")
+    output.mkdir(parents=True, exist_ok=True)
+    (output / "runtime-catalog.json").write_text(json.dumps(runtimes, indent=2))
+    candidates = [r for r in runtimes if r.get("isAvailable") and r.get("version", "").startswith("27.2")
+                  and "SimRuntime.iOS-" in r["identifier"]]
+    # Device-specific runtimes (for example iPhone Duo) cannot boot a Pro Max.
+    candidates.sort(key=lambda r: r["identifier"] != "com.apple.CoreSimulator.SimRuntime.iOS-27-2")
+    runtime = next((r for r in candidates if r["identifier"] == "com.apple.CoreSimulator.SimRuntime.iOS-27-2"), None)
     if not runtime:
         raise RuntimeError("The runner does not have the required iOS 27.2 runtime")
     device_type = "com.apple.CoreSimulator.SimDeviceType.iPhone-17-Pro-Max"
     device = command("xcrun", "simctl", "create", "qMusic Glass iPhone 17 Pro Max", device_type, runtime["identifier"])
     command("xcrun", "simctl", "boot", device)
     command("xcrun", "simctl", "bootstatus", device, "-b")
-    output = Path("build/navigation-glass")
-    output.mkdir(parents=True, exist_ok=True)
     (output / "runtime.json").write_text(json.dumps({
         "runtime": runtime["identifier"], "version": runtime["version"],
         "device_type": device_type, "application_source": os.environ["SIMULATOR_SOURCE_SHA"],
