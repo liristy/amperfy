@@ -61,6 +61,11 @@ public class LibraryEntityImage: RoundedImage {
   static private var pendingImages = [String: Task<UIImage?, Never>]()
   private var imageLoadTask: Task<Void, Never>?
   private var requestedImagePath: String?
+  private var downloadedImageNeedsRefresh = false
+  // Only current player artwork opts in. Background track/download events may
+  // update this image once; palette extraction and offscreen lists stay separate.
+  public var allowsBackgroundImageUpdates = false
+  private var canUpdateImage: Bool { Self.areVisualUpdatesEnabled || allowsBackgroundImageUpdates }
   private static let paletteCache = NSCache<NSString, NSArray>()
   // The host supplies lifecycle state; this framework is also used by extensions.
   public static var visualUpdatesAllowed: @MainActor () -> Bool = { false }
@@ -288,11 +293,16 @@ public class LibraryEntityImage: RoundedImage {
       name: UIApplication.willResignActiveNotification, object: nil)
   }
 
-  @objc private func suspendImageDisplay() { imageLoadTask?.cancel(); imageLoadTask = nil }
-  @objc private func resumeImageDisplay() { if window != nil { refresh() } }
+  @objc private func suspendImageDisplay() {
+    if !allowsBackgroundImageUpdates { imageLoadTask?.cancel(); imageLoadTask = nil }
+  }
+  @objc private func resumeImageDisplay() {
+    guard window != nil || allowsBackgroundImageUpdates else { return }
+    if downloadedImageNeedsRefresh { refreshDownloadedImage() } else { refresh() }
+  }
 
   private func refresh() {
-    guard Self.areVisualUpdatesEnabled else { return }
+    guard canUpdateImage else { return }
     // Albums and playlist covers may be portrait or landscape images.
     if let preferredArtworkContentMode {
       contentMode = preferredArtworkContentMode
@@ -348,6 +358,9 @@ public class LibraryEntityImage: RoundedImage {
   }
 
   private func refreshDownloadedImage() {
+    downloadedImageNeedsRefresh = true
+    guard canUpdateImage else { return }
+    downloadedImageNeedsRefresh = false
     if let path = entityImagePathToDisplay {
       Self.cache.removeObject(forKey: path as NSString)
       Self.paletteCache.removeObject(forKey: path as NSString)

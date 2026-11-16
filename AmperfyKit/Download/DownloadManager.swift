@@ -98,6 +98,9 @@ actor DownloadManager: NSObject, DownloadManageable {
   private var isReconcilingDownloads = false
   private var taskOperations = [DownloadRequest: DownloadOperation]()
   private var priorityDownloadID: String?
+  private var priorityDownloadIsAudio = false
+  @MainActor private var priorityRequestRevision: UInt64 = 0
+  private var appliedPriorityRevision: UInt64 = 0
   private var normalDownloadLimit = 1
   private var backgroundFetchCompletionHandler: CompleteHandlerBlock?
   private var isFailWithPopupError: Bool = true
@@ -219,11 +222,10 @@ actor DownloadManager: NSObject, DownloadManageable {
           let downloadInfo = object.threadSafeInfo
     else { return }
 
+    if prioritized { priorityRequestRevision &+= 1 }
+    let revision = priorityRequestRevision
+
     Task.detached {
-      // Promote an existing request too: add() deliberately deduplicates it.
-      if prioritized {
-        await self.prioritizeDownload(id: downloadInfo.objectId.uriRepresentation().absoluteString)
-      }
       let isStorageExceeded = await self.storageExceedsCacheLimit()
       guard await !self.isCacheSizeLimited || !isStorageExceeded
       else { return }
@@ -234,10 +236,25 @@ actor DownloadManager: NSObject, DownloadManageable {
         guard !validDls.isEmpty else { return }
       }
 
-      guard let request = await self.requestManager.add(downloadInfo: downloadInfo) else { return }
+      let request = await self.requestManager.add(downloadInfo: downloadInfo)
       guard await self.isAllowedToTriggerDownload else { return }
-      await self.addDownloadTaskOperation(downloadRequest: request)
+      await self.enqueue(request: request, id: downloadInfo.objectId.uriRepresentation().absoluteString,
+                         prioritized: prioritized, isAudio: downloadInfo.type == .playable,
+                         revision: revision)
     }
+  }
+
+  private func enqueue(request: DownloadRequest?, id: String, prioritized: Bool,
+                       isAudio: Bool, revision: UInt64) {
+    // add() deduplicates existing transfers. Promote those too, but a delayed
+    // older playback request must not steal priority back from the new song.
+    if prioritized, revision >= appliedPriorityRevision {
+      appliedPriorityRevision = revision
+      if request != nil || taskOperations.keys.contains(where: { $0.id == id }) {
+        prioritizeDownload(id: id, isAudio: isAudio)
+      }
+    }
+    if let request { addDownloadTaskOperation(downloadRequest: request) }
   }
 
   @MainActor
@@ -411,9 +428,10 @@ actor DownloadManager: NSObject, DownloadManageable {
     }
   }
 
-  private func prioritizeDownload(id: String) {
+  private func prioritizeDownload(id: String, isAudio: Bool) {
     guard priorityDownloadID != id else { return }
     priorityDownloadID = id
+    priorityDownloadIsAudio = isAudio
     updateDownloadPriorities()
   }
 
@@ -424,8 +442,8 @@ actor DownloadManager: NSObject, DownloadManageable {
     for (task, info) in tasks {
       task.priority = networkPriority(for: info.request)
     }
-    // One bounded extra slot prevents the current cover waiting for four slow
-    // library covers. Restore the normal limit as soon as it finishes.
+    // A bounded extra slot lets the playing song/cover start even when all
+    // normal slots are occupied. Existing transfers retain their received data.
     let hasPriorityRequest = taskOperations.keys.contains { $0.id == priorityDownloadID }
     taskQueue.maxConcurrentOperationCount = normalDownloadLimit + (hasPriorityRequest ? 1 : 0)
   }
@@ -433,11 +451,14 @@ actor DownloadManager: NSObject, DownloadManageable {
   private func finishPriorityDownload(_ request: DownloadRequest) {
     guard request.id == priorityDownloadID else { return }
     priorityDownloadID = nil
-    taskQueue.maxConcurrentOperationCount = normalDownloadLimit
+    priorityDownloadIsAudio = false
+    updateDownloadPriorities()
   }
 
   func networkPriority(for request: DownloadRequest) -> Float {
-    request.id == priorityDownloadID ? URLSessionTask.highPriority : URLSessionTask.defaultPriority
+    if request.id == priorityDownloadID { return URLSessionTask.highPriority }
+    return priorityDownloadID != nil && priorityDownloadIsAudio ?
+      URLSessionTask.lowPriority : URLSessionTask.defaultPriority
   }
 
   private func manageDownload(downloadRequest: DownloadRequest) async {

@@ -236,6 +236,8 @@ class LargeCurrentlyPlayingPlayerView: UIView {
 
   func prepare(toWorkOnRootView: PopupPlayerVC?) {
     rootView = toWorkOnRootView
+    artworkImage.allowsBackgroundImageUpdates = true
+    lyricsArtwork.allowsBackgroundImageUpdates = true
     titleLabel.applyAmperfyStyle()
     albumLabel.applyAmperfyStyle()
     artistLabel.applyAmperfyStyle()
@@ -563,6 +565,15 @@ class LargeCurrentlyPlayingPlayerView: UIView {
   func refreshArtwork() {
     rootView?.playerHandler?.refreshArtwork(artworkImage: lyricsArtwork)
     rootView?.playerHandler?.refreshArtwork(artworkImage: artworkImage)
+  }
+
+  func refreshBackgroundMetadata() {
+    rootView?.playerHandler?.refreshCurrentlyPlayingInfo(
+      artworkImage: artworkImage, titleLabel: titleLabel, artistLabel: artistLabel,
+      albumLabel: albumLabel, albumButton: albumButton, albumContainerView: albumContainerView)
+    lyricsTitle.text = titleLabel.text
+    lyricsArtist.text = artistLabel.text
+    refreshArtwork()
   }
 
   @objc

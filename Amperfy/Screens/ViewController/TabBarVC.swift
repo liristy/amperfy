@@ -51,6 +51,9 @@ class TabBarVC: UITabBarController {
   private var dockSelectionIdentifier: String?
   private var dockNavigationTop: CGFloat?
   private var dockLayoutSize: CGSize = .zero
+  #if DEBUG && targetEnvironment(simulator)
+    private var glassReviewTabBar: UITabBar?
+  #endif
   override var selectedTab: UITab? {
     didSet {
       if isViewLoaded { updateDockSelection() }
@@ -289,6 +292,30 @@ class TabBarVC: UITabBarController {
     let top = activeNavigationController?.topViewController
     dock.isHidden = dockKeyboardVisible || top?.hidesBottomBarWhenPushed == true
     updateDockContentInset(visible: !dock.isHidden)
+    #if DEBUG && targetEnvironment(simulator)
+      if ProcessInfo.processInfo.arguments.contains("--smoke-chrome-standalone") {
+        let review: UITabBar
+        if let existing = glassReviewTabBar { review = existing }
+        else {
+          review = UITabBar()
+          review.items = tabBar.items?.enumerated().map { index, item in
+            UITabBarItem(title: item.title, image: item.image, tag: index)
+          }
+          review.itemPositioning = .fill
+          view.addSubview(review)
+          glassReviewTabBar = review
+        }
+        review.frame = tabBar.convert(tabBar.bounds, to: view)
+        review.tintColor = tabBar.tintColor
+        review.overrideUserInterfaceStyle = tabBar.overrideUserInterfaceStyle
+        if let selected = tabBar.selectedItem,
+           let index = tabBar.items?.firstIndex(of: selected), let items = review.items, index < items.count {
+          review.selectedItem = items[index]
+        }
+        tabBar.alpha = 0
+        view.bringSubviewToFront(review)
+      }
+    #endif
   }
 
   private func configureFloatingPlayerDock(miniPlayer: MiniPlayerView) {
@@ -349,11 +376,12 @@ class TabBarVC: UITabBarController {
     if tabBar.overrideUserInterfaceStyle != style { tabBar.overrideUserInterfaceStyle = style }
     if playerDock?.overrideUserInterfaceStyle != style { playerDock?.overrideUserInterfaceStyle = style }
     #if DEBUG && targetEnvironment(simulator)
-      if ProcessInfo.processInfo.arguments.contains("--smoke-chrome-bar-style") {
-        let resolved = style == .unspecified ? traitCollection.userInterfaceStyle : style
-        let barStyle: UIBarStyle = resolved == .dark ? .black : .default
-        if tabBar.barStyle != barStyle { tabBar.barStyle = barStyle }
+      if ProcessInfo.processInfo.arguments.contains("--smoke-chrome-host-style") {
+        activeNavigationController?.view.overrideUserInterfaceStyle =
+          ProcessInfo.processInfo.arguments.contains("--smoke-chrome-dark") ? .dark : .light
+        view.overrideUserInterfaceStyle = style
       }
+      glassReviewTabBar?.overrideUserInterfaceStyle = style
     #endif
   }
 

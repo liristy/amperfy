@@ -177,7 +177,7 @@ jobs:
   native-glass-runtime:
     if: github.event.repository.private == false && inputs.native_runtime_only == true
     runs-on: xcode-27
-    timeout-minutes: 40
+    timeout-minutes: 50
     permissions:
       contents: read
       actions: read
@@ -206,7 +206,7 @@ jobs:
       - name: Verify app source and boot iOS 27.2
         run: python3 BuildTools/prepare-glass-runtime.py boot
       - name: Record actual iOS 27.2 navigation glass
-        timeout-minutes: 8
+        timeout-minutes: 15
         run: python3 BuildTools/review-navigation-glass.py --runtime-major 27 --app-source-sha "$SIMULATOR_SOURCE_SHA"
       - name: Upload iOS 27.2 compositor comparison
         if: always()

@@ -66,6 +66,11 @@ public class PlayerDownloadPreparationHandler {
 
   private func preDownloadNextItems() {
     upcomingItems = musicPlayer.upcomingPlayablesForPreparation(limit: Self.preDownloadCount)
+    if let current = musicPlayer.currentlyPlaying {
+      upcomingItems.removeAll { $0.uniqueID == current.uniqueID }
+      upcomingItems.insert(current, at: 0)
+    }
+    downloadFirstUncachedItem()
     let ids = Set(upcomingItems.map { $0.uniqueID })
     for id in Array(metadataTasks.keys) where !ids.contains(id) || musicPlayer.isOfflineMode {
       metadataTasks.removeValue(forKey: id)?.cancel()
@@ -74,10 +79,6 @@ public class PlayerDownloadPreparationHandler {
     for playable in upcomingItems {
       prepareArtwork(for: playable)
       guard !musicPlayer.isOfflineMode, let accountInfo = playable.account?.info else { continue }
-      // Downloads still honor the existing auto-cache, network and disk-limit policies.
-      if playerStatus.isAutoCachePlayedItems, !playable.isCached, playable.isDownloadAvailable {
-        getPlayableDownloaderCB(accountInfo).download(object: playable)
-      }
       guard let song = playable.asSong, !song.id.isEmpty,
             song.playableManagedObject.title?.isEmpty != false ||
               song.artist == nil || song.album == nil || song.artwork == nil,
@@ -109,6 +110,16 @@ public class PlayerDownloadPreparationHandler {
     }
   }
 
+  private func downloadFirstUncachedItem(completedID: String? = nil) {
+    guard playerStatus.isAutoCachePlayedItems, !musicPlayer.isOfflineMode,
+          let first = upcomingItems.first(where: {
+            !$0.isCached && $0.uniqueID != completedID && $0.isDownloadAvailable && !$0.isRadio
+          }), let accountInfo = first.account?.info else { return }
+    // One auto-cache request at a time: current, next, then the following items.
+    // Queue edits and skips promote their new head, including an existing task.
+    getPlayableDownloaderCB(accountInfo).downloadWithPriority(object: first)
+  }
+
   private func prepareArtwork(for playable: AbstractPlayable) {
     guard let accountInfo = playable.account?.info else { return }
     let preference = settings.accounts.getSetting(accountInfo).read.artworkDisplayPreference
@@ -129,6 +140,9 @@ public class PlayerDownloadPreparationHandler {
 
   @objc private func downloadFinishedSuccessful(notification: Notification) {
     guard let download = DownloadNotification.fromNotification(notification) else { return }
+    if upcomingItems.contains(where: { $0.uniqueID == download.id }) {
+      downloadFirstUncachedItem(completedID: download.id)
+    }
     for playable in upcomingItems where playable.uniqueID == download.id || playable.artwork?.uniqueID == download.id {
       // Audio completion can also supply an embedded cover.
       prepareArtwork(for: playable)

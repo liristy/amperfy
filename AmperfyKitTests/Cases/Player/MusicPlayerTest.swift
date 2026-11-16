@@ -135,6 +135,7 @@ class MOCK_SongDownloader: DownloadManageable {
   }
 
   var downloadables = [Downloadable]()
+  var prioritizedDownloadables = [Downloadable]()
   func isNoDownloadRequested() -> Bool {
     downloadables.isEmpty
   }
@@ -142,6 +143,10 @@ class MOCK_SongDownloader: DownloadManageable {
   func getBackgroundFetchCompletionHandler() async -> AmperfyKit.CompleteHandlerBlock? { nil }
   func setBackgroundFetchCompletionHandler(_ newValue: AmperfyKit.CompleteHandlerBlock?) {}
   func download(object: Downloadable) { downloadables.append(object) }
+  func downloadWithPriority(object: Downloadable) {
+    prioritizedDownloadables.append(object)
+    download(object: object)
+  }
   func download(objects: [Downloadable]) { downloadables.append(contentsOf: objects) }
   func removeFinishedDownload(for object: Downloadable) {}
   func removeFinishedDownload(for objects: [Downloadable]) {}
@@ -850,6 +855,45 @@ class MusicPlayerTest: XCTestCase {
     XCTAssertTrue(covers.downloadables.isEmpty)
   }
 
+  func testAutoCacheWaitsForCurrentThenFollowsEditedPlaybackOrder() async throws {
+    try await startScrobbleStream()
+    testPlayer.isAutoCachePlayedItems = true
+    let audio = MOCK_SongDownloader(), covers = MOCK_SongDownloader(), syncer = MOCK_LibrarySyncer()
+    let notifications = EventNotificationHandler()
+    let preparation = makePreparationHandler(notifications: notifications, audio: audio, artwork: covers, syncer: syncer)
+    testPlayer.addNotifier(notifier: preparation)
+    defer { preparation.didStopPlaying() }
+    func song(_ id: String) -> Song {
+      let value = library.createSong(account: account)
+      value.id = id; value.title = id; value.contentType = "audio/mpeg"
+      return value
+    }
+    let next = song("cache-next"), later = song("cache-later"), inserted = song("cache-inserted")
+    library.saveContext()
+    testPlayer.appendContextQueue(playables: [next, later])
+    preparation.didStartPlaying()
+    preparation.didShuffleChange()
+    XCTAssertEqual(Set(audio.downloadables.map(\.uniqueID)), [songToDownload.uniqueID],
+                   "Future songs must not compete with the uncached playing song")
+    XCTAssertEqual(audio.prioritizedDownloadables.last?.uniqueID, songToDownload.uniqueID)
+    func complete(_ value: Song) {
+      value.relFilePath = URL(string: "cache-order-test-\(value.id).mp3")
+      library.saveContext()
+      notifications.post(name: .downloadFinishedSuccess, object: audio,
+        userInfo: DownloadNotification(id: value.uniqueID).asNotificationUserInfo)
+    }
+    complete(songToDownload)
+    XCTAssertEqual(audio.downloadables.last?.uniqueID, next.uniqueID)
+    XCTAssertFalse(audio.downloadables.contains { $0.uniqueID == later.uniqueID })
+    testPlayer.insertUserQueue(playables: [inserted])
+    XCTAssertEqual(audio.prioritizedDownloadables.last?.uniqueID, inserted.uniqueID)
+    complete(inserted)
+    XCTAssertEqual(audio.downloadables.last?.uniqueID, next.uniqueID)
+    complete(next)
+    XCTAssertEqual(audio.downloadables.last?.uniqueID, later.uniqueID)
+    XCTAssertEqual(testPlayer.currentlyPlaying, songToDownload)
+  }
+
   func testGoingOfflineCancelsUpcomingMetadataBeforeItStarts() async throws {
     try await startAutoplayFixture()
     songToDownload.artwork = nil
@@ -1095,6 +1139,60 @@ class MusicPlayerTest: XCTestCase {
     XCTAssertEqual(otherPriority, URLSessionTask.defaultPriority)
     await manager.finishDownload(downloadRequest: currentDownload, task: nil, error: .alreadyDownloaded)
     XCTAssertEqual(queue.maxConcurrentOperationCount, 2)
+  }
+
+  func testCurrentAudioStartsWithBusyQueueAndPrioritySwitchDoesNotRestartTransfers() async throws {
+    storage.settings.user.isOfflineMode = false
+    CacheRequestProbe.starts.withLock { $0 = 0 }
+    let asyncStorage = AsyncCoreDataAccessWrapper(persistentContainer: cdHelper.persistentContainer)
+    let requests = DownloadRequestManager(accountObjectId: account.managedObject.objectID, storage: asyncStorage,
+                                         getDownloadDelegateCB: { CacheDownloadProbeDelegate() })
+    let manager = DownloadManager(name: "Playback priority test", storage: asyncStorage, requestManager: requests,
+      getDownloadDelegateCB: { CacheDownloadProbeDelegate() }, eventLogger: eventLogger,
+      settings: storage.settings, networkMonitor: networkMonitor, notificationHandler: EventNotificationHandler(),
+      urlCleanser: backendApi, limitCacheSize: false, isFailWithPopupError: false)
+    let config = URLSessionConfiguration.ephemeral
+    config.protocolClasses = [CacheRequestProbe.self]
+    let session = URLSession(configuration: config, delegate: manager, delegateQueue: nil)
+    defer { manager.stop(); session.invalidateAndCancel() }
+    manager.initialize(urlSession: session, isCheckForCachedNeeded: true, validationCB: nil)
+    await manager._start()
+    let backlog = (0..<4).map { index -> Song in
+      let value = library.createSong(account: account)
+      value.id = "priority-backlog-\(index)"; value.title = value.id
+      return value
+    }
+    library.saveContext()
+    manager.download(objects: backlog)
+    for _ in 0..<300 {
+      if CacheRequestProbe.starts.withLock({ $0 }) == 4 { break }
+      try await Task.sleep(for: .milliseconds(10))
+    }
+    XCTAssertEqual(CacheRequestProbe.starts.withLock { $0 }, 4)
+    manager.downloadWithPriority(object: songToDownload)
+    for _ in 0..<300 {
+      if CacheRequestProbe.starts.withLock({ $0 }) == 5 { break }
+      try await Task.sleep(for: .milliseconds(10))
+    }
+    XCTAssertEqual(CacheRequestProbe.starts.withLock { $0 }, 5, "Current audio must start without waiting for a later song")
+    let started = await manager.tasks
+    XCTAssertEqual(started.filter { $0.value.request.id == songToDownload.uniqueID }.count, 1)
+    XCTAssertTrue(started.allSatisfy { task, info in
+      task.priority == (info.request.id == songToDownload.uniqueID ? URLSessionTask.highPriority : URLSessionTask.lowPriority)
+    })
+    for _ in 0..<20 { manager.downloadWithPriority(object: songToDownload) }
+    manager.downloadWithPriority(object: backlog[0])
+    for _ in 0..<300 {
+      let running = await manager.tasks
+      if running.contains(where: { $0.value.request.id == backlog[0].uniqueID && $0.key.priority == URLSessionTask.highPriority }) { break }
+      try await Task.sleep(for: .milliseconds(10))
+    }
+    try await Task.sleep(for: .milliseconds(150))
+    let promoted = await manager.tasks
+    XCTAssertTrue(promoted.allSatisfy { task, info in
+      task.priority == (info.request.id == backlog[0].uniqueID ? URLSessionTask.highPriority : URLSessionTask.lowPriority)
+    })
+    XCTAssertEqual(CacheRequestProbe.starts.withLock { $0 }, 5, "Promotion must reuse the running transfer")
   }
 
   func testConcurrentSingleAndBatchCacheRequestsCreateOneRecordPerSong() async throws {

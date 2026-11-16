@@ -2659,8 +2659,21 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
                             userInfo: [NSLocalizedDescriptionKey:
                               "Background switch did not settle: old=\(oldID), expected=\(next.id), current=\(newID), playing=\(player.isPlaying)"])
             }
+            let backgroundPath = next.imagePath(setting: appDelegate.storage.settings.accounts
+              .getSetting(accountInfo).read.artworkDisplayPreference)
+            let backgroundImage = backgroundPath.flatMap { LibraryEntityImage.preparedImage(at: $0)?.pngData() }
+            let backgroundMiniMatches = backgroundImage != nil && miniPlayer.artworkImage.image?.pngData() == backgroundImage
+            let backgroundFullMatches = backgroundImage != nil && popup.transitionArtwork?.image?.pngData() == backgroundImage
+            guard backgroundMiniMatches, backgroundFullMatches,
+                  UIApplication.shared.applicationState == .background else {
+              throw NSError(domain: "ResourceProfile", code: 12,
+                userInfo: [NSLocalizedDescriptionKey:
+                  "Event-driven background artwork did not refresh: mini=\(backgroundMiniMatches), full=\(backgroundFullMatches)"])
+            }
             try write(["phase": phase, "old_id": oldID, "new_id": newID,
               "expected_id": next.id, "shuffle": player.isShuffle,
+              "mini_updated_in_background": backgroundMiniMatches,
+              "full_updated_in_background": backgroundFullMatches,
               "state": UIApplication.shared.applicationState.rawValue,
               "palette_computations": LibraryEntityImage.paletteComputationCount], name: "player-resource-track-change.json")
             try await Task.sleep(for: .seconds(60))

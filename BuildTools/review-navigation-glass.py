@@ -6,6 +6,7 @@ Pixel/animation review happens from the compositor videos, not drawHierarchy.
 """
 import argparse
 import json
+import os
 from pathlib import Path
 import shutil
 import subprocess
@@ -13,8 +14,11 @@ import time
 import urllib.request
 
 
+command_timeout = 120
+
+
 def command(*args, check=True):
-    result = subprocess.run(args, text=True, capture_output=True, timeout=120)
+    result = subprocess.run(args, text=True, capture_output=True, timeout=command_timeout)
     if check and result.returncode:
         raise RuntimeError(f"{args[:3]} failed: {result.stderr[-1500:]}")
     return result.stdout.strip()
@@ -32,13 +36,18 @@ def wait_file(path, failed=None, timeout=100):
 
 
 def main():
+    global command_timeout
     parser = argparse.ArgumentParser()
     parser.add_argument("--runtime-major", type=int, default=26)
     parser.add_argument("--app-source-sha")
     options = parser.parse_args()
-    devices = json.loads(command("xcrun", "simctl", "list", "devices", "available", "-j"))["devices"]
-    booted = [d for runtime, values in devices.items() if f"iOS-{options.runtime_major}-" in runtime
-              for d in values if d["state"] == "Booted" and d["name"].startswith("iPhone")]
+    command_timeout = 300 if options.runtime_major >= 27 else 120
+    if known_device := os.environ.get("SMOKE_GLASS_DEVICE"):
+        booted = [{"udid": known_device, "name": "iPhone 17 Pro Max"}]
+    else:
+        devices = json.loads(command("xcrun", "simctl", "list", "devices", "available", "-j"))["devices"]
+        booted = [d for runtime, values in devices.items() if f"iOS-{options.runtime_major}-" in runtime
+                  for d in values if d["state"] == "Booted" and d["name"].startswith("iPhone")]
     booted.sort(key=lambda d: d["name"] != "iPhone 17 Pro Max")
     if not booted:
         raise RuntimeError(f"The build step did not boot its throwaway iOS {options.runtime_major} simulator")
@@ -73,7 +82,7 @@ def main():
             if time.monotonic() > deadline:
                 raise TimeoutError("Initial fixture login did not complete")
             time.sleep(0.5)
-        for policy in ("baseline", "immediate", "bar-style"):
+        for policy in ("baseline", "host-style", "standalone"):
             for appearance in ("light", "dark"):
                 name = f"{policy}-{appearance}"
                 for path in documents.glob("chrome-review-*"):
@@ -125,8 +134,8 @@ def main():
             "runtime_major": options.runtime_major,
             "variants": variants, "simulator": booted[0]["name"],
             "baseline": "Previous coordinator-animated interface-style change",
-            "immediate": "Native zoom with prebound leaf bottom scroll view and immediate interface-style",
-            "bar-style": "Same binding and native zoom with explicit native UIBarStyle",
+            "host-style": "Native zoom with root view traits and isolated content traits",
+            "standalone": "Independent public UITabBar at the same position, outside controller navigation appearance machinery",
         }, indent=2))
     finally:
         if recorder:

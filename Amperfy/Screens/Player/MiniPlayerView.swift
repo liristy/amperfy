@@ -723,6 +723,7 @@ class MiniPlayerView: UIView, UIGestureRecognizerDelegate {
   }
 
   public func configureForiOS() {
+    artworkImage.allowsBackgroundImageUpdates = true
     playerHandler = PlayerUIHandler(player: player, style: .miniPlayeriOS)
     clipsToBounds = true
     layer.cornerCurve = .continuous

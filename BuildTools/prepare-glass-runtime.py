@@ -101,6 +101,8 @@ def main():
         "app_sources_verified": len(app_sources), "recompiled": False,
     }, indent=2))
     print("Booted iPhone 17 Pro Max with iOS " + runtime["version"], flush=True)
+    with open(os.environ["GITHUB_ENV"], "a") as environment:
+        environment.write("SMOKE_GLASS_DEVICE=" + device + "\n")
 
 
 if __name__ == "__main__":

@@ -351,10 +351,8 @@ class BackendAudioPlayer: NSObject {
             do {
               try await insertStreamPlayable(playable: nextPreloadedPlayable, queueType: .queue)
               guard !Task.isCancelled else { return }
-              if self.isAutoCachePlayedItems, nextPreloadedPlayable.isDownloadAvailable,
-                 let accountInfo = nextPreloadedPlayable.account?.info {
-                self.getPlayableDownloaderCB(accountInfo).download(object: nextPreloadedPlayable)
-              }
+              // Gapless stream preparation is independent of disk caching.
+              // PlayerDownloadPreparationHandler serializes auto-cache in play order.
             } catch {
               guard !Task.isCancelled else { return }
               self.nextPreloadedPlayable = nil
@@ -604,13 +602,13 @@ class BackendAudioPlayer: NSObject {
 
       sourceTask = Task { @MainActor in
         do {
+          if self.isAutoCachePlayedItems, !playable.isRadio,
+             let accountInfo = playable.account?.info {
+            self.getPlayableDownloaderCB(accountInfo).downloadWithPriority(object: playable)
+          }
           try await insertStreamPlayable(playable: playable)
           guard !Task.isCancelled else { return }
           isPlaying = shouldPlaybackStart
-          if self.isAutoCachePlayedItems, !playable.isRadio,
-             let accountInfo = playable.account?.info {
-            self.getPlayableDownloaderCB(accountInfo).download(object: playable)
-          }
           self.responder?.notifyItemPreparationFinished()
         } catch {
           guard !Task.isCancelled else { return }

@@ -170,6 +170,9 @@ def main():
                 track_change = read_json(documents / "player-resource-track-change.json")
                 if not track_change or track_change["state"] != 2 or track_change["old_id"] == track_change["new_id"]:
                     raise RuntimeError("Background playback did not switch to a different cover")
+                if not all(track_change.get(key) is True for key in
+                           ("mini_updated_in_background", "full_updated_in_background")):
+                    raise RuntimeError("Current player artwork did not update while still in the background")
                 if track_change["palette_computations"] != background_event["palette_computations"]:
                     raise RuntimeError("Background track switch triggered artwork palette computation")
                 row["background_track_change"] = track_change
