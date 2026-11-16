@@ -38,7 +38,7 @@ extension DownloadManager: URLSessionDelegate, URLSessionDownloadDelegate {
     }
     tasks[task] = downloadTaskInfo
     task.priority = networkPriority(for: downloadTaskInfo.request)
-    task.resume()
+    if !yieldSupersededPriorityTransferIfNeeded(task) { task.resume() }
   }
 
   nonisolated func urlSession(

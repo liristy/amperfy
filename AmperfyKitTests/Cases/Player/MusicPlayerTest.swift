@@ -1196,6 +1196,32 @@ class MusicPlayerTest: XCTestCase {
       task.priority == (info.request.id == backlog[0].uniqueID ? URLSessionTask.highPriority : URLSessionTask.lowPriority)
     })
     XCTAssertEqual(CacheRequestProbe.starts.withLock { $0 }, 5, "Promotion must reuse the running transfer")
+    let previousTask = try XCTUnwrap(promoted.first { $0.value.request.id == backlog[0].uniqueID }?.key)
+    let replacement = library.createSong(account: account)
+    replacement.id = "priority-replacement"; replacement.title = "Newly selected song"
+    library.saveContext()
+    manager.downloadWithPriority(object: replacement)
+    for _ in 0..<300 {
+      let running = await manager.tasks
+      if running.contains(where: { $0.value.request.id == replacement.uniqueID && $0.key.state == .running }) { break }
+      try await Task.sleep(for: .milliseconds(10))
+    }
+    let switched = await manager.tasks
+    XCTAssertEqual(switched.count, 6)
+    XCTAssertEqual(previousTask.state, .suspended, "The superseded urgent transfer must yield without discarding its data")
+    XCTAssertTrue(switched.contains { $0.value.request.id == replacement.uniqueID && $0.key.priority == URLSessionTask.highPriority })
+    let priorityQueue = await manager.taskQueue
+    XCTAssertEqual(priorityQueue.maxConcurrentOperationCount, 5)
+    manager.downloadWithPriority(object: backlog[0])
+    for _ in 0..<300 {
+      if previousTask.state == .running && previousTask.priority == URLSessionTask.highPriority { break }
+      try await Task.sleep(for: .milliseconds(10))
+    }
+    let restored = await manager.tasks
+    XCTAssertTrue(restored.first { $0.value.request.id == backlog[0].uniqueID }?.key === previousTask)
+    XCTAssertEqual(previousTask.state, .running)
+    XCTAssertEqual(previousTask.priority, URLSessionTask.highPriority)
+    XCTAssertEqual(restored.count, 6, "Returning to a parked song must resume its original task")
   }
 
   func testPlayingAudioPrioritySurvivesAnExistingOfflineRequest() async throws {
@@ -1281,6 +1307,8 @@ class MusicPlayerTest: XCTestCase {
       let download = Download(managedObject: companion.context.object(with: id) as! DownloadMO)
       download.startDate = started
     }
+    let existingForPromotion = await requests.getOrAddPending(downloadInfo: info)
+    XCTAssertEqual(existingForPromotion?.objectID, id)
     for _ in 0..<10 {
       let single = await requests.add(downloadInfo: info)
       let batch = await requests.add(downloadInfos: [info, info])
@@ -1310,8 +1338,10 @@ class MusicPlayerTest: XCTestCase {
     }
     let cached = await requests.add(downloadInfo: info)
     let cachedBatch = await requests.add(downloadInfos: [info, info])
+    let cachedForPromotion = await requests.getOrAddPending(downloadInfo: info)
     XCTAssertNil(cached)
     XCTAssertTrue(cachedBatch.isEmpty)
+    XCTAssertNil(cachedForPromotion, "A stale UI snapshot of a finished cache must not become the priority head")
   }
 
   func testRepairQueueKeepsCacheAndRequestIdentityIgnoresDuplicateRowsAndTitles() async throws {

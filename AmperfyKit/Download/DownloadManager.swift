@@ -101,6 +101,7 @@ actor DownloadManager: NSObject, DownloadManageable {
   private var priorityDownloadIsAudio = false
   @MainActor private var priorityRequestRevision: UInt64 = 0
   private var appliedPriorityRevision: UInt64 = 0
+  private var supersededPriorityIDs = Set<String>()
   private var normalDownloadLimit = 1
   private var backgroundFetchCompletionHandler: CompleteHandlerBlock?
   private var isFailWithPopupError: Bool = true
@@ -236,7 +237,7 @@ actor DownloadManager: NSObject, DownloadManageable {
         guard !validDls.isEmpty else { return }
       }
 
-      let request = await self.requestManager.add(downloadInfo: downloadInfo)
+      let request = await self.requestManager.getOrAddPending(downloadInfo: downloadInfo)
       await self.enqueue(request: request, id: downloadInfo.objectId.uriRepresentation().absoluteString,
                          prioritized: prioritized, isAudio: downloadInfo.type == .playable,
                          revision: revision)
@@ -245,13 +246,24 @@ actor DownloadManager: NSObject, DownloadManageable {
 
   private func enqueue(request: DownloadRequest?, id: String, prioritized: Bool,
                        isAudio: Bool, revision: UInt64) {
-    // add() deduplicates existing transfers. Promote those too, but a delayed
+    guard let request else { return }
+    let promotes = prioritized && revision >= appliedPriorityRevision
+    let wasSuspended = taskQueue.isSuspended
+    if promotes { taskQueue.isSuspended = true }
+    defer { if promotes { taskQueue.isSuspended = wasSuspended } }
+    // The storage context returns existing pending transfers too, but a delayed
     // older playback request must not steal priority back from the new song.
-    if prioritized, revision >= appliedPriorityRevision {
+    if promotes {
       appliedPriorityRevision = revision
       prioritizeDownload(id: id, isAudio: isAudio)
     }
-    if isAllowedToTriggerDownload, let request { addDownloadTaskOperation(downloadRequest: request) }
+    if isAllowedToTriggerDownload { addDownloadTaskOperation(downloadRequest: request) }
+    if promotes {
+      if let head = taskOperations[request], !head.isExecuting {
+        for dependency in head.dependencies { head.removeDependency(dependency) }
+      }
+      for task in Array(tasks.keys) { _ = yieldSupersededPriorityTransferIfNeeded(task) }
+    }
   }
 
   @MainActor
@@ -329,6 +341,7 @@ actor DownloadManager: NSObject, DownloadManageable {
   }
 
   private func _cancelDownloads() async {
+    supersededPriorityIDs.removeAll()
     tasks.removeAll()
     taskQueue.cancelAllOperations()
     taskOperations.removeAll()
@@ -348,6 +361,7 @@ actor DownloadManager: NSObject, DownloadManageable {
   }
 
   private func _suspendDownloads() async {
+    supersededPriorityIDs.removeAll()
     os_log("Suspend active downloads", log: self.log, type: .info)
     tasks.removeAll()
     let objectIDs = taskOperations.compactMap { $0.key.objectID }
@@ -411,13 +425,14 @@ actor DownloadManager: NSObject, DownloadManageable {
     }
   }
 
-  private func addDownloadTaskOperation(downloadRequest: DownloadRequest) {
+  private func addDownloadTaskOperation(downloadRequest: DownloadRequest, resumeAfter: Operation? = nil) {
     let existingOperation = taskOperations[downloadRequest]
     // the operation must be unique
     guard existingOperation == nil else { return }
     let asyncOperation = DownloadOperation {
       await self.manageDownload(downloadRequest: downloadRequest)
     }
+    if let resumeAfter { asyncOperation.addDependency(resumeAfter) }
     taskOperations[downloadRequest] = asyncOperation
     asyncOperation.queuePriority = downloadRequest.id == priorityDownloadID ? .veryHigh : .normal
     if downloadRequest.id == priorityDownloadID { updateDownloadPriorities() }
@@ -426,9 +441,47 @@ actor DownloadManager: NSObject, DownloadManageable {
 
   private func prioritizeDownload(id: String, isAudio: Bool) {
     guard priorityDownloadID != id else { return }
+    if let previous = priorityDownloadID,
+       taskOperations.contains(where: { $0.key.id == previous && $0.value.isExecuting }),
+       !tasks.contains(where: { $0.value.request.id == id && $0.key.state == .running }),
+       taskQueue.operations.filter({ $0.isExecuting }).count >= normalDownloadLimit + 1 {
+      supersededPriorityIDs.insert(previous)
+    }
     priorityDownloadID = id
     priorityDownloadIsAudio = isAudio
     updateDownloadPriorities()
+  }
+
+  // Keep the urgent lane bounded even when the user skips while it is occupied.
+  // Park the superseded transfer itself and requeue its operation; resuming that
+  // operation uses the same URLSession task and its already received bytes.
+  @discardableResult
+  func yieldSupersededPriorityTransferIfNeeded(_ task: URLSessionTask) -> Bool {
+    guard let info = tasks[task], supersededPriorityIDs.contains(info.request.id) else { return false }
+    let wasSuspended = taskQueue.isSuspended
+    taskQueue.isSuspended = true
+    defer { taskQueue.isSuspended = wasSuspended }
+    guard info.request.id != priorityDownloadID,
+          let head = taskOperations.first(where: { $0.key.id == priorityDownloadID && !$0.value.isExecuting })?.value,
+          let operation = taskOperations[info.request], operation.isExecuting,
+          task.state == .running || task.state == .suspended else {
+      supersededPriorityIDs.remove(info.request.id)
+      return false
+    }
+    if task.state == .running { task.suspend() }
+    taskOperations.removeValue(forKey: info.request)
+    operation.complete()
+    supersededPriorityIDs.remove(info.request.id)
+    addDownloadTaskOperation(downloadRequest: info.request, resumeAfter: head)
+    return true
+  }
+
+  private func completeDownloadOperation(_ request: DownloadRequest) {
+    supersededPriorityIDs.remove(request.id)
+    guard let operation = taskOperations.removeValue(forKey: request) else { return }
+    // A suspended transfer can finish at its last byte before its queued resume
+    // runs. Cancel that pending operation so it cannot start a duplicate request.
+    if operation.isExecuting { operation.complete() } else { operation.cancel() }
   }
 
   private func updateDownloadPriorities() {
@@ -459,10 +512,15 @@ actor DownloadManager: NSObject, DownloadManageable {
   }
 
   private func manageDownload(downloadRequest: DownloadRequest) async {
+    guard taskOperations[downloadRequest] != nil else { return }
     guard isAllowedToTriggerDownload else {
-      taskOperations[downloadRequest]?.complete()
-      taskOperations.removeValue(forKey: downloadRequest)
+      completeDownloadOperation(downloadRequest)
       updateDownloadPriorities()
+      return
+    }
+    if let existing = tasks.first(where: { $0.value.request.id == downloadRequest.id }) {
+      existing.key.priority = networkPriority(for: downloadRequest)
+      if existing.key.state == .suspended { existing.key.resume() }
       return
     }
     try? await storage.perform { asyncCompanion in
@@ -487,6 +545,8 @@ actor DownloadManager: NSObject, DownloadManageable {
         url: url,
         httpHeaders: httpHeaders
       )
+      guard taskOperations[downloadRequest] != nil,
+            !tasks.contains(where: { $0.value.request.id == downloadRequest.id }) else { return }
       fetch(downloadTaskInfo: downloadTaskInfo)
     } catch {
       if let fetchError = error as? DownloadError {
@@ -543,8 +603,7 @@ actor DownloadManager: NSObject, DownloadManageable {
     }
 
     if let task { tasks.removeValue(forKey: task) }
-    taskOperations[downloadRequest]?.complete()
-    taskOperations.removeValue(forKey: downloadRequest)
+    completeDownloadOperation(downloadRequest)
     finishPriorityDownload(downloadRequest)
   }
 
@@ -608,13 +667,13 @@ actor DownloadManager: NSObject, DownloadManageable {
         userInfo: DownloadNotification(id: downloadElementUniqueId).asNotificationUserInfo
       )
     }
-    if isCacheSizeLimited, storageExceedsCacheLimit() {
-      await requestManager.cancelDownloads()
-    }
     tasks.removeValue(forKey: task)
-    taskOperations[downloadRequest]?.complete()
-    taskOperations.removeValue(forKey: downloadRequest)
+    completeDownloadOperation(downloadRequest)
     finishPriorityDownload(downloadRequest)
+    if isCacheSizeLimited, storageExceedsCacheLimit() {
+      // A parked transfer must not outlive its cancelled queue record.
+      await _cancelDownloads()
+    }
   }
 
   private var isAllowedToTriggerDownload: Bool {

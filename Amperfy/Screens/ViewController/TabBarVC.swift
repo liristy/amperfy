@@ -51,6 +51,25 @@ class TabBarVC: UITabBarController {
   private var dockSelectionIdentifier: String?
   private var dockNavigationTop: CGFloat?
   private var dockLayoutSize: CGSize = .zero
+  private var navigationGlass: UIVisualEffectView?
+  private var originalTabAppearance: UITabBarAppearance?
+  private var originalTabEdgeAppearance: UITabBarAppearance?
+  private var usesExplicitNavigationGlass: Bool {
+    #if DEBUG && targetEnvironment(simulator)
+      let arguments = ProcessInfo.processInfo.arguments
+      if arguments.contains("--smoke-chrome") {
+        return arguments.contains("--smoke-chrome-clear-underlay") ||
+          arguments.contains("--smoke-chrome-regular-underlay") || arguments.contains("--smoke-chrome-clear-host")
+      }
+    #endif
+    return true
+  }
+  private var dockGlassStyle: UIGlassEffect.Style {
+    #if DEBUG && targetEnvironment(simulator)
+      if ProcessInfo.processInfo.arguments.contains("--smoke-chrome-regular-underlay") { return .regular }
+    #endif
+    return .clear
+  }
   #if DEBUG && targetEnvironment(simulator)
     private var glassReviewTabBar: UITabBar?
   #endif
@@ -150,19 +169,6 @@ class TabBarVC: UITabBarController {
 
     delegate = self
     tabs = fixTabs
-    #if DEBUG && targetEnvironment(simulator)
-      let reviewArguments = ProcessInfo.processInfo.arguments
-      let reviewsPreviousAppearance = reviewArguments.contains("--smoke-chrome-baseline") ||
-        reviewArguments.contains("--smoke-chrome-standalone")
-    #else
-      let reviewsPreviousAppearance = false
-    #endif
-    if !reviewsPreviousAppearance {
-      // Keep the system's own default glass in both modes. A nil edge appearance
-      // synthesizes a transparent variant. Use one material when the incoming
-      // page takes over scroll observation, without a second appearance handoff.
-      tabBar.scrollEdgeAppearance = tabBar.standardAppearance
-    }
 
     NotificationCenter.default.addObserver(
       self,
@@ -227,6 +233,14 @@ class TabBarVC: UITabBarController {
       playerDock = nil
       miniPlayer.setCompactPresentation(nil)
       updateDockContentInset(visible: false)
+    }
+    if let navigationGlass {
+      navigationGlass.removeFromSuperview()
+      self.navigationGlass = nil
+      if let originalTabAppearance { tabBar.standardAppearance = originalTabAppearance }
+      tabBar.scrollEdgeAppearance = originalTabEdgeAppearance
+      originalTabAppearance = nil
+      originalTabEdgeAppearance = nil
     }
     if isTabBarHidden { setTabBarHidden(false, animated: false) }
     tabBar.alpha = 1
@@ -305,6 +319,13 @@ class TabBarVC: UITabBarController {
     let top = activeNavigationController?.topViewController
     dock.isHidden = dockKeyboardVisible || top?.hidesBottomBarWhenPushed == true
     updateDockContentInset(visible: !dock.isHidden)
+    if let navigationGlass {
+      let frame = CGRect(x: 20, y: 0, width: max(0, tabBar.bounds.width - 40),
+                         height: min(FloatingPlayerDock.navigationHeight, tabBar.bounds.height))
+      if navigationGlass.frame != frame { navigationGlass.frame = frame }
+      navigationGlass.isHidden = dockKeyboardVisible || dock.isHidden
+      if tabBar.subviews.first !== navigationGlass { tabBar.sendSubviewToBack(navigationGlass) }
+    }
     #if DEBUG && targetEnvironment(simulator)
       if ProcessInfo.processInfo.arguments.contains("--smoke-chrome-standalone") {
         let review: UITabBar
@@ -343,8 +364,29 @@ class TabBarVC: UITabBarController {
       miniPlayer.glassContainer.translatesAutoresizingMaskIntoConstraints = true
       let glass = UIGlassEffect(style: .regular)
       glass.isInteractive = true
-      miniPlayer.glassContainer.effect = glass
-      let dock = FloatingPlayerDock(miniPlayer: miniPlayer)
+      if usesExplicitNavigationGlass {
+        let playerGlass = UIGlassEffect(style: dockGlassStyle)
+        playerGlass.isInteractive = true
+        miniPlayer.glassContainer.effect = playerGlass
+        originalTabAppearance = tabBar.standardAppearance
+        originalTabEdgeAppearance = tabBar.scrollEdgeAppearance
+        // Keep UIKit's tab controls and selection lens. A separate clear system
+        // glass surface samples the moving content without regular glass's
+        // delayed light/dark material adaptation during navigation.
+        let appearance = UITabBarAppearance()
+        appearance.configureWithTransparentBackground()
+        tabBar.standardAppearance = appearance
+        tabBar.scrollEdgeAppearance = appearance
+        let effect = UIGlassEffect(style: dockGlassStyle)
+        effect.isInteractive = true
+        let background = UIVisualEffectView(effect: effect)
+        background.cornerConfiguration = .capsule()
+        background.isUserInteractionEnabled = false
+        tabBar.insertSubview(background, at: 0)
+        navigationGlass = background
+      } else { miniPlayer.glassContainer.effect = glass }
+      let dock = FloatingPlayerDock(miniPlayer: miniPlayer,
+        glassStyle: usesExplicitNavigationGlass ? dockGlassStyle : .regular)
       dock.onSearch = { [weak self] in
         guard let self else { return }
         self.tabBar.alpha = 1
@@ -395,7 +437,8 @@ class TabBarVC: UITabBarController {
         // between its standard and automatically transparent scroll-edge modes.
         tabBar.scrollEdgeAppearance = tabBar.standardAppearance
       }
-      if ProcessInfo.processInfo.arguments.contains("--smoke-chrome-host-style") {
+      if ProcessInfo.processInfo.arguments.contains("--smoke-chrome-host-style") ||
+          ProcessInfo.processInfo.arguments.contains("--smoke-chrome-clear-host") {
         activeNavigationController?.view.overrideUserInterfaceStyle =
           ProcessInfo.processInfo.arguments.contains("--smoke-chrome-dark") ? .dark : .light
         view.overrideUserInterfaceStyle = style
@@ -614,11 +657,13 @@ final class FloatingPlayerDock: UIView {
   private let compactNavigationButton = UIButton(type: .system)
   private var selection = -1
   private var theme: UIColor?
+  private let glassStyle: UIGlassEffect.Style
   var onCollapseChanged: ((Bool) -> Void)?
   var onSearch: (() -> Void)?
 
-  init(miniPlayer: MiniPlayerView) {
+  init(miniPlayer: MiniPlayerView, glassStyle: UIGlassEffect.Style = .regular) {
     self.miniPlayer = miniPlayer
+    self.glassStyle = glassStyle
     super.init(frame: .zero)
     accessibilityIdentifier = "floating-player-dock"
     miniPlayer.setCompactPresentation(false)
@@ -646,12 +691,18 @@ final class FloatingPlayerDock: UIView {
     let icons = [TabNavigatorItem.home.icon, UIImage.musicLibrary,
                  UIImage(systemName: "chart.bar.xaxis"), TabNavigatorItem.search.icon]
     var search = UIButton.Configuration.glass()
+    let searchGlass = UIGlassEffect(style: glassStyle)
+    searchGlass.isInteractive = true
+    search.background.visualEffect = searchGlass
     search.cornerStyle = .capsule
     search.image = icons[3]
     search.preferredSymbolConfigurationForImage = .init(pointSize: 27, weight: .medium)
     search.baseForegroundColor = selected == 3 ? tint : .label
     searchButton.configuration = search
     var compact = UIButton.Configuration.glass()
+    let compactGlass = UIGlassEffect(style: glassStyle)
+    compactGlass.isInteractive = true
+    compact.background.visualEffect = compactGlass
     compact.cornerStyle = .capsule
     compact.image = icons[selected]
     compact.preferredSymbolConfigurationForImage = .init(pointSize: 23, weight: .medium)

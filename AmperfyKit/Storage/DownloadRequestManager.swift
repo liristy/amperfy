@@ -71,6 +71,17 @@ actor DownloadRequestManager {
   }
 
   func add(downloadInfo: DownloadElementInfo) async -> DownloadRequest? {
+    await add(downloadInfo: downloadInfo, includePending: false)
+  }
+
+  // Playback can promote an existing queue entry, including while offline.
+  // Read cache state in this same context so a stale UI snapshot of a completed
+  // song cannot take priority back from the next pending song.
+  func getOrAddPending(downloadInfo: DownloadElementInfo) async -> DownloadRequest? {
+    await add(downloadInfo: downloadInfo, includePending: true)
+  }
+
+  private func add(downloadInfo: DownloadElementInfo, includePending: Bool) async -> DownloadRequest? {
     await acquireMutation()
     defer { releaseMutation() }
     let request = try? await storage.performAndGet { asyncCompanion -> DownloadRequest? in
@@ -78,7 +89,8 @@ actor DownloadRequestManager {
         inContext: asyncCompanion.context,
         info: downloadInfo
       )
-      let download = self.addLowPrio(object: asyncObject, library: asyncCompanion.library)
+      let download = self.addLowPrio(object: asyncObject, library: asyncCompanion.library,
+                                    includePending: includePending)
       guard let download else { return nil }
       return DownloadRequest(
         objectID: download.managedObject.objectID,
@@ -117,7 +129,8 @@ actor DownloadRequestManager {
 
   nonisolated private func addLowPrio(
     objects: [(DownloadElementInfo, Downloadable)],
-    library: LibraryStorage
+    library: LibraryStorage,
+    includePending: Bool = false
   )
     -> [(DownloadElementInfo, Downloadable, Download)] {
     var hasCoreDataChanges = false
@@ -138,6 +151,8 @@ actor DownloadRequestManager {
           existingDownload.reset()
           hasCoreDataChanges = true
           downloadMapping.append((info, object, existingDownload))
+        } else if includePending, existingDownload.finishDate == nil, existingDownload.errorDate == nil {
+          downloadMapping.append((info, object, existingDownload))
         } else {
           // do nothing: the download has already an unused request
         }
@@ -155,9 +170,10 @@ actor DownloadRequestManager {
     return downloadMapping
   }
 
-  nonisolated private func addLowPrio(object: Downloadable, library: LibraryStorage) -> Download? {
+  nonisolated private func addLowPrio(object: Downloadable, library: LibraryStorage,
+                                    includePending: Bool = false) -> Download? {
     guard let info = object.threadSafeInfo else { return nil }
-    return addLowPrio(objects: [(info, object)], library: library).first?.2
+    return addLowPrio(objects: [(info, object)], library: library, includePending: includePending).first?.2
   }
 
   /// Repair records created by older concurrent enqueues before starting tasks.
