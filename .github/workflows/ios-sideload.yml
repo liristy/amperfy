@@ -47,10 +47,10 @@ jobs:
     # Device recordings are the default review path; do not start a simulator
     # from a normal package build, push or pull request.
     if: github.event.repository.private == false && inputs.run_simulator_regression == true && inputs.native_runtime_only != true
-    runs-on: macos-26
+    runs-on: xcode-27
     timeout-minutes: 55
     env:
-      DEVELOPER_DIR: /Applications/Xcode_26.3.app/Contents/Developer
+      DEVELOPER_DIR: /Applications/Xcode_27.2.app/Contents/Developer
     steps:
       - uses: actions/checkout@v4
         with:
@@ -61,9 +61,9 @@ jobs:
         uses: actions/cache/restore@v4
         with:
           path: build/validation/DerivedData
-          key: simulator-v1-${{ runner.os }}-${{ runner.arch }}-xcode26.3-${{ hashFiles('Amperfy.xcodeproj/project.pbxproj', '**/Package.resolved') }}-${{ github.sha }}
+          key: simulator-v2-${{ runner.os }}-${{ runner.arch }}-xcode27.2-${{ hashFiles('Amperfy.xcodeproj/project.pbxproj', '**/Package.resolved') }}-${{ github.sha }}
           restore-keys: |
-            simulator-v1-${{ runner.os }}-${{ runner.arch }}-xcode26.3-${{ hashFiles('Amperfy.xcodeproj/project.pbxproj', '**/Package.resolved') }}-
+            simulator-v2-${{ runner.os }}-${{ runner.arch }}-xcode27.2-${{ hashFiles('Amperfy.xcodeproj/project.pbxproj', '**/Package.resolved') }}-
       - name: Preserve timestamps of unchanged sources
         run: |
           python3 -m unittest discover -s BuildTools -p test_build_cache_mtimes.py
@@ -197,7 +197,7 @@ jobs:
       - name: Resolve the exact simulator source cache
         id: simulator-source
         run: |
-          echo "key=simulator-v1-macOS-ARM64-xcode26.3-${{ hashFiles('Amperfy.xcodeproj/project.pbxproj', '**/Package.resolved') }}-${{ inputs.simulator_source_sha }}" >> "$GITHUB_OUTPUT"
+          echo "key=simulator-v2-macOS-ARM64-xcode27.2-${{ hashFiles('Amperfy.xcodeproj/project.pbxproj', '**/Package.resolved') }}-${{ inputs.simulator_source_sha }}" >> "$GITHUB_OUTPUT"
       - name: Wait for the source build cache
         env:
           GH_TOKEN: ${{ github.token }}
@@ -226,12 +226,12 @@ jobs:
   build:
     # Standard hosted runners are free for public repositories only.
     if: github.event.repository.private == false && inputs.validation_only != true && inputs.native_runtime_only != true
-    # Device archives cross-compile to arm64; keep them off the capacity-limited
-    # ARM simulator pool. This is the standard Intel label, not a larger runner.
-    runs-on: macos-26-intel
+    # iOS 27's public UIBarAppearance style override requires the Xcode 27 SDK.
+    # This job archives a device IPA only and never boots a simulator.
+    runs-on: xcode-27
     timeout-minutes: 45
     env:
-      DEVELOPER_DIR: /Applications/Xcode_26.3.app/Contents/Developer
+      DEVELOPER_DIR: /Applications/Xcode_27.2.app/Contents/Developer
     steps:
       - name: Check out source
         uses: actions/checkout@v4

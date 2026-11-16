@@ -4,6 +4,7 @@
 
 - 导航栏、标签栏、搜索、菜单和 popover 使用 UIKit 的系统外观。
 - iPhone 导航栏使用原生 `UITabBar`，独立迷你播放条及收起后的两侧按钮统一使用开启交互反馈的 `UIGlassEffect(style: .regular)`，避免 `clear` 材质导致悬浮条过于透明；悬浮容器只负责布局和收起位置。iPad 的常规宽度布局使用 `UITabAccessory`，内容内部不叠加第二层玻璃。
+- iOS 27 在页面 push/pop 之前通过 `UITabBarAppearance.overrideUserInterfaceStyle` 同时设置标准与滚动边缘外观：封面详情页使用深色，返回时还原原始外观。移除未生效的黑色背景加色及白色图标覆盖，保留系统玻璃、选中透镜和主题色。该接口从 iOS 27 起可用，因此真机包使用 Xcode 27.2 编译，最低系统版本仍为 iOS 26；iOS 26 使用栏视图的外观切换。[Apple 接口说明](https://developer.apple.com/documentation/uikit/uibarappearance/overrideuserinterfacestyle)。
 - 全屏播放器的播放与切歌使用无底框图标和按压反馈；歌词、队列等选中状态使用圆形指示。队列模式使用独立原生玻璃按钮，音量条使用系统音量控件。
 - 资料库的播放与随机播放入口、设置表单操作按钮使用相同的系统玻璃语言。
 - 歌词、歌曲列表、封面及页面底色是内容层，不整页覆盖玻璃；歌词顶部信息固定，队列卡片和区段标题随列表滚动，遵循播放器布局约定。

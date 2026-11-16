@@ -2513,12 +2513,14 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
       let right = home.navigationItem.rightBarButtonItem?.tintColor
       let dockFrame = tabHost.playerDock?.frame
       let appAppearance = tabHost.tabBar.traitCollection.userInterfaceStyle
-      func nativeBarMatchesAppAppearance() -> Bool {
-        let expected: UIUserInterfaceStyle
-        if #available(iOS 27.0, *) { expected = .unspecified }
-        else { expected = appAppearance }
-        return tabHost.tabBar.overrideUserInterfaceStyle == expected &&
-          tabHost.tabBar.traitCollection.userInterfaceStyle == appAppearance
+      func nativeBarMatchesPage(isArtwork: Bool) -> Bool {
+        if #available(iOS 27.0, *) {
+          return tabHost.tabBar.overrideUserInterfaceStyle == .unspecified &&
+            tabHost.tabBar.standardAppearance.overrideUserInterfaceStyle == (isArtwork ? .dark : .unspecified) &&
+            (!isArtwork || tabHost.tabBar.scrollEdgeAppearance?.overrideUserInterfaceStyle == .dark)
+        }
+        return tabHost.tabBar.overrideUserInterfaceStyle == (isArtwork ? .dark : .unspecified) &&
+          tabHost.tabBar.traitCollection.userInterfaceStyle == (isArtwork ? .dark : appAppearance)
       }
       let controllers: [UIViewController] = [AlbumDetailVC(account: account, album: album),
         PlaylistDetailVC(account: account, playlist: playlist), ArtistDetailVC(account: account, artist: artist)]
@@ -2527,7 +2529,7 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
         for _ in 0..<45 {
           try await Task.sleep(for: .milliseconds(16))
           guard tabHost.playerDock?.frame == dockFrame,
-                nativeBarMatchesAppAppearance(),
+                nativeBarMatchesPage(isArtwork: true),
                 tabHost.playerDock?.overrideUserInterfaceStyle == .dark else {
             log("Detail push changed native bar appearance or dock geometry"); return false
           }
@@ -2536,7 +2538,7 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
         for _ in 0..<60 {
           try await Task.sleep(for: .milliseconds(16))
           guard nav.navigationBar.overrideUserInterfaceStyle == .unspecified,
-                nativeBarMatchesAppAppearance(),
+                nativeBarMatchesPage(isArtwork: false),
                 tabHost.playerDock?.frame == dockFrame,
                 (home.navigationItem.leftBarButtonItem?.customView as? UIButton)?.tintColor == left,
                 home.navigationItem.rightBarButtonItem?.tintColor == right else {
