@@ -322,6 +322,10 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
       guard let activeAccount = self.appDelegate.storage.settings.accounts.active,
             self.appDelegate.storage.settings.accounts.getSetting(activeAccount).read
               .initialSyncCompletionStatus == .completed else { return }
+      if ProcessInfo.processInfo.arguments.contains("--smoke-chrome") {
+        await NavigationGlassSmoke.run(on: vc)
+        return
+      }
       if ProcessInfo.processInfo.arguments.contains("--smoke-player") {
         defer {
           let ready = URL.documentsDirectory.appendingPathComponent("player-smoke-ready")

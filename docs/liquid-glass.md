@@ -3,7 +3,7 @@
 应用最低版本为 iOS 26。交互层使用系统 Liquid Glass，不用半透明填色或模糊层代替玻璃材质。
 
 - 导航栏、标签栏、搜索、菜单和 popover 使用 UIKit 的系统外观。
-- iPhone 迷你播放条由 `UITabAccessory` 提供玻璃与收起动画，内部不叠加第二层玻璃。独立播放条使用开启交互反馈的 `UIGlassEffect`，以 `cornerConfiguration` 设置胶囊外形。
+- iPhone 导航栏使用原生 `UITabBar`，独立迷你播放条使用开启交互反馈的 `UIGlassEffect`；悬浮容器只负责布局和收起位置。iPad 的常规宽度布局使用 `UITabAccessory`，内容内部不叠加第二层玻璃。
 - 全屏播放器的播放与切歌使用无底框图标和按压反馈；歌词、队列等选中状态使用圆形指示。队列模式使用独立原生玻璃按钮，音量条使用系统音量控件。
 - 资料库的播放与随机播放入口、设置表单操作按钮使用相同的系统玻璃语言。
 - 歌词、歌曲列表、封面及页面底色是内容层，不整页覆盖玻璃；歌词顶部信息固定，队列卡片和区段标题随列表滚动，遵循播放器布局约定。
@@ -51,9 +51,10 @@ color handling, ranking/count updates, and actual album/artist screenshots and d
 
 ### Detail navigation and account colors
 
-Visible decoded artwork resolves its cached or bounded palette synchronously before a
-new detail view's first frame. A cold cover is still loaded asynchronously; its background
-fades after navigation completes. Library returns reuse the current snapshot, with category
+Local artwork resolves its cached palette or a 64px ImageIO thumbnail before a new detail
+view's first frame, without retaining a full decoded image. A palette arriving during
+navigation joins that transition rather than queuing a recolor after completion.
+Library returns reuse the current snapshot, with category
 reconfiguration only when the account theme changes. Remote detail sync starts in
 `viewDidAppear`, keeping fetch/parse/snapshot work out of the navigation animation.
 
@@ -76,7 +77,12 @@ remote refresh is limited to once per minute on return.
 
 The dock anchor and bottom inset use the settled tab-bar position, avoiding transient frame
 readbacks during a push/pop. Bottom chrome has an explicit light/dark interface style for the
-active page rather than changing contrast after content settles.
+active page. Material interface-style changes are committed without animation before the
+navigation transition transaction; only cancellation restoration uses its completion.
+`review-navigation-glass.py` records the actual compositor for pinned-playlist and list-row
+push/pop paths in explicit light and dark appearances. The same binary includes DEBUG-only
+baseline and native-slide comparisons. Window-level color markers and event timestamps align
+frames without calling `drawHierarchy` or capturing screenshots during the animations.
 
 Artwork's internal nib margins ignore safe-area insets: the enclosing page handles those.
 The artist's square photo and name have a 12pt visible gap. The regression probe measures the

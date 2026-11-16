@@ -2,6 +2,11 @@
 set -euo pipefail
 
 cd "$(dirname "$0")/.."
+mode=${1:-all}
+case "$mode" in
+  all|--library-only|--ui-only) ;;
+  *) echo "Unknown validation mode: $mode" >&2; exit 2 ;;
+esac
 mkdir -p build/validation
 # Older caches were touched by the project's recursive formatting build phase.
 # Restore only dependency checkout files; keep compiled products for reuse.
@@ -54,6 +59,7 @@ test_arguments=(
 # Report a source location for pathological type inference instead of spending
 # the entire simulator job in one expression. This does not affect the IPA build.
 
+if [[ "$mode" != --ui-only ]]; then
 xcodebuild "${test_arguments[@]}" \
   -project Amperfy.xcodeproj \
   -scheme Amperfy \
@@ -65,9 +71,12 @@ xcodebuild "${test_arguments[@]}" \
   'OTHER_SWIFT_FLAGS=$(inherited) -Xfrontend -solver-expression-time-threshold=30 -Xfrontend -warn-long-function-bodies=1000 -Xfrontend -warn-long-expression-type-checking=1000' \
   CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO \
   2>&1 | tee build/validation/test.log
+fi
 
 app_path="build/validation/DerivedData/Build/Products/Debug-iphonesimulator/Amperfy.app"
 bundle_id=$(/usr/libexec/PlistBuddy -c 'Print CFBundleIdentifier' "$app_path/Info.plist")
 wait "$simulator_boot_pid"
 xcrun simctl bootstatus "$device_id" -b
-bash BuildTools/smoke-iphone-login.sh "$device_id" "$app_path" "$bundle_id"
+if [[ "$mode" != --library-only ]]; then
+  bash BuildTools/smoke-iphone-login.sh "$device_id" "$app_path" "$bundle_id"
+fi

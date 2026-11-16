@@ -184,6 +184,15 @@ extension UIViewController {
 // One owner updates native navigation and the floating dock in the same transition.
 // Detail controllers must not restore shared bar properties after a pop completes.
 final class MusicNavigationController: UINavigationController, UINavigationControllerDelegate {
+  #if DEBUG && targetEnvironment(simulator)
+    override func pushViewController(_ controller: UIViewController, animated: Bool) {
+      if ProcessInfo.processInfo.arguments.contains("--smoke-chrome-slide") {
+        controller.preferredTransition = nil
+      }
+      super.pushViewController(controller, animated: animated)
+    }
+  #endif
+
   override func viewDidLoad() {
     super.viewDidLoad()
     delegate = self
@@ -213,15 +222,33 @@ final class MusicNavigationController: UINavigationController, UINavigationContr
   func navigationController(_ navigationController: UINavigationController,
                             willShow controller: UIViewController, animated: Bool) {
     (tabBarController as? TabBarVC)?.reserveDockSpace(for: controller)
-    guard animated, let coordinator = transitionCoordinator else {
+    #if DEBUG && targetEnvironment(simulator)
+      // Record the previous behavior in the same build for compositor comparison.
+      if ProcessInfo.processInfo.arguments.contains("--smoke-chrome-baseline"),
+         animated, let coordinator = transitionCoordinator {
+        coordinator.animate(alongsideTransition: { [weak self] _ in
+          self?.applyAppearance(for: controller)
+        }, completion: { [weak self] context in
+          if context.isCancelled, let original = context.viewController(forKey: .from) {
+            self?.applyAppearance(for: original)
+          }
+        })
+        return
+      }
+    #endif
+    // Interface-style changes rebuild the system glass material. Commit them
+    // before the navigation animation, rather than inheriting its transaction.
+    // The material itself continues sampling the live scrolling content.
+    UIView.performWithoutAnimation {
       applyAppearance(for: controller)
-      return
+      navigationBar.layoutIfNeeded()
+      tabBarController?.tabBar.layoutIfNeeded()
+      (tabBarController as? TabBarVC)?.playerDock?.layoutIfNeeded()
     }
-    coordinator.animate(alongsideTransition: { [weak self] _ in
-      self?.applyAppearance(for: controller)
-    }, completion: { [weak self] context in
+    guard animated, let coordinator = transitionCoordinator else { return }
+    coordinator.animate(alongsideTransition: nil, completion: { [weak self] context in
       if context.isCancelled, let original = context.viewController(forKey: .from) {
-        self?.applyAppearance(for: original)
+        UIView.performWithoutAnimation { self?.applyAppearance(for: original) }
       }
     })
   }
@@ -232,3 +259,161 @@ final class MusicNavigationController: UINavigationController, UINavigationContr
     applyAppearance(for: controller)
   }
 }
+
+#if DEBUG && targetEnvironment(simulator)
+  // Capture the real compositor separately from the full player suite. A small
+  // window-level marker aligns navigation events with the external video; no
+  // screenshots or rendering work run inside the animation's sampling loop.
+  @MainActor
+  enum NavigationGlassSmoke {
+    private static let directory = URL.documentsDirectory
+
+    private static func write(_ object: [String: Any], to name: String) throws {
+      try JSONSerialization.data(withJSONObject: object, options: [.prettyPrinted, .sortedKeys])
+        .write(to: directory.appendingPathComponent(name), options: .atomic)
+    }
+
+    private static func require(_ condition: Bool, _ message: String) throws {
+      if !condition {
+        throw NSError(domain: "NavigationGlassSmoke", code: 1,
+                      userInfo: [NSLocalizedDescriptionKey: message])
+      }
+    }
+
+    static func run(on controller: UIViewController) async {
+      do { try await record(on: controller) }
+      catch {
+        try? write(["error": error.localizedDescription], to: "chrome-review-failed.json")
+      }
+    }
+
+    private static func record(on controller: UIViewController) async throws {
+      let app = UIApplication.shared.delegate as! AppDelegate
+      guard let host = controller as? TabBarVC,
+            let window = host.view.window,
+            let info = app.storage.settings.accounts.active,
+            let group = host.tabs.first(where: { $0.identifier == "Tabs.Library" }) as? UITabGroup,
+            let nav = group.managingNavigationController else {
+        throw NSError(domain: "NavigationGlassSmoke", code: 2)
+      }
+      let library = app.storage.main.library
+      let account = library.getAccount(info: info)
+      let meta = app.getMeta(info)
+      try await meta.librarySyncer.syncDownPlaylistsWithoutSongs()
+      guard let playlist = library.getPlaylist(for: account, id: "playlist-1") else {
+        throw NSError(domain: "NavigationGlassSmoke", code: 3)
+      }
+      try await playlist.fetch(storage: app.storage, librarySyncer: meta.librarySyncer,
+                               playableDownloadManager: meta.playableDownloadManager)
+      if let song = library.getSong(for: account, id: "song-1") {
+        try await meta.librarySyncer.sync(song: song)
+        app.player.isAutoCachePlayedItems = false
+        app.player.play(context: PlayContext(name: "Glass review", playables: [song]))
+      }
+      UserDefaults.standard.set([playlist.managedObject.objectID.uriRepresentation().absoluteString],
+        forKey: "libraryPinnedPlaylists." + account.managedObject.objectID.uriRepresentation().absoluteString)
+      let dark = ProcessInfo.processInfo.arguments.contains("--smoke-chrome-dark")
+      host.overrideUserInterfaceStyle = dark ? .dark : .light
+      host.dismiss(animated: false)
+      host.selectedTab = group
+      nav.popToRootViewController(animated: false)
+      NotificationCenter.default.post(name: .LibraryItemsChanged, object: nil)
+      try await Task.sleep(for: .seconds(2))
+      host.dismiss(animated: false)
+      guard let source = nav.topViewController as? LibraryVC else {
+        throw NSError(domain: "NavigationGlassSmoke", code: 4)
+      }
+      host.view.layoutIfNeeded()
+      source.collectionView.layoutIfNeeded()
+      try require(host.traitCollection.userInterfaceStyle == (dark ? .dark : .light),
+                  "The source page did not use the requested light/dark appearance")
+      let marker = UIView(frame: CGRect(x: window.bounds.midX - 5,
+                                       y: window.safeAreaInsets.top + 4, width: 10, height: 10))
+      marker.isUserInteractionEnabled = false
+      marker.backgroundColor = .green
+      window.addSubview(marker)
+      defer { marker.removeFromSuperview() }
+      var events = [[String: Any]]()
+      defer { try? write(["events": events], to: "chrome-review-events.json") }
+      func rect(_ value: CGRect) -> [CGFloat] { [value.minX, value.minY, value.width, value.height] }
+      func event(_ name: String) {
+        let top = nav.topViewController
+        events.append(["name": name, "time": CACurrentMediaTime(),
+          "bar_frame": rect(host.tabBar.convert(host.tabBar.bounds, to: window)),
+          "marker_frame": rect(marker.frame),
+          "animated": nav.transitionCoordinator?.isAnimated == true,
+          "bar_style": host.tabBar.traitCollection.userInterfaceStyle.rawValue,
+          "page": String(describing: type(of: top)),
+          "page_frame": rect(top?.view.layer.presentation()?.frame ?? top?.view.frame ?? .zero)])
+      }
+      func settle(_ phase: String, endColor: UIColor) async throws {
+        for _ in 0..<150 {
+          try await Task.sleep(for: .milliseconds(16))
+          event(phase + ".frame")
+          if nav.transitionCoordinator == nil { break }
+        }
+        try require(nav.transitionCoordinator == nil, "Navigation did not settle for " + phase)
+        UIView.performWithoutAnimation { marker.backgroundColor = endColor }
+        event(phase + ".completed")
+        try await Task.sleep(for: .seconds(1))
+        event(phase + ".settled")
+      }
+      try write(["prepared": true], to: "chrome-review-prepared.json")
+      for _ in 0..<200 {
+        if FileManager.default.fileExists(atPath: directory.appendingPathComponent("chrome-review-recording").path) { break }
+        try await Task.sleep(for: .milliseconds(100))
+      }
+      try require(FileManager.default.fileExists(atPath: directory.appendingPathComponent("chrome-review-recording").path),
+                  "External compositor recording did not start")
+      event("pinned.source")
+      try await Task.sleep(for: .milliseconds(500))
+      guard let pinned = source.collectionView.visibleCells.first(where: {
+        $0.accessibilityIdentifier == "library-pinned-playlist"
+      }), let path = source.collectionView.indexPath(for: pinned) else {
+        throw NSError(domain: "NavigationGlassSmoke", code: 5)
+      }
+      UIView.performWithoutAnimation { marker.backgroundColor = .red }
+      event("pinned.push")
+      source.collectionView(source.collectionView, didSelectItemAt: path)
+      try require(nav.topViewController is PlaylistDetailVC, "Pinned playlist did not open its real detail page")
+      try await settle("pinned.push", endColor: .blue)
+      UIView.performWithoutAnimation { marker.backgroundColor = .yellow }
+      event("pinned.pop")
+      nav.popViewController(animated: true)
+      try await settle("pinned.pop", endColor: .green)
+      try require(nav.topViewController === source, "Pinned return did not restore the source page")
+      source.collectionView.layoutIfNeeded()
+      guard let category = source.collectionView.visibleCells.first(where: {
+        $0.accessibilityIdentifier == "library-category-\(LibraryDisplayType.playlists.rawValue)"
+      }), let categoryPath = source.collectionView.indexPath(for: category) else {
+        throw NSError(domain: "NavigationGlassSmoke", code: 6)
+      }
+      source.collectionView(source.collectionView, didSelectItemAt: categoryPath)
+      try await Task.sleep(for: .seconds(1))
+      guard let list = nav.topViewController as? PlaylistsVC else {
+        throw NSError(domain: "NavigationGlassSmoke", code: 7)
+      }
+      for _ in 0..<50 {
+        if list.tableView.numberOfSections > 0, list.tableView.numberOfRows(inSection: 0) > 0 { break }
+        try await Task.sleep(for: .milliseconds(100))
+      }
+      list.tableView.layoutIfNeeded()
+      try require(list.tableView.numberOfSections > 0 && list.tableView.numberOfRows(inSection: 0) > 0,
+                  "Playlist list did not contain the fixture")
+      event("list.source")
+      UIView.performWithoutAnimation { marker.backgroundColor = .red }
+      event("list.push")
+      list.tableView(list.tableView, didSelectRowAt: IndexPath(row: 0, section: 0))
+      try require(nav.topViewController is PlaylistDetailVC, "Playlist row did not open its real detail page")
+      try await settle("list.push", endColor: .blue)
+      UIView.performWithoutAnimation { marker.backgroundColor = .yellow }
+      event("list.pop")
+      nav.popViewController(animated: true)
+      try await settle("list.pop", endColor: .green)
+      try require(nav.topViewController === list, "Playlist return did not restore its source row")
+      try require(host.miniPlayer?.glassContainer.effect is UIGlassEffect, "System player material was replaced")
+      try write(["appearance": dark ? "dark" : "light", "events": events,
+                 "window": rect(window.bounds), "completed": true], to: "chrome-review-ready.json")
+    }
+  }
+#endif

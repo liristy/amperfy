@@ -34,7 +34,7 @@ jobs:
   tests:
     if: github.event.repository.private == false
     runs-on: macos-26
-    timeout-minutes: 45
+    timeout-minutes: 55
     env:
       DEVELOPER_DIR: /Applications/Xcode_26.3.app/Contents/Developer
     steps:
@@ -54,12 +54,26 @@ jobs:
         run: |
           python3 -m unittest discover -s BuildTools -p test_build_cache_mtimes.py
           python3 BuildTools/build-cache-mtimes.py restore build/validation/DerivedData/source-mtimes.json
-      - name: Validate iPhone UI and affected library tests
+      - name: Build simulator and validate affected library tests
         # Leave time to upload diagnostics if the simulator stalls.
         timeout-minutes: 35
         env:
           BASE_SHA: ${{ github.event.before }}
-        run: bash BuildTools/test-iphone-changes.sh
+        run: bash BuildTools/test-iphone-changes.sh --library-only
+      - name: Record native navigation glass in light and dark appearances
+        timeout-minutes: 8
+        run: python3 BuildTools/review-navigation-glass.py
+      - name: Upload native navigation compositor recordings
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: qMusic-navigation-glass-${{ github.run_number }}
+          path: build/navigation-glass/
+          if-no-files-found: warn
+          retention-days: 7
+      - name: Validate complete iPhone UI
+        timeout-minutes: 15
+        run: bash BuildTools/test-iphone-changes.sh --ui-only
       - name: Record source timestamps
         if: always() && !cancelled()
         run: python3 BuildTools/build-cache-mtimes.py save build/validation/DerivedData/source-mtimes.json
