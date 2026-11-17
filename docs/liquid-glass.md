@@ -48,6 +48,13 @@ have a full-width hero and exactly two sections: listening-count song rankings a
 albums. The first five songs link to the complete ranking; ordering uses real `playCount`,
 with stable title/ID ties and offline filtering. Song swipe actions show their icons only.
 
+Album detail covers preserve portrait and landscape proportions using aspect fit within the
+existing maximum cover footprint. The header and title follow the actual fitted image size,
+including EXIF rotation. Dimensions are read from file metadata once per artwork path, without
+decoding another full image; a completed artwork download invalidates that geometry. Square
+covers and the artist hero keep their existing layout. If a newly downloaded landscape cover
+shortens a header already above the viewport, the visible song rows retain their position.
+
 Regression coverage includes dense 1200px artwork with a bounded runtime, dominant/transparent
 color handling, ranking/count updates, and actual album/artist screenshots and dock reversals.
 

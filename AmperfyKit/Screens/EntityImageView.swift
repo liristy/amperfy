@@ -26,6 +26,8 @@ open class EntityImageView: UIView {
   @IBOutlet
   weak var singleImage: LibraryEntityImage!
   @IBOutlet
+  private var singleArtworkAspectConstraint: NSLayoutConstraint!
+  @IBOutlet
   weak var quadImage1: LibraryEntityImage!
   @IBOutlet
   weak var quadImage2: LibraryEntityImage!
@@ -95,6 +97,16 @@ open class EntityImageView: UIView {
 
   public var singleArtworkFrame: CGRect {
     singleImage.convert(singleImage.bounds, to: self)
+  }
+
+  public func setSingleArtworkAspectRatio(_ ratio: CGFloat) {
+    guard ratio.isFinite, ratio > 0,
+          singleArtworkAspectConstraint.multiplier != ratio else { return }
+    singleArtworkAspectConstraint.isActive = false
+    singleArtworkAspectConstraint = singleImage.widthAnchor.constraint(
+      equalTo: singleImage.heightAnchor, multiplier: ratio)
+    singleArtworkAspectConstraint.isActive = true
+    setNeedsLayout()
   }
 
   public func display(

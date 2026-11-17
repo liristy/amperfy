@@ -20,6 +20,7 @@
 //
 
 import AmperfyKit
+import ImageIO
 import UIKit
 
 // MARK: - AlbumDetailDiffableDataSource
@@ -127,6 +128,7 @@ class AlbumDetailVC: SingleSnapshotFetchedResultsTableViewController<SongMO> {
       navigationController?.pushViewController(AppStoryboard.Main.segueToArtistDetail(account: account, artist: artist), animated: true)
     }
     header.paletteChanged = { [weak self] color in self?.applyDetailBackgroundColor(color) }
+    header.artworkLayoutChanged = { [weak self] in self?.viewIfLoaded?.setNeedsLayout() }
     detailOperationsView = header
     tableView.tableHeaderView = header
     header.refresh()
@@ -157,7 +159,19 @@ class AlbumDetailVC: SingleSnapshotFetchedResultsTableViewController<SongMO> {
     super.viewDidLayoutSubviews()
     guard let header = detailOperationsView else { return }
     let size = CGSize(width: tableView.bounds.width, height: header.preferredHeight(width: tableView.bounds.width))
-    if header.frame.size != size { header.frame.size = size; tableView.tableHeaderView = header }
+    if header.frame.size != size {
+      let previousHeight = header.frame.height
+      let offset = tableView.contentOffset
+      let keepVisibleSongs = previousHeight > 0 &&
+        offset.y + tableView.adjustedContentInset.top >= previousHeight
+      header.frame.size = size
+      tableView.tableHeaderView = header
+      // A downloaded landscape cover can shorten an offscreen header. Keep
+      // the visible song rows anchored instead of moving the list with it.
+      if keepVisibleSongs, size.height != previousHeight {
+        tableView.contentOffset = CGPoint(x: offset.x, y: offset.y + size.height - previousHeight)
+      }
+    }
     refreshAlbumFooter()
     updateAlbumTitle()
   }
@@ -263,10 +277,13 @@ final class MusicArtworkHeader: UIView {
   private let artistHero: Bool
   private var paletteKey: String?
   private var paletteTask: Task<Void, Never>?
+  private var artworkGeometryPath: String?
+  private var albumArtworkAspectRatio: CGFloat = 1
   var playAction: ((Bool) -> Void)?
   var secondaryAction: (() -> Void)?
   var artistAction: (() -> Void)?
   var paletteChanged: ((UIColor) -> Void)?
+  var artworkLayoutChanged: (() -> Void)?
   var playableCount: Int?
 
   init(entity: AbstractLibraryEntity & PlayableContainable) {
@@ -274,7 +291,7 @@ final class MusicArtworkHeader: UIView {
     artistHero = entity is Artist
     super.init(frame: .zero)
     [artwork, titleLabel, artistButton, metadataLabel, playButton, shuffleButton, secondaryButton].forEach { addSubview($0) }
-    artwork.imageContentMode = .scaleAspectFill
+    artwork.imageContentMode = artistHero ? .scaleAspectFill : .scaleAspectFit
     artwork.clipsToBounds = true
     artwork.accessibilityIdentifier = artistHero ? "artist-hero-artwork" : "album-header-artwork"
     titleLabel.font = .systemFont(ofSize: artistHero ? 32 : 22, weight: .bold)
@@ -319,6 +336,7 @@ final class MusicArtworkHeader: UIView {
     guard let download = DownloadNotification.fromNotification(note),
           download.id == entity.artwork?.uniqueID else { return }
     paletteKey = nil
+    artworkGeometryPath = nil
     refreshVisible()
   }
   override func didMoveToWindow() {
@@ -330,13 +348,16 @@ final class MusicArtworkHeader: UIView {
       let nameHeight = max(40, titleLabel.sizeThatFits(CGSize(width: max(1, width - 40), height: 100)).height)
       return min(500, width) + 12 + nameHeight + 16 + 56 + 22
     }
-    let side = min(340, width * 0.694)
+    let artworkHeight = albumArtworkSize(width: width).height
     let titleHeight = max(28, titleLabel.sizeThatFits(CGSize(width: max(1, width - 40), height: 80)).height)
-    return 16 + side + 18 + titleHeight + 27 + 20 + 18 + 44 + 22
+    return 16 + artworkHeight + 18 + titleHeight + 27 + 20 + 18 + 44 + 22
   }
   func refresh() {
     guard UIApplication.shared.applicationState == .active else { return }
     let settings = appDelegate.storage.settings.accounts.getSetting(entity.account?.info).read
+    if !artistHero {
+      updateAlbumArtworkGeometry(at: entity.imagePath(setting: settings.artworkDisplayPreference))
+    }
     artwork.display(theme: settings.themePreference, container: entity)
     if let album = entity as? Album {
       titleLabel.text = album.name
@@ -369,6 +390,38 @@ final class MusicArtworkHeader: UIView {
       self.applyPalette(colors)
     }
   }
+  private func updateAlbumArtworkGeometry(at path: String?) {
+    guard path != artworkGeometryPath else { return }
+    var ratio: CGFloat = 1
+    if let path,
+       let source = CGImageSourceCreateWithURL(URL(fileURLWithPath: path) as CFURL,
+         [kCGImageSourceShouldCache: false] as CFDictionary),
+       let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [String: Any],
+       let pixelWidth = properties[kCGImagePropertyPixelWidth as String] as? NSNumber,
+       let pixelHeight = properties[kCGImagePropertyPixelHeight as String] as? NSNumber {
+      let width = CGFloat(pixelWidth.doubleValue), height = CGFloat(pixelHeight.doubleValue)
+      if width.isFinite, height.isFinite, width > 0, height > 0 {
+        let orientation = (properties[kCGImagePropertyOrientation as String] as? NSNumber)?.intValue ?? 1
+        ratio = (5...8).contains(orientation) ? height / width : width / height
+        artworkGeometryPath = path
+      }
+    } else if path == nil {
+      artworkGeometryPath = nil
+    }
+    guard ratio.isFinite, ratio > 0, ratio != albumArtworkAspectRatio else { return }
+    albumArtworkAspectRatio = ratio
+    artwork.setSingleArtworkAspectRatio(ratio)
+    setNeedsLayout()
+    artworkLayoutChanged?()
+  }
+  private func albumArtworkSize(width: CGFloat) -> CGSize {
+    // Preserve the existing maximum cover footprint without cropping or
+    // reserving square letterboxing below a landscape image.
+    let side = max(0, min(340, width * 0.694))
+    return albumArtworkAspectRatio >= 1 ?
+      CGSize(width: side, height: side / albumArtworkAspectRatio) :
+      CGSize(width: side * albumArtworkAspectRatio, height: side)
+  }
   private func applyPalette(_ colors: [UIColor]) {
     guard let color = colors.first else { return }
     var r: CGFloat = 0, g: CGFloat = 0, b: CGFloat = 0, a: CGFloat = 0
@@ -388,8 +441,9 @@ final class MusicArtworkHeader: UIView {
       shuffleButton.frame = CGRect(x: playButton.frame.minX - 68, y: playButton.frame.minY + 6, width: 44, height: 44)
       secondaryButton.frame = CGRect(x: playButton.frame.maxX + 24, y: shuffleButton.frame.minY, width: 44, height: 44)
     } else {
-      let side = min(340, width * 0.694)
-      artwork.frame = CGRect(x: (width - side) / 2, y: 16, width: side, height: side)
+      let artworkSize = albumArtworkSize(width: width)
+      artwork.frame = CGRect(x: (width - artworkSize.width) / 2, y: 16,
+        width: artworkSize.width, height: artworkSize.height)
       let titleHeight = max(28, titleLabel.sizeThatFits(CGSize(width: max(1, width - 40), height: 80)).height)
       titleLabel.frame = CGRect(x: 20, y: artwork.frame.maxY + 18, width: width - 40, height: titleHeight)
       artistButton.frame = CGRect(x: 20, y: titleLabel.frame.maxY, width: width - 40, height: 27)

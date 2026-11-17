@@ -15,6 +15,7 @@
                 <outlet property="quadImage3" destination="I31-Jf-S7g" id="4Tc-w0-Wjy"/>
                 <outlet property="quadImage4" destination="BdD-Im-e5K" id="24E-aN-CuP"/>
                 <outlet property="singleImage" destination="L2a-k6-g8X" id="hyb-nE-ByY"/>
+                <outlet property="singleArtworkAspectConstraint" destination="1xB-u6-yjz" id="album-cover-aspect-outlet"/>
             </connections>
         </placeholder>
         <placeholder placeholderIdentifier="IBFirstResponder" id="-2" customClass="UIResponder"/>
