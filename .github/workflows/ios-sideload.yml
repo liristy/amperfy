@@ -1,344 +1,52 @@
-name: qMusic Build & Release
+name: qMusic Lyrics Motion Check
 
-on:
-  workflow_dispatch:
-    inputs:
-      run_simulator_regression:
-        description: 'Explicitly opt in to simulator checks; normal IPA builds use device testing'
-        type: boolean
-        default: false
-      validation_only:
-        description: 'Run regression checks without rebuilding the device IPA'
-        type: boolean
-        default: false
-      profile_player_resources:
-        description: 'Measure simulator process CPU/RSS (not battery power)'
-        type: boolean
-        default: false
-      native_runtime_only:
-        description: 'Review the source-matched simulator app on iOS 27.2'
-        type: boolean
-        default: false
-      simulator_source_sha:
-        description: 'Full commit of the already-built simulator app for iOS 27.2 review'
-        type: string
-        default: ''
-  push:
-    branches:
-      - master
-    paths:
-      - '.github/release-version'
-    tags:
-      - 'v*'
-  pull_request:
-    branches:
-      - master
-      - codex/liquid-glass-controls
+on: workflow_dispatch
 
 permissions:
   contents: read
 
-concurrency:
-  group: ${{ inputs.native_runtime_only && 'glass-runtime' || 'iphone-ipa' }}-${{ github.ref }}
-  cancel-in-progress: true
-
 jobs:
-  tests:
-    # Device recordings are the default review path; do not start a simulator
-    # from a normal package build, push or pull request.
-    if: github.event.repository.private == false && inputs.run_simulator_regression == true && inputs.native_runtime_only != true
+  lyrics:
     runs-on: xcode-27
-    timeout-minutes: 55
+    timeout-minutes: 32
     env:
       DEVELOPER_DIR: /Applications/Xcode_27.2.app/Contents/Developer
     steps:
       - uses: actions/checkout@v4
         with:
           persist-credentials: false
-          fetch-depth: 2
-      - name: Restore simulator build cache
-        id: simulator-cache
-        uses: actions/cache/restore@v4
-        with:
-          path: build/validation/DerivedData
-          key: simulator-v2-${{ runner.os }}-${{ runner.arch }}-xcode27.2-${{ hashFiles('Amperfy.xcodeproj/project.pbxproj', '**/Package.resolved') }}-${{ github.sha }}
-          restore-keys: |
-            simulator-v2-${{ runner.os }}-${{ runner.arch }}-xcode27.2-${{ hashFiles('Amperfy.xcodeproj/project.pbxproj', '**/Package.resolved') }}-
-      - name: Preserve timestamps of unchanged sources
+      - name: Create iPhone simulator
         run: |
-          python3 -m unittest discover -s BuildTools -p test_build_cache_mtimes.py
-          python3 BuildTools/build-cache-mtimes.py restore build/validation/DerivedData/source-mtimes.json
-      - name: Build simulator and validate affected library tests
-        id: library-checks
-        # Leave time to upload diagnostics if the simulator stalls.
-        timeout-minutes: 35
-        env:
-          BASE_SHA: ${{ github.event.before }}
-        run: bash BuildTools/test-iphone-changes.sh --library-only
-      - name: Stamp the successfully tested simulator binary
+          set -euo pipefail
+          mkdir -p build/validation
+          xcrun simctl list runtimes
+          device=$(xcrun simctl create 'qMusic Lyrics' com.apple.CoreSimulator.SimDeviceType.iPhone-17-Pro-Max com.apple.CoreSimulator.SimRuntime.iOS-27-2)
+          xcrun simctl boot "$device"
+          echo "LYRIC_TEST_DEVICE=$device" >> "$GITHUB_ENV"
+      - name: Compile and run lyrics parser regressions
         run: |
-          python3 BuildTools/build-cache-mtimes.py save build/validation/DerivedData/source-mtimes.json
-          python3 BuildTools/prepare-glass-runtime.py stamp
-      - name: Publish simulator app for the parallel iOS 27.2 review
-        id: early-simulator-cache
-        if: steps.simulator-cache.outputs.cache-hit != 'true'
-        uses: actions/cache/save@v4
-        with:
-          path: build/validation/DerivedData
-          key: ${{ steps.simulator-cache.outputs.cache-primary-key }}
-      - name: Record native navigation glass in light and dark appearances
-        timeout-minutes: 8
-        run: python3 BuildTools/review-navigation-glass.py
-      - name: Upload native navigation compositor recordings
+          set -o pipefail
+          xcodebuild test -project Amperfy.xcodeproj -scheme Amperfy \
+            -destination "platform=iOS Simulator,id=$LYRIC_TEST_DEVICE" \
+            -derivedDataPath build/validation/DerivedData -onlyUsePackageVersionsFromResolvedFile \
+            -parallel-testing-enabled NO -only-testing:AmperfyKitTests/SsLyricsBySongId2ParserTest \
+            -only-testing:AmperfyKitTests/SsOpenSubsonicExtensionsParserTest \
+            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO ONLY_ACTIVE_ARCH=YES \
+            2>&1 | tee build/validation/test.log
+      - name: Verify player and timed lyrics
+        run: |
+          set -euo pipefail
+          app=build/validation/DerivedData/Build/Products/Debug-iphonesimulator/Amperfy.app
+          bundle=$(/usr/libexec/PlistBuddy -c 'Print CFBundleIdentifier' "$app/Info.plist")
+          bash BuildTools/smoke-iphone-login.sh "$LYRIC_TEST_DEVICE" "$app" "$bundle"
+      - uses: actions/upload-artifact@v4
         if: always()
-        uses: actions/upload-artifact@v4
         with:
-          name: qMusic-navigation-glass-${{ github.run_number }}
-          path: build/navigation-glass/
-          if-no-files-found: warn
-          retention-days: 7
-      - name: Validate complete iPhone UI
-        if: ${{ !cancelled() && steps.library-checks.outcome == 'success' }}
-        timeout-minutes: 15
-        run: bash BuildTools/test-iphone-changes.sh --ui-only
-      - name: Record source timestamps
-        if: always() && !cancelled()
-        run: python3 BuildTools/build-cache-mtimes.py save build/validation/DerivedData/source-mtimes.json
-      - name: Prepare current README screenshots
-        run: |
-          mkdir -p build/readme-screenshots
-          for pair in player-next-song:qMusic-player player-lyrics-controls:qMusic-lyrics player-queue-resumed:qMusic-queue player-statistics-detail:qMusic-statistics; do
-            source="${pair%%:*}"
-            name="${pair##*:}"
-            sips -Z 1400 "build/validation/$source.png" --out "build/readme-screenshots/$name.png" >/dev/null
-          done
-          printf 'Source commit: %s\nWorkflow: %s/%s/actions/runs/%s\n' \
-            "$GITHUB_SHA" "$GITHUB_SERVER_URL" "$GITHUB_REPOSITORY" "$GITHUB_RUN_ID" \
-            > build/readme-screenshots/source.txt
-      - name: Upload current README screenshots
-        uses: actions/upload-artifact@v4
-        with:
-          name: qMusic-readme-screenshots-${{ github.run_number }}
-          path: build/readme-screenshots/
-          if-no-files-found: error
-          retention-days: 7
-      - name: Upload compact player review artifacts
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: Amperfy-player-review-${{ github.run_number }}
+          name: qMusic-lyrics-simulator-292
           path: |
-            build/validation/player.stdout.log
-            build/validation/player.stderr.log
-            build/validation/player-reference-spacing*.png
-            build/validation/server.log
-            build/validation/*-preview.jpg
-            build/validation/player-queue-glass-*.png
-            build/validation/player-queue-history.png
-            build/validation/player-statistics-detail.png
-            build/validation/player-home-return.png
-            build/validation/player-album-*.png
-            build/validation/player-artist-*.png
-            build/validation/player-library-*.png
-            build/validation/player-playlist*.png
-            build/validation/player-mini-*.png
-            build/validation/player-*-failure.png
+            build/validation/test.log
+            build/validation/player.*.log
+            build/validation/player-lyrics-*.png
+            build/validation/simulator.log
+            build/validation/crashes/
           retention-days: 7
-      - name: Profile player resources on simulator (not battery power)
-        if: ${{ !cancelled() }}
-        run: |
-          if [[ "${{ inputs.profile_player_resources || contains(github.event.pull_request.body, '<!-- profile-player-resources -->') }}" == "true" ]]; then
-            python3 BuildTools/profile-player-resources.py
-          else
-            python3 BuildTools/profile-player-resources.py --background-only
-          fi
-      - name: Upload simulator resource measurements
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: Amperfy-resource-profile-${{ github.run_number }}
-          path: build/resource-profile/
-          retention-days: 7
-      - name: Save simulator build cache even after a UI failure
-        if: always() && !cancelled() && steps.simulator-cache.outputs.cache-hit != 'true' && steps.early-simulator-cache.outcome != 'success'
-        uses: actions/cache/save@v4
-        with:
-          path: build/validation/DerivedData
-          key: ${{ steps.simulator-cache.outputs.cache-primary-key }}
-      - name: Upload test log and language screenshots
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: Amperfy-validation-${{ github.run_number }}
-          path: |
-            build/validation/*.log
-            build/validation/PlaylistTests.xcresult
-            build/validation/*.png
-            build/validation/*.jpg
-            build/validation/player-motion.mp4
-            build/validation/crashes
-          retention-days: 7
-
-
-  native-glass-runtime:
-    if: github.event.repository.private == false && inputs.run_simulator_regression == true && inputs.native_runtime_only == true
-    runs-on: xcode-27
-    timeout-minutes: 50
-    permissions:
-      contents: read
-      actions: read
-    env:
-      DEVELOPER_DIR: /Applications/Xcode_27.2.app/Contents/Developer
-      SIMULATOR_SOURCE_SHA: ${{ inputs.simulator_source_sha }}
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          persist-credentials: false
-      - name: Resolve the exact simulator source cache
-        id: simulator-source
-        run: |
-          echo "key=simulator-v2-macOS-ARM64-xcode27.2-${{ hashFiles('Amperfy.xcodeproj/project.pbxproj', '**/Package.resolved') }}-${{ inputs.simulator_source_sha }}" >> "$GITHUB_OUTPUT"
-      - name: Wait for the source build cache
-        env:
-          GH_TOKEN: ${{ github.token }}
-          SIMULATOR_CACHE_KEY: ${{ steps.simulator-source.outputs.key }}
-        run: python3 BuildTools/prepare-glass-runtime.py wait-cache
-      - name: Restore the same compiled simulator app
-        uses: actions/cache/restore@v4
-        with:
-          path: build/validation/DerivedData
-          key: ${{ steps.simulator-source.outputs.key }}
-          fail-on-cache-miss: true
-      - name: Verify app source and boot iOS 27.2
-        run: python3 BuildTools/prepare-glass-runtime.py boot
-      - name: Record actual iOS 27.2 navigation glass
-        timeout-minutes: 15
-        run: python3 BuildTools/review-navigation-glass.py --runtime-major 27 --app-source-sha "$SIMULATOR_SOURCE_SHA"
-      - name: Upload iOS 27.2 compositor comparison
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: qMusic-navigation-glass-ios27-${{ github.run_number }}
-          path: build/navigation-glass/
-          if-no-files-found: warn
-          retention-days: 7
-
-  build:
-    # Standard hosted runners are free for public repositories only.
-    if: github.event.repository.private == false && inputs.validation_only != true && inputs.native_runtime_only != true
-    # iOS 27's public UIBarAppearance style override requires the Xcode 27 SDK.
-    # This job archives a device IPA only and never boots a simulator.
-    runs-on: xcode-27
-    timeout-minutes: 45
-    env:
-      DEVELOPER_DIR: /Applications/Xcode_27.2.app/Contents/Developer
-    steps:
-      - name: Check out source
-        uses: actions/checkout@v4
-        with:
-          persist-credentials: false
-
-      - name: Build unsigned device IPA
-        run: |
-          python3 -m unittest discover -s BuildTools -p test_verify_ipa.py
-          python3 -m unittest discover -s BuildTools -p test_prepare_release.py
-          bash BuildTools/build-unsigned-ipa.sh
-
-      - name: Upload IPA and installation instructions
-        uses: actions/upload-artifact@v4
-        with:
-          name: Amperfy-iPhone-unsigned-${{ github.run_number }}
-          path: |
-            build/sideload/Amperfy-unsigned.ipa
-            build/sideload/SHA256SUMS
-            build/sideload/build-info.txt
-            build/sideload/ipa-integrity.log
-            build/sideload/qMusic-dSYMs.zip
-            build/sideload/binary-uuid.txt
-            BuildTools/verify_ipa.py
-            docs/iphone-install-zh.md
-          if-no-files-found: error
-          retention-days: 7
-          compression-level: 0
-
-      - name: Upload build log
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: Amperfy-build-log-${{ github.run_number }}
-          path: build/sideload/build.log
-          if-no-files-found: ignore
-          retention-days: 7
-
-      - name: Show next steps
-        run: |
-          cat >> "$GITHUB_STEP_SUMMARY" <<'EOF'
-          ## iPhone 测试包已生成
-          下载本次运行的 **Amperfy-iPhone-unsigned** artifact，解压后找到 `Amperfy-unsigned.ipa`。
-
-          这是 **iOS 26+ 真机包**，还需要在 Windows 爱思助手中使用自己的 Apple ID 签名后安装。
-          免费个人签名通常有效 7 天。本测试包不包含 Siri / CarPlay 授权。
-          Apple ID 和密码不需要上传到 GitHub。
-
-          安装步骤见压缩包内的 `iphone-install-zh.md`；具体构建版本见 `build-info.txt`。
-          EOF
-
-  release:
-    if: ${{ !cancelled() && needs.build.result == 'success' && (needs.tests.result == 'success' || needs.tests.result == 'skipped') && github.event_name == 'push' && (startsWith(github.ref, 'refs/tags/v') || github.ref == 'refs/heads/master') }}
-    needs: [tests, build]
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    permissions:
-      contents: write
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          persist-credentials: false
-          fetch-depth: 0
-      - name: Require release commit on master
-        run: git merge-base --is-ancestor HEAD origin/master
-      - name: Resolve release version
-        id: version
-        env:
-          TAG_REF: ${{ startsWith(github.ref, 'refs/tags/') && github.ref_name || '' }}
-        run: |
-          tag="$TAG_REF"
-          if [[ -z "$tag" ]]; then tag="$(cat .github/release-version)"; fi
-          if [[ ! "$tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z]+([.-][0-9A-Za-z]+)*)?$ ]]; then
-            echo "Invalid release version: $tag" >&2
-            exit 1
-          fi
-          test -f "docs/releases/$tag.md"
-          echo "tag=$tag" >> "$GITHUB_OUTPUT"
-      - uses: actions/download-artifact@v4
-        with:
-          name: Amperfy-iPhone-unsigned-${{ github.run_number }}
-          path: build/release-input
-      - name: Verify release version, source and IPA
-        env:
-          RELEASE_TAG: ${{ steps.version.outputs.tag }}
-        run: |
-          python3 BuildTools/prepare-release.py build/release-input build/release "$RELEASE_TAG" "$(git rev-parse HEAD)"
-          python3 BuildTools/verify_ipa.py --require-signature "build/release/qMusic-${RELEASE_TAG#v}.ipa"
-      - name: Create release tag and publish GitHub Release
-        env:
-          GH_TOKEN: ${{ github.token }}
-          GH_REPO: ${{ github.repository }}
-          RELEASE_TAG: ${{ steps.version.outputs.tag }}
-        run: |
-          if git rev-parse --verify "$RELEASE_TAG^{commit}" >/dev/null 2>&1; then
-            test "$(git rev-parse "$RELEASE_TAG^{commit}")" = "$GITHUB_SHA"
-          else
-            gh api "repos/$GH_REPO/git/refs" --method POST \
-              -f "ref=refs/tags/$RELEASE_TAG" -f "sha=$GITHUB_SHA"
-          fi
-          notes="docs/releases/$RELEASE_TAG.md"
-          title="$(head -n 1 "$notes" | sed 's/^# //')"
-          flags=()
-          if [[ "$RELEASE_TAG" == *-* ]]; then
-            flags+=(--prerelease --latest=false)
-          else
-            flags+=(--latest)
-          fi
-          gh release create "$RELEASE_TAG" build/release/* \
-            --verify-tag --title "$title" --notes-file "$notes" "${flags[@]}"
