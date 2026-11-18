@@ -26,9 +26,14 @@ import UIKit
 
 @MainActor
 class LyricTableCellModel {
+  private struct CueAppearance: Equatable {
+    var brightness = 0
+    var lift = 0
+  }
+
   let lyric: LyricsLine
   weak var cell: LyricTableCell?
-  private var cueBrightness: [Int] = []
+  private var cueAppearance: [CueAppearance] = []
   private var cueTime: Int64?
   var isActiveLine = false {
     didSet { if oldValue != isActiveLine { cell?.refresh(animated: true) } }
@@ -40,6 +45,11 @@ class LyricTableCellModel {
     paragraph.lineBreakMode = .byWordWrapping
     let font = UIFontMetrics(forTextStyle: .title1).scaledFont(
       for: .systemFont(ofSize: 32, weight: .bold), maximumPointSize: 48)
+    if !lyric.cues.isEmpty {
+      // Reserve room for the lifted glyphs without moving the other baselines.
+      paragraph.minimumLineHeight = ceil(font.lineHeight) + 2
+      paragraph.maximumLineHeight = paragraph.minimumLineHeight
+    }
     return NSAttributedString(string: lyric.value.isEmpty ? "•••" : lyric.value, attributes: [
       .font: font, .foregroundColor: UIColor.white, .paragraphStyle: paragraph,
     ])
@@ -48,33 +58,38 @@ class LyricTableCellModel {
   init(lyric: LyricsLine) { self.lyric = lyric }
 
   func updateCues(at time: Int64) {
-    let levels = lyric.cues.enumerated().map { index, cue in
-      guard time >= Int64(cue.start) else { return 0 }
+    let reduceMotion = UIAccessibility.isReduceMotionEnabled
+    let appearance = lyric.cues.enumerated().map { index, cue in
+      guard time >= Int64(cue.start) else { return CueAppearance() }
+      let elapsed = Double(time) - Double(cue.start)
       let nextStart = lyric.cues.dropFirst(index + 1).first?.start
       let end = cue.end ?? nextStart
       let duration = end.map { min(240, Double($0) - Double(cue.start)) } ?? 240
-      guard duration > 0 else { return 16 }
-      let progress = min(1, (Double(time) - Double(cue.start)) / duration)
-      return Int((progress * 16).rounded())
+      let brightness = duration > 0 ? min(1, elapsed / duration) : 1
+      let lift = reduceMotion ? 0 : 1 - pow(1 - min(1, elapsed / 360), 2)
+      return CueAppearance(brightness: Int((brightness * 16).rounded()),
+                           lift: Int((lift * 16).rounded()))
     }
     let wasAdvancing = cueTime.map { time > $0 && Double(time) - Double($0) <= 160 } ?? false
     cueTime = time
-    guard levels != cueBrightness else { return }
-    cueBrightness = levels
+    guard appearance != cueAppearance else { return }
+    cueAppearance = appearance
     if isActiveLine { cell?.refreshCueHighlight(animated: wasAdvancing) }
   }
 
   func highlightedString(from baseText: NSAttributedString) -> NSAttributedString {
-    guard isActiveLine, !cueBrightness.isEmpty else { return baseText }
+    guard isActiveLine, !cueAppearance.isEmpty else { return baseText }
     let text = NSMutableAttributedString(attributedString: baseText)
     let dimAlpha: CGFloat = 0.58
     text.addAttribute(.foregroundColor, value: UIColor.white.withAlphaComponent(dimAlpha),
                       range: NSRange(location: 0, length: text.length))
-    for (cue, level) in zip(lyric.cues, cueBrightness) where
-      level > 0 && NSMaxRange(cue.range) <= text.length {
-      let alpha = dimAlpha + (1 - dimAlpha) * CGFloat(level) / 16
-      text.addAttribute(.foregroundColor, value: UIColor.white.withAlphaComponent(alpha),
-                        range: cue.range)
+    for (cue, appearance) in zip(lyric.cues, cueAppearance) where
+      (appearance.brightness > 0 || appearance.lift > 0) && NSMaxRange(cue.range) <= text.length {
+      let alpha = dimAlpha + (1 - dimAlpha) * CGFloat(appearance.brightness) / 16
+      text.addAttributes([
+        .foregroundColor: UIColor.white.withAlphaComponent(alpha),
+        .baselineOffset: 2 * CGFloat(appearance.lift) / 16,
+      ], range: cue.range)
     }
     return text
   }
@@ -129,6 +144,7 @@ class LyricTableCell: UITableViewCell {
     super.prepareForReuse()
     if viewModel?.cell === self { viewModel?.cell = nil }
     viewModel = nil
+    contentView.transform = .identity
     lyricLabel.layer.removeAllAnimations()
     blurredLyrics.layer.removeAllAnimations()
     blurredLyrics.image = nil
