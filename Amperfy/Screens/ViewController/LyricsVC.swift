@@ -58,6 +58,10 @@ class LyricsVC: UIViewController {
     lyricsView.onLyricSelected = { [weak self] lyric in
       self?.player.seek(toSecond: lyric.startTime.seconds)
     }
+    lyricsView.playbackPosition = { [weak self] in
+      guard let self, viewIfLoaded?.window != nil, player.isPlaying else { return nil }
+      return player.elapsedTime
+    }
 
     self.lyricsView = lyricsView
 

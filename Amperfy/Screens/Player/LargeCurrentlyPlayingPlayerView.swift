@@ -267,6 +267,11 @@ class LargeCurrentlyPlayingPlayerView: UIView {
     lyricsView!.onLyricSelected = { [weak self] lyric in
       self?.appDelegate.player.seek(toSecond: lyric.startTime.seconds)
     }
+    lyricsView!.playbackPosition = { [weak self] in
+      guard let self, isDisplayingLyrics, rootView?.isPlayerUIVisible == true,
+            appDelegate.player.isPlaying else { return nil }
+      return appDelegate.player.elapsedTime
+    }
     lyricsView!.onUpwardDrag = { [weak self] in
       self?.rootView?.setLyricsControlsHidden(true)
     }

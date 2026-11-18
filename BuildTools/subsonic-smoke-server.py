@@ -61,7 +61,8 @@ SCROBBLE_AUDIO = silent_audio(8)
 LYRICS = '<lyricsList><structuredLyrics lang="zh" synced="true">' + ''.join(
     f'<line start="{i * 10000}">{text}</line>' for i, text in enumerate([
         '晚风轻轻经过', '带着远方的颜色', '沿着街灯往前走', '把今天写成一首歌',
-        '让音乐陪着我', '慢慢走过每个街口', '天边的云还没散', '故事也还没有说完',
+        '&lt;00:40.00&gt;让&lt;00:41.00&gt;音&lt;00:43.00&gt;乐&lt;00:44.00&gt;陪着我&lt;00:46.00&gt;',
+        '慢慢走过每个街口', '天边的云还没散', '故事也还没有说完',
         '此刻不用着急', '听见生活的回音',
     ])) + '</structuredLyrics></lyricsList>'
 

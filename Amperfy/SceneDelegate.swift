@@ -357,14 +357,14 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
           newLyricCell.frame = CGRect(x: 0, y: 0, width: 360, height: 120)
           newLyricCell.layoutIfNeeded()
           lyricModel.isActiveLine = false
-          newLyricCell.refresh()
-          guard let blurredLyric = newLyricCell.contentView.subviews.compactMap({ $0 as? UIImageView }).first,
-                blurredLyric.image != nil, blurredLyric.alpha > 0 else {
+          newLyricCell.refreshEmphasis(animated: false)
+          let blurredLyric = newLyricCell.blurredLyrics
+          guard blurredLyric.image != nil, blurredLyric.alpha > 0 else {
             smokeLog("Inactive lyrics did not produce a visible blurred text layer")
             return
           }
           lyricModel.isActiveLine = true
-          newLyricCell.refresh()
+          newLyricCell.refreshEmphasis(animated: false)
           guard blurredLyric.alpha == 0 else {
             smokeLog("Active lyric retained its blurred text layer")
             return
@@ -1401,6 +1401,12 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
           popup.restoreLyricsControls()
           try await Task.sleep(for: .milliseconds(400))
           let heightWithControls = popup.largePlayerPlaceholderView.bounds.height
+          let timedLyricPath = IndexPath(row: 4, section: 0)
+          func timedLyricY() -> CGFloat {
+            lyricsTable.layoutIfNeeded()
+            return lyricsTable.convert(lyricsTable.rectForRow(at: timedLyricPath).origin, to: popup.view).y
+          }
+          let lyricYWithControls = timedLyricY()
           try await compositorScreenshot("player-lyrics-controls.png")
           try await Task.sleep(for: .seconds(5))
           guard popup.areLyricsControlsHidden,
@@ -1410,6 +1416,10 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
           }
           popup.largeCurrentlyPlayingView?.refreshLyricsTime(time: CMTime(seconds: 42, preferredTimescale: 1000))
           guard activeLyricIsVisible() else { smokeLog("Immersive lyrics lost their highlight"); return }
+          guard abs(lyricYWithControls - timedLyricY()) < 1 else {
+            smokeLog("The focused lyric moved when the playback controls hid")
+            return
+          }
           try await compositorScreenshot("player-lyrics-immersive.png")
           popup.restoreLyricsControls()
           try await Task.sleep(for: .seconds(1))
