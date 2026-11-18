@@ -26,24 +26,39 @@ import UIKit
 
 class LyricsView: UITableView, UITableViewDataSource, UITableViewDelegate {
   private struct ScrollTransition {
-    static let duration = 0.58
-    static let maximumDelay = 0.19
-    static let totalDuration = duration + maximumDelay
+    struct Sample {
+      let position: CGFloat
+      let velocity: CGFloat
+    }
 
-    let start: CGFloat
+    static let maximumDuration: CFTimeInterval = 1.2
+
+    let start: Sample
     let target: CGFloat
     let focusedRow: Int
-    let initialRowOffsets: [Int: CGFloat]
+    let rowStarts: [Int: Sample]
     let startTime = CACurrentMediaTime()
 
-    func offset(after elapsed: CFTimeInterval, forRow row: Int? = nil) -> CGFloat {
-      let distance = row.map { max(0, $0 - focusedRow) } ?? 0
-      let delay = Self.maximumDelay * (1 - exp(-Double(distance) / 4))
-      let fraction = min(1, max(0, (elapsed - delay) / Self.duration))
-      let progress = CGFloat(1 - pow(1 - fraction, 4) * (1 + 4 * fraction))
-      let initialOffset = row.flatMap { initialRowOffsets[$0] } ?? 0
-      let rowStart = start - initialOffset
-      return rowStart + (target - rowStart) * progress
+    func sample(after elapsed: CFTimeInterval, forRow row: Int? = nil) -> Sample {
+      let distance = CGFloat(row.map { max(0, $0 - focusedRow) } ?? 0)
+      let previous = row.flatMap { rowStarts[$0] }
+      let initial = previous ?? start
+      // A row that is already moving keeps its velocity instead of waiting for a new delay.
+      let delay = initial.velocity > 0.1 ? 0 : 0.22 * (1 - exp(-distance / 4.5))
+      let time = max(0, CGFloat(elapsed) - delay)
+      let damping = 11.3 - min(1.6, distance * 0.24)
+      let displacement = initial.position - target
+      let velocity = min(initial.velocity, max(0, -damping * displacement))
+      let coefficient = velocity + damping * displacement
+      let decay = exp(-damping * time)
+      return Sample(position: target + (displacement + coefficient * time) * decay,
+                    velocity: (velocity - damping * coefficient * time) * decay)
+    }
+
+    func hasSettled(after elapsed: CFTimeInterval) -> Bool {
+      if elapsed >= Self.maximumDuration { return true }
+      let tail = sample(after: elapsed, forRow: focusedRow + 12)
+      return abs(target - tail.position) < 0.18 && abs(tail.velocity) < 1.6
     }
   }
 
@@ -53,6 +68,7 @@ class LyricsView: UITableView, UITableViewDataSource, UITableViewDelegate {
   private var lastScrolledIndex: Int?
   private var lastPlaybackTime: CMTime?
   private var scrollTransition: ScrollTransition?
+  private var renderedScrollElapsed: CFTimeInterval = 0
   private var displayLink: CADisplayLink?
   private var scrollAnimation = true
   private var activeLinePosition: CGFloat = 0.26
@@ -77,6 +93,7 @@ class LyricsView: UITableView, UITableViewDataSource, UITableViewDelegate {
   private func commonInit() {
     register(LyricTableCell.self, forCellReuseIdentifier: LyricTableCell.typeName)
     separatorStyle = .none
+    estimatedRowHeight = 0
     backgroundColor = .clear
     showsVerticalScrollIndicator = false
     contentInsetAdjustmentBehavior = .never
@@ -124,9 +141,8 @@ class LyricsView: UITableView, UITableViewDataSource, UITableViewDelegate {
                                bottom: max(0, bounds.height * 0.91 - top), right: 0)
   }
 
-  public func display(lyrics source: StructuredLyrics, scrollAnimation: Bool, songTitle: String? = nil) {
+  public func display(lyrics: StructuredLyrics, scrollAnimation: Bool) {
     self.scrollAnimation = scrollAnimation
-    let lyrics = source.lyricsForPlayback(songTitle: songTitle)
     // Playback notifications can repeat for the same song. Keep the reading position.
     if let current = self.lyrics, current.synced == lyrics.synced,
        current.offset == lyrics.offset, current.line == lyrics.line {
@@ -178,15 +194,19 @@ class LyricsView: UITableView, UITableViewDataSource, UITableViewDelegate {
     return cell
   }
 
+  public func tableView(_ tableView: UITableView, willDisplay cell: UITableViewCell,
+                        forRowAt indexPath: IndexPath) {
+    if let cell = cell as? LyricTableCell { applyScrollLift(to: cell, row: indexPath.row) }
+  }
+
   public func tableView(_ tableView: UITableView, shouldHighlightRowAt indexPath: IndexPath) -> Bool {
-    let lyric = lyricModels[indexPath.row].lyric
-    return lyrics?.synced == true && !lyric.isInstrumentalLeadIn && lyric.start != nil
+    lyrics?.synced == true && lyricModels[indexPath.row].lyric.start != nil
   }
 
   public func tableView(_ tableView: UITableView, didSelectRowAt indexPath: IndexPath) {
     guard let lyrics, lyrics.synced else { return }
     var lyric = lyricModels[indexPath.row].lyric
-    guard !lyric.isInstrumentalLeadIn, let start = lyric.start else { return }
+    guard let start = lyric.start else { return }
     // OpenSubsonic's positive offset means the line appears earlier.
     lyric.start = max(0, start - lyrics.offset)
     stopScrollTransition()
@@ -229,45 +249,56 @@ class LyricsView: UITableView, UITableViewDataSource, UITableViewDelegate {
       if displayLink == nil, playbackPosition?() != nil { startDisplayLink() }
     }
     if index != lastIndex {
+      if let lastIndex { lyricModels[lastIndex].isActiveLine = false }
+      if let index { lyricModels[index].isActiveLine = true }
       lastIndex = index
-      for (row, model) in lyricModels.enumerated() {
-        model.updatePlaybackFocus(distance: index.map { abs(row - $0) })
-      }
     }
-    var readingRow = index
-    if let index, lyricModels[index].lyric.isInstrumentalLeadIn, scrollAnimation,
-       !UIAccessibility.isReduceMotionEnabled,
-       (timeStep > 0 && timeStep <= 0.50) || lastScrolledIndex == index + 1 {
-      let previewTime = CMTimeAdd(time, CMTime(value: 160, timescale: 1_000))
-      if lyrics.activeLineIndex(at: previewTime) == index + 1 { readingRow = index + 1 }
-    }
-    guard let index = readingRow, index != lastScrolledIndex, !isDragging, !isDecelerating,
+    let row = readingRow(active: index, in: lyrics, at: time, timeStep: timeStep)
+    guard let row, row != lastScrolledIndex, !isDragging, !isDecelerating,
           suppressAutoScrollUntil.map({ Date() >= $0 }) ?? true else { return }
     layoutIfNeeded()
-    let row = rectForRow(at: IndexPath(row: index, section: 0))
-    let target = max(-contentInset.top, row.minY - contentInset.top)
+    let rect = rectForRow(at: IndexPath(row: row, section: 0))
+    let target = max(-contentInset.top, rect.minY - contentInset.top)
     let animated = scrollAnimation && !UIAccessibility.isReduceMotionEnabled && lastScrolledIndex != nil
-    let nextLine = lastScrolledIndex.map { index == $0 + 1 } ?? false
+    let nextLine = lastScrolledIndex.map { row == $0 + 1 } ?? false
     if animated, nextLine, timeStep >= 0, timeStep <= 0.50, target > contentOffset.y, window != nil {
-      startScrollTransition(to: target, focusedRow: index)
+      startScrollTransition(to: target, focusedRow: row)
     } else {
       stopScrollTransition()
       setContentOffset(CGPoint(x: 0, y: target), animated: animated)
     }
-    lastScrolledIndex = index
+    lastScrolledIndex = row
+  }
+
+  private func readingRow(active: Int?, in lyrics: StructuredLyrics, at time: CMTime,
+                          timeStep: TimeInterval) -> Int? {
+    guard let active, scrollAnimation, !UIAccessibility.isReduceMotionEnabled,
+          lastScrolledIndex != nil, lyrics.line.indices.contains(active + 1),
+          let nextStart = lyrics.line[active + 1].start else { return active }
+    let remaining = Double(nextStart) / 1_000 - lyrics.adjustedTime(for: time).seconds
+    guard remaining > 0, remaining <= 0.15 else { return active }
+    // The row can start to glide before the beat. Highlighting still uses the actual playback time.
+    if lastScrolledIndex == active + 1 && timeStep >= 0 && timeStep <= 0.50 { return active + 1 }
+    guard timeStep > 0, timeStep <= 0.50, playbackPosition?() != nil else { return active }
+    return active + 1
   }
 
   private func startScrollTransition(to target: CGFloat, focusedRow: Int) {
-    var initialOffsets = [Int: CGFloat]()
-    if scrollTransition != nil {
+    var rowStarts = [Int: ScrollTransition.Sample]()
+    let previous = scrollTransition
+    if let previous {
       for cell in visibleCells {
         if let cell = cell as? LyricTableCell, let index = indexPath(for: cell) {
-          initialOffsets[index.row] = cell.scrollLift
+          let sample = previous.sample(after: renderedScrollElapsed, forRow: index.row)
+          rowStarts[index.row] = .init(position: contentOffset.y - cell.scrollLift, velocity: sample.velocity)
         }
       }
     }
-    scrollTransition = ScrollTransition(start: contentOffset.y, target: target, focusedRow: focusedRow,
-                                        initialRowOffsets: initialOffsets)
+    let velocity = previous?.sample(after: renderedScrollElapsed).velocity ?? 0
+    let start = ScrollTransition.Sample(position: contentOffset.y, velocity: velocity)
+    scrollTransition = ScrollTransition(start: start, target: target, focusedRow: focusedRow,
+                                        rowStarts: rowStarts)
+    renderedScrollElapsed = 0
     startDisplayLink()
   }
 
@@ -293,19 +324,31 @@ class LyricsView: UITableView, UITableViewDataSource, UITableViewDelegate {
       scroll(toTime: CMTime(seconds: seconds, preferredTimescale: 10_000))
     }
     if let transition = scrollTransition {
-      let elapsed = link.timestamp - transition.startTime
-      let finished = elapsed >= ScrollTransition.totalDuration || UIAccessibility.isReduceMotionEnabled
-      let offset = finished ? transition.target : transition.offset(after: elapsed)
-      setContentOffset(CGPoint(x: 0, y: offset), animated: false)
-      layoutIfNeeded()
-      // Hold each following lyric back by its own delay while the table follows the focused row.
-      for cell in visibleCells {
-        guard let cell = cell as? LyricTableCell, let index = indexPath(for: cell) else { continue }
-        cell.scrollLift = finished ? 0 : offset - transition.offset(after: elapsed, forRow: index.row)
+      renderedScrollElapsed = max(0, link.targetTimestamp - transition.startTime)
+      if transition.hasSettled(after: renderedScrollElapsed) || UIAccessibility.isReduceMotionEnabled {
+        setContentOffset(CGPoint(x: 0, y: transition.target), animated: false)
+        stopScrollTransition()
+      } else {
+        let offset = transition.sample(after: renderedScrollElapsed).position
+        if abs(contentOffset.y - offset) > 0.05 {
+          setContentOffset(CGPoint(x: 0, y: offset), animated: false)
+        }
+        for cell in visibleCells {
+          guard let cell = cell as? LyricTableCell, let index = indexPath(for: cell) else { continue }
+          applyScrollLift(to: cell, row: index.row)
+        }
       }
-      if finished { scrollTransition = nil }
     }
     if scrollTransition == nil, seconds == nil { stopDisplayLink() }
+  }
+
+  private func applyScrollLift(to cell: LyricTableCell, row: Int) {
+    guard let transition = scrollTransition else {
+      cell.scrollLift = 0
+      return
+    }
+    let position = transition.sample(after: renderedScrollElapsed, forRow: row).position
+    cell.scrollLift = contentOffset.y - position
   }
 
   private func stopScrollTransition() {

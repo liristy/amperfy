@@ -130,70 +130,6 @@ public struct StructuredLyrics {
       return CMTimeCompare(CMTime(value: Int64(start), timescale: 1_000), adjustedTime) <= 0
     }
   }
-
-  public func lyricsForPlayback(songTitle: String?) -> StructuredLyrics {
-    guard synced, let firstContent = line.firstIndex(where: {
-      !$0.value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-    }) else { return self }
-
-    let firstText = Self.normalizedLyricLabel(line[firstContent].value)
-    let titles = [songTitle, displayTitle].compactMap { $0 }.map(Self.normalizedLyricLabel)
-    let isTitle = titles.contains { title in
-      !title.isEmpty && (firstText == title || [" - ", " – ", " — "].contains {
-        firstText.hasSuffix($0 + title)
-      })
-    }
-    let creditsStart = firstContent + (isTitle ? 1 : 0)
-    let creditCount = line.dropFirst(creditsStart).prefix { lyric in
-      let fields = Self.normalizedLyricLabel(lyric.value).split(separator: ":", maxSplits: 1)
-      guard fields.count == 2 else { return false }
-      let role = fields[0].trimmingCharacters(in: .whitespaces)
-      return Self.creditRoles.contains(role)
-    }.count
-    let lyricsStart = creditCount > 0 ? creditsStart + creditCount : 0
-
-    var displayedLines: [LyricsLine] = []
-    var speaker: String?
-    for var lyric in line.dropFirst(lyricsStart) {
-      let text = Self.normalizedLyricLabel(lyric.value)
-      if text.hasSuffix(":"), Self.speakerRoles.contains(text.dropLast().trimmingCharacters(in: .whitespaces)) {
-        speaker = lyric.value.trimmingCharacters(in: .whitespacesAndNewlines)
-        continue
-      }
-      if !text.isEmpty, let speaker { lyric.speaker = speaker }
-      displayedLines.append(lyric)
-    }
-    guard displayedLines.contains(where: {
-      !$0.value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-    }) else { return self }
-
-    if let start = displayedLines.first?.start, Double(start) - Double(offset) >= 3_000 {
-      var intro = LyricsLine()
-      intro.start = min(0, offset)
-      intro.isInstrumentalLeadIn = true
-      displayedLines.insert(intro, at: 0)
-    }
-    var result = self
-    result.line = displayedLines
-    return result
-  }
-
-  private static let creditRoles: Set<String> = [
-    "作词", "作詞", "词", "詞", "作曲", "曲", "编曲", "編曲", "编配", "編配",
-    "制作人", "製作人", "制作", "製作", "监制", "監製", "混音", "录音", "錄音",
-    "演唱", "原唱", "词曲", "詞曲", "lyricist", "lyrics", "lyrics by", "composed by",
-    "composer", "arranged by", "arranger", "producer", "produced by",
-  ]
-
-  private static let speakerRoles: Set<String> = [
-    "男", "男声", "男聲", "女", "女声", "女聲", "合", "合唱", "male", "female", "duet", "both",
-  ]
-
-  private static func normalizedLyricLabel(_ text: String) -> String {
-    text.replacingOccurrences(of: "：", with: ":")
-      .trimmingCharacters(in: .whitespacesAndNewlines)
-      .lowercased()
-  }
 }
 
 // MARK: - LyricsLine
@@ -202,8 +138,6 @@ public struct LyricsLine: Equatable {
   public var start: Int? // The start time of the lyrics, relative to the start time of the track, in milliseconds. If this is not part of synced lyrics, start must be omitted
   public var value = "" // The actual text of this line
   public internal(set) var cues = [LyricCue]()
-  public internal(set) var speaker: String?
-  public internal(set) var isInstrumentalLeadIn = false
 
   public init() {}
   public var startTime: CMTime {

@@ -96,34 +96,6 @@ class SsLyricsBySongId2ParserTest: AbstractSsParserTest {
     ])
   }
 
-  func testPlaybackSkipsCreditsAndKeepsVocalTiming() throws {
-    let lyrics = try parseLyrics("""
-    <lyricsList>
-      <structuredLyrics synced="true" offset="125">
-        <line start="0">周杰伦、Lara梁心颐 - 珊瑚海</line>
-        <line start="5200">作词：方文山</line>
-        <line start="7000">作曲：周杰伦</line>
-        <line start="14000">男：</line>
-        <line start="15500">&lt;00:15.50&gt;海&lt;00:16.00&gt;平面</line>
-        <line start="21000">女：</line>
-        <line start="22000">你用唇语</line>
-        <line start="25000">作词：写在歌里的话</line>
-      </structuredLyrics>
-    </lyricsList>
-    """)
-    let original = try XCTUnwrap(lyrics.first)
-    let displayed = original.lyricsForPlayback(songTitle: "珊瑚海")
-    XCTAssertEqual(original.line.count, 8)
-    XCTAssertEqual(displayed.line.map(\.value), ["", "海平面", "你用唇语", "作词：写在歌里的话"])
-    XCTAssertTrue(displayed.line[0].isInstrumentalLeadIn)
-    XCTAssertEqual(displayed.line[1].speaker, "男：")
-    XCTAssertEqual(displayed.line[2].speaker, "女：")
-    XCTAssertEqual(displayed.line[1].cues.map(\.start), [15_500, 16_000])
-    XCTAssertEqual(displayed.activeLineIndex(at: CMTime(value: 15_374, timescale: 1_000)), 0)
-    XCTAssertEqual(displayed.activeLineIndex(at: CMTime(value: 15_375, timescale: 1_000)), 1)
-    XCTAssertEqual(displayed.lyricsForPlayback(songTitle: "珊瑚海").line, displayed.line)
-  }
-
   func testActiveLineAtBoundariesAndAfterFinalLine() {
     var lyrics = StructuredLyrics()
     lyrics.synced = true

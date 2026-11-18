@@ -34,7 +34,7 @@ class LyricTableCellModel {
   weak var cell: LyricTableCell?
   fileprivate private(set) var cueAppearance: [LyricCueAppearance] = []
   private let cueDurations: [Double]
-  private(set) var surroundingOpacity: CGFloat = 0.28
+  private var measuredHeight: (width: CGFloat, fontSize: CGFloat, height: CGFloat)?
   var isActiveLine = false {
     didSet { if oldValue != isActiveLine { cell?.refreshEmphasis(animated: true) } }
   }
@@ -43,13 +43,8 @@ class LyricTableCellModel {
     let paragraph = NSMutableParagraphStyle()
     paragraph.lineSpacing = 5
     paragraph.lineBreakMode = .byWordWrapping
-    if let speaker = lyric.speaker?.lowercased(),
-       speaker.hasPrefix("女") || speaker.hasPrefix("female") {
-      paragraph.alignment = .right
-    }
-    let pointSize: CGFloat = lyric.isInstrumentalLeadIn ? 22 : 32
     let font = UIFontMetrics(forTextStyle: .title1).scaledFont(
-      for: .systemFont(ofSize: pointSize, weight: .bold), maximumPointSize: 48)
+      for: .systemFont(ofSize: 32, weight: .bold), maximumPointSize: 48)
     return NSAttributedString(string: lyric.value.isEmpty ? "•••" : lyric.value, attributes: [
       .font: font, .foregroundColor: UIColor.white, .paragraphStyle: paragraph,
     ])
@@ -60,17 +55,6 @@ class LyricTableCellModel {
     cueDurations = lyric.cues.enumerated().map { index, cue in
       let nextStart = lyric.cues.dropFirst(index + 1).first?.start ?? nextLineStart
       return (cue.end ?? nextStart).map { max(0, Double($0) - Double(cue.start)) } ?? 300
-    }
-  }
-
-  func updatePlaybackFocus(distance: Int?) {
-    let opacity = distance.map { 0.25 + 0.14 / (1 + CGFloat($0) * 0.40) } ?? 0.28
-    let contextChanged = surroundingOpacity != opacity
-    surroundingOpacity = opacity
-    if isActiveLine != (distance == 0) {
-      isActiveLine = distance == 0
-    } else if contextChanged, !isActiveLine {
-      cell?.refreshEmphasis(animated: true)
     }
   }
 
@@ -90,9 +74,15 @@ class LyricTableCellModel {
   }
 
   func calcHeight(containerWidth: CGFloat) -> CGFloat {
-    ceil(displayString.boundingRect(
+    let fontSize = UIFont.preferredFont(forTextStyle: .title1).pointSize
+    if let measuredHeight, measuredHeight.width == containerWidth, measuredHeight.fontSize == fontSize {
+      return measuredHeight.height
+    }
+    let height = ceil(displayString.boundingRect(
       with: CGSize(width: max(1, containerWidth - 16), height: 10_000),
       options: [.usesLineFragmentOrigin, .usesFontLeading], context: nil).height)
+    measuredHeight = (containerWidth, fontSize, height)
+    return height
   }
 }
 
@@ -253,7 +243,10 @@ class LyricTableCell: UITableViewCell {
 
   var scrollLift: CGFloat {
     get { motionContent.transform.ty }
-    set { motionContent.transform = CGAffineTransform(translationX: 0, y: newValue) }
+    set {
+      guard abs(scrollLift - newValue) > 0.025 || (newValue == 0 && scrollLift != 0) else { return }
+      motionContent.transform = CGAffineTransform(translationX: 0, y: newValue)
+    }
   }
 
   override init(style: UITableViewCell.CellStyle, reuseIdentifier: String?) {
@@ -311,11 +304,7 @@ class LyricTableCell: UITableViewCell {
     let text = model.displayString
     baseText = text
     lyricView.display(text: text, cues: model.lyric.cues)
-    if model.lyric.isInstrumentalLeadIn {
-      accessibilityLabel = "Instrumental".localized
-    } else {
-      accessibilityLabel = [model.lyric.speaker, model.lyric.value].compactMap { $0 }.joined(separator: " ")
-    }
+    accessibilityLabel = model.lyric.value
     refreshEmphasis(animated: false)
     setNeedsLayout()
   }
@@ -335,14 +324,12 @@ class LyricTableCell: UITableViewCell {
 
   private func updateAlpha(animated: Bool) {
     guard let model = viewModel else { return }
-    let focusedAlpha: CGFloat = model.lyric.isInstrumentalLeadIn ? 0.46 : 1
     let changes = {
-      self.lyricView.alpha = model.isActiveLine ? focusedAlpha :
-        (self.blurredLyrics.image == nil ? model.surroundingOpacity : 0)
-      self.blurredLyrics.alpha = model.isActiveLine ? 0 : model.surroundingOpacity
+      self.lyricView.alpha = model.isActiveLine ? 1 : (self.blurredLyrics.image == nil ? 0.30 : 0)
+      self.blurredLyrics.alpha = model.isActiveLine ? 0 : 0.39
     }
     if animated, !UIAccessibility.isReduceMotionEnabled {
-      UIView.animate(withDuration: 0.52, delay: 0,
+      UIView.animate(withDuration: 0.40, delay: 0,
                      options: [.curveEaseInOut, .beginFromCurrentState, .allowUserInteraction],
                      animations: changes)
     } else { changes() }
