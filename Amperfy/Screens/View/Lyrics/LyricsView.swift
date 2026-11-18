@@ -30,6 +30,7 @@ class LyricsView: UITableView, UITableViewDataSource, UITableViewDelegate {
   private var lastIndex: Int?
   private var lastScrolledIndex: Int?
   private var scrollAnimation = true
+  private var activeLinePosition: CGFloat = 0.26
   private var suppressAutoScrollUntil: Date?
   private let edgeMask = CAGradientLayer()
   private var previousSize: CGSize = .zero
@@ -70,8 +71,7 @@ class LyricsView: UITableView, UITableViewDataSource, UITableViewDelegate {
     guard bounds.size != previousSize else { return }
     let widthChanged = bounds.width != previousSize.width
     previousSize = bounds.size
-    contentInset = UIEdgeInsets(top: bounds.height * 0.26, left: 0,
-                               bottom: bounds.height * 0.65, right: 0)
+    updateContentInset()
     // Only a width change affects line wrapping. Hiding the controls animates
     // height every frame; rebuilding all cells there interrupts highlighting.
     if widthChanged { reloadData() }
@@ -79,15 +79,21 @@ class LyricsView: UITableView, UITableViewDataSource, UITableViewDelegate {
     if lastIndex == nil { setContentOffset(CGPoint(x: 0, y: -contentInset.top), animated: false) }
   }
 
+  private func updateContentInset() {
+    contentInset = UIEdgeInsets(top: bounds.height * activeLinePosition, left: 0,
+                               bottom: bounds.height * (0.91 - activeLinePosition), right: 0)
+  }
+
   public func display(lyrics: StructuredLyrics, scrollAnimation: Bool) {
     self.scrollAnimation = scrollAnimation
     // Playback notifications can repeat for the same song. Keep the reading position.
     if let current = self.lyrics, current.synced == lyrics.synced,
-       current.offset == lyrics.offset, current.line.count == lyrics.line.count,
-       zip(current.line, lyrics.line).allSatisfy({ $0.0.start == $0.1.start && $0.0.value == $0.1.value }) {
+       current.offset == lyrics.offset, current.line == lyrics.line {
       return
     }
     self.lyrics = lyrics
+    activeLinePosition = lyrics.line.contains { !$0.cues.isEmpty } ? 0.12 : 0.26
+    updateContentInset()
     lyricModels = lyrics.line.map {
       let model = LyricTableCellModel(lyric: $0)
       model.isActiveLine = !lyrics.synced
@@ -125,12 +131,13 @@ class LyricsView: UITableView, UITableViewDataSource, UITableViewDelegate {
   }
 
   public func tableView(_ tableView: UITableView, shouldHighlightRowAt indexPath: IndexPath) -> Bool {
-    lyrics?.synced == true && lyricModels[indexPath.row].lyric?.start != nil
+    lyrics?.synced == true && lyricModels[indexPath.row].lyric.start != nil
   }
 
   public func tableView(_ tableView: UITableView, didSelectRowAt indexPath: IndexPath) {
-    guard let lyrics, lyrics.synced, var lyric = lyricModels[indexPath.row].lyric,
-          let start = lyric.start else { return }
+    guard let lyrics, lyrics.synced else { return }
+    var lyric = lyricModels[indexPath.row].lyric
+    guard let start = lyric.start else { return }
     // OpenSubsonic's positive offset means the line appears earlier.
     lyric.start = max(0, start - lyrics.offset)
     suppressAutoScrollUntil = nil
@@ -162,6 +169,12 @@ class LyricsView: UITableView, UITableViewDataSource, UITableViewDelegate {
   func scroll(toTime time: CMTime) {
     guard let lyrics, lyrics.synced, !lyricModels.isEmpty else { return }
     let index = lyrics.activeLineIndex(at: time)
+    if let index, !lyricModels[index].lyric.cues.isEmpty {
+      let adjustedTime = lyrics.adjustedTime(for: time)
+      let milliseconds = CMTimeConvertScale(adjustedTime, timescale: 1_000,
+                                            method: .roundTowardNegativeInfinity).value
+      lyricModels[index].updateCues(at: milliseconds)
+    }
     if index != lastIndex {
       if let lastIndex { lyricModels[lastIndex].isActiveLine = false }
       if let index { lyricModels[index].isActiveLine = true }
@@ -171,7 +184,7 @@ class LyricsView: UITableView, UITableViewDataSource, UITableViewDelegate {
           suppressAutoScrollUntil.map({ Date() >= $0 }) ?? true else { return }
     layoutIfNeeded()
     let row = rectForRow(at: IndexPath(row: index, section: 0))
-    let target = max(-contentInset.top, row.minY - bounds.height * 0.26)
+    let target = max(-contentInset.top, row.minY - contentInset.top)
     let animated = scrollAnimation && !UIAccessibility.isReduceMotionEnabled && lastScrolledIndex != nil
     setContentOffset(CGPoint(x: 0, y: target), animated: animated)
     lastScrolledIndex = index

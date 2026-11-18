@@ -34,6 +34,68 @@ class SsLyricsBySongId2ParserTest: AbstractSsParserTest {
     ssParserDelegate = SsLyricsParserDelegate(performanceMonitor: MOCK_PerformanceMonitor())
   }
 
+  private func parseLyrics(_ xml: String) throws -> [StructuredLyrics] {
+    let delegate = SsLyricsParserDelegate(performanceMonitor: MOCK_PerformanceMonitor())
+    let parser = XMLParser(data: Data(xml.utf8))
+    parser.delegate = delegate
+    XCTAssertTrue(parser.parse())
+    return try XCTUnwrap(delegate.lyricsList?.lyrics)
+  }
+
+  func testEnhancedLyricsUseInclusiveUTF8Offsets() throws {
+    let lyrics = try parseLyrics("""
+    <lyricsList>
+      <structuredLyrics lang="zh" synced="true" kind="translation">
+        <line start="1000">翻译</line>
+      </structuredLyrics>
+      <structuredLyrics lang="zh" synced="true" kind="main" offset="100">
+        <line start="1050">你 love love 😀</line>
+        <line start="3000">No word timings</line>
+        <cueLine index="0" value="你 love love 😀">
+          <cue start="1000" end="1200" byteStart="0" byteEnd="2">你</cue>
+          <cue start="1350" end="1800" byteStart="9" byteEnd="12">love</cue>
+          <cue start="2000" end="2500" byteStart="14" byteEnd="17">😀</cue>
+          <cue start="2700" byteStart="1" byteEnd="2">Invalid UTF-8 boundary</cue>
+        </cueLine>
+      </structuredLyrics>
+    </lyricsList>
+    """)
+    XCTAssertEqual(lyrics.count, 1)
+    let main = try XCTUnwrap(lyrics.first)
+    let line = try XCTUnwrap(main.line.first)
+    XCTAssertEqual(line.start, 1000)
+    XCTAssertEqual(line.value, "你 love love 😀")
+    XCTAssertEqual(line.cues.map(\.start), [1000, 1350, 2000])
+    XCTAssertEqual(line.cues.map(\.end), [1200, 1800, 2500])
+    XCTAssertEqual(line.cues.map(\.range), [
+      NSRange(location: 0, length: 1),
+      NSRange(location: 7, length: 4),
+      NSRange(location: 12, length: 2),
+    ])
+    XCTAssertTrue(main.line.last?.cues.isEmpty == true)
+    let time = CMTime(value: 1250, timescale: 1000)
+    XCTAssertEqual(main.adjustedTime(for: time), CMTime(value: 1350, timescale: 1000))
+  }
+
+  func testInlineEnhancedLRCKeepsTextAndTrailingEndTime() throws {
+    let lyrics = try parseLyrics("""
+    <lyricsList>
+      <structuredLyrics synced="true">
+        <line start="1000">你&lt;00:01.25&gt;好&lt;00:01.750&gt;</line>
+        <line start="2000"><value><![CDATA[<00:02.0>Sing <00:02.36>along]]></value></line>
+      </structuredLyrics>
+    </lyricsList>
+    """)
+    let lines = try XCTUnwrap(lyrics.first?.line)
+    XCTAssertEqual(lines.map(\.value), ["你好", "Sing along"])
+    XCTAssertEqual(lines.first?.cues.map(\.start), [1000, 1250])
+    XCTAssertEqual(lines.first?.cues.map(\.end), [1250, 1750])
+    XCTAssertEqual(lines.last?.cues.map(\.start), [2000, 2360])
+    XCTAssertEqual(lines.last?.cues.map(\.range), [
+      NSRange(location: 0, length: 5), NSRange(location: 5, length: 5),
+    ])
+  }
+
   func testActiveLineAtBoundariesAndAfterFinalLine() {
     var lyrics = StructuredLyrics()
     lyrics.synced = true

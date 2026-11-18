@@ -531,12 +531,18 @@ final class SubsonicServerApi: URLCleanser, Sendable {
 
   /// this requires that the server supports OpenSubsonicExtension "songLyrics"
   public func requestLyricsBySongId(id: String) async throws -> APIDataResponse {
-    try await request { version in
-      let urlComp = try self.createAuthApiUrlComponent(
+    let extensionResponse = openSubsonicExtensionsSupport.wrappedValue?.extensionResponse
+    let supportsEnhancedLyrics = extensionResponse?
+      .extensionVersions[OpenSubsonicExtension.songLyrics.rawValue]?.contains(2) == true
+    return try await request { version in
+      var urlComp = try self.createAuthApiUrlComponent(
         version: version,
         forAction: "getLyricsBySongId",
         id: id
       )
+      if supportsEnhancedLyrics {
+        urlComp.addQueryItem(name: "enhanced", value: "true")
+      }
       return try self.createUrl(from: urlComp)
     }
   }

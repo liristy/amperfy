@@ -33,6 +33,26 @@ class SsOpenSubsonicExtensionsParserTest: AbstractSsParserTest {
       SsOpenSubsonicExtensionsParserDelegate(performanceMonitor: MOCK_PerformanceMonitor())
   }
 
+  func testParsesMultipleLyricsExtensionVersions() {
+    let delegate = SsOpenSubsonicExtensionsParserDelegate(
+      performanceMonitor: MOCK_PerformanceMonitor()
+    )
+    let xml = """
+    <subsonic-response>
+      <openSubsonicExtensions name="songLyrics">
+        <versions>1</versions><versions>2</versions>
+      </openSubsonicExtensions>
+      <openSubsonicExtensions name="transcodeOffset"><versions>1</versions></openSubsonicExtensions>
+    </subsonic-response>
+    """
+    let parser = XMLParser(data: Data(xml.utf8))
+    parser.delegate = delegate
+    XCTAssertTrue(parser.parse())
+    let response = delegate.openSubsonicExtensionsResponse
+    XCTAssertEqual(response.extensionVersions["songLyrics"], [1, 2])
+    XCTAssertEqual(response.extensionVersions["transcodeOffset"], [1])
+  }
+
   override func checkCorrectParsing() {
     guard let extensionsParser = ssParserDelegate as? SsOpenSubsonicExtensionsParserDelegate
     else {

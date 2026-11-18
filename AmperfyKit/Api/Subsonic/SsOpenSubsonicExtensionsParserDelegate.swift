@@ -32,12 +32,14 @@ public struct OpenSubsonicExtensionsResponse {
   public var serverVersion = ""
   public var openSubsonic: Bool?
   public var supportedExtensions = [String]()
+  var extensionVersions = [String: Set<Int>]()
 }
 
 // MARK: - SsOpenSubsonicExtensionsParserDelegate
 
 class SsOpenSubsonicExtensionsParserDelegate: SsXmlParser {
   public var openSubsonicExtensionsResponse = OpenSubsonicExtensionsResponse()
+  private var extensionName: String?
 
   override func parser(
     _ parser: XMLParser,
@@ -65,9 +67,25 @@ class SsOpenSubsonicExtensionsParserDelegate: SsXmlParser {
         openSubsonicExtensionsResponse.openSubsonic = false
       }
     } else if elementName == "openSubsonicExtensions" {
-      if let name = attributeDict["name"] {
+      extensionName = attributeDict["name"]
+      if let name = extensionName {
         openSubsonicExtensionsResponse.supportedExtensions.append(name)
       }
     }
+  }
+
+  override func parser(
+    _ parser: XMLParser,
+    didEndElement elementName: String,
+    namespaceURI: String?,
+    qualifiedName qName: String?
+  ) {
+    if elementName == "versions", let extensionName,
+       let version = Int(buffer.trimmingCharacters(in: .whitespacesAndNewlines)) {
+      openSubsonicExtensionsResponse.extensionVersions[extensionName, default: []].insert(version)
+    } else if elementName == "openSubsonicExtensions" {
+      extensionName = nil
+    }
+    super.parser(parser, didEndElement: elementName, namespaceURI: namespaceURI, qualifiedName: qName)
   }
 }

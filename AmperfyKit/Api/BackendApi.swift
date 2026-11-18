@@ -118,9 +118,13 @@ public struct StructuredLyrics {
     0 // The offset to apply to all lyrics, in milliseconds. Positive means lyrics appear sooner, negative means later. If not included, the offset must be assumed to be 0
   public init() {}
 
+  public func adjustedTime(for time: CMTime) -> CMTime {
+    CMTimeAdd(time, CMTime(value: Int64(offset), timescale: 1_000))
+  }
+
   public func activeLineIndex(at time: CMTime) -> Int? {
     guard synced, time.seconds.isFinite else { return nil }
-    let adjustedTime = CMTimeAdd(time, CMTime(value: Int64(offset), timescale: 1_000))
+    let adjustedTime = self.adjustedTime(for: time)
     return line.lastIndex { lyric in
       guard let start = lyric.start else { return false }
       return CMTimeCompare(CMTime(value: Int64(start), timescale: 1_000), adjustedTime) <= 0
@@ -130,15 +134,22 @@ public struct StructuredLyrics {
 
 // MARK: - LyricsLine
 
-public struct LyricsLine {
+public struct LyricsLine: Equatable {
   public var start: Int? // The start time of the lyrics, relative to the start time of the track, in milliseconds. If this is not part of synced lyrics, start must be omitted
   public var value = "" // The actual text of this line
+  public internal(set) var cues = [LyricCue]()
 
   public init() {}
   public var startTime: CMTime {
     guard let start = start else { return CMTime(value: Int64(0), timescale: 1) }
     return CMTime(value: Int64(start), timescale: 1_000)
   }
+}
+
+public struct LyricCue: Equatable {
+  public let start: Int
+  public let end: Int?
+  public let range: NSRange // UTF-16 range in LyricsLine.value
 }
 
 // MARK: - LibrarySyncer

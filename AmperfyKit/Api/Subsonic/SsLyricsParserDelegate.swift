@@ -19,15 +19,40 @@
 //  along with this program.  If not, see <http://www.gnu.org/licenses/>.
 //
 
-import CoreData
 import Foundation
-import UIKit
 
 class SsLyricsParserDelegate: SsXmlParser {
+  private struct CueLine {
+    let index: Int
+    let value: String
+    var cues = [LyricCue]()
+
+    mutating func appendCue(attributes: [String: String]) {
+      let utf8 = value.utf8
+      let utf16 = value.utf16
+      guard let start = attributes["start"].flatMap(Int.init), start >= 0,
+            let firstByte = attributes["byteStart"].flatMap(Int.init),
+            let lastByte = attributes["byteEnd"].flatMap(Int.init),
+            firstByte >= 0, firstByte <= lastByte, lastByte < utf8.count,
+            let lower = utf8.index(utf8.startIndex, offsetBy: firstByte).samePosition(in: utf16),
+            let upper = utf8.index(utf8.startIndex, offsetBy: lastByte + 1).samePosition(in: utf16)
+      else { return }
+
+      let end = attributes["end"].flatMap(Int.init)
+      guard end.map({ $0 >= start }) ?? true else { return }
+      let range = NSRange(location: utf16.distance(from: utf16.startIndex, to: lower),
+                          length: utf16.distance(from: lower, to: upper))
+      cues.append(LyricCue(start: start, end: end, range: range))
+    }
+  }
+
   public var lyricsList: LyricsList?
   private var structuredLyrics: StructuredLyrics?
+  private var kind: String?
   private var lines: [LyricsLine]?
   private var currentLine: LyricsLine?
+  private var cueLines = [Int: [CueLine]]()
+  private var currentCueLine: CueLine?
 
   override func parser(
     _ parser: XMLParser,
@@ -51,6 +76,9 @@ class SsLyricsParserDelegate: SsXmlParser {
       currentLine = nil
     } else if elementName == "structuredLyrics" {
       structuredLyrics = StructuredLyrics()
+      kind = attributeDict["kind"]
+      cueLines.removeAll()
+      currentCueLine = nil
       structuredLyrics?.displayArtist = attributeDict["displayArtist"]
       structuredLyrics?.displayTitle = attributeDict["displayTitle"]
       structuredLyrics?.lang = attributeDict["lang"] ?? ""
@@ -72,7 +100,18 @@ class SsLyricsParserDelegate: SsXmlParser {
       if let startStr = attributeDict["start"], let startInt = Int(startStr) {
         currentLine?.start = startInt
       }
+    } else if elementName == "cueLine" {
+      if let index = attributeDict["index"].flatMap(Int.init),
+         let value = attributeDict["value"] {
+        currentCueLine = CueLine(index: index, value: value)
+      }
+    } else if elementName == "cue" {
+      currentCueLine?.appendCue(attributes: attributeDict)
     }
+  }
+
+  @objc func parser(_ parser: XMLParser, foundCDATA data: Data) {
+    if let text = String(data: data, encoding: .utf8) { buffer.append(text) }
   }
 
   override func parser(
@@ -85,11 +124,18 @@ class SsLyricsParserDelegate: SsXmlParser {
       curLine.value = buffer
       lines?.append(curLine)
       currentLine = nil
+    } else if elementName == "cueLine", let currentCueLine {
+      cueLines[currentCueLine.index, default: []].append(currentCueLine)
+      self.currentCueLine = nil
     } else if elementName == "structuredLyrics", var curStructuredLyrics = structuredLyrics {
-      if let curLines = lines {
-        curStructuredLyrics.line = curLines
+      // The player displays the main lyric track, as in the version 1 response.
+      if kind == nil || kind == "main" {
+        curStructuredLyrics.line = (lines ?? []).enumerated().map { index, line in
+          guard curStructuredLyrics.synced else { return line }
+          return timedLine(line, cueLines: cueLines[index] ?? [])
+        }
+        lyricsList?.lyrics.append(curStructuredLyrics)
       }
-      lyricsList?.lyrics.append(curStructuredLyrics)
       structuredLyrics = nil
       lines = nil
     }
@@ -100,5 +146,68 @@ class SsLyricsParserDelegate: SsXmlParser {
       namespaceURI: namespaceURI,
       qualifiedName: qName
     )
+  }
+
+  private func timedLine(_ line: LyricsLine, cueLines: [CueLine]) -> LyricsLine {
+    var line = line
+    // Parallel vocal layers may use different text. Keep the combined line if
+    // none of the layers describes the exact string the player can highlight.
+    let cueLine = cueLines.count == 1 ? cueLines.first : cueLines.first {
+      $0.value.utf8.elementsEqual(line.value.utf8) && !$0.cues.isEmpty
+    }
+    if let cueLine, !cueLine.cues.isEmpty {
+      line.value = cueLine.value
+      line.cues = cueLine.cues
+    } else {
+      line.parseEnhancedLRC()
+    }
+    if let firstCueStart = line.cues.map(\.start).min() {
+      line.start = min(line.start ?? firstCueStart, firstCueStart)
+    }
+    return line
+  }
+}
+
+private extension LyricsLine {
+  static let wordTimestamp = try! NSRegularExpression(
+    pattern: #"<(?:([0-9]{1,3}):)?([0-9]{1,6}):([0-5][0-9])(?:[.:]([0-9]{1,3}))?>"#
+  )
+
+  mutating func parseEnhancedLRC() {
+    let source = value as NSString
+    let timestamps = Self.wordTimestamp.matches(in: value, range: NSRange(location: 0, length: source.length))
+    guard !timestamps.isEmpty else { return }
+    var text = ""
+    var textLength = 0
+    var position = 0
+    var cueStart = start
+
+    func appendText(until end: Int, cueEnd: Int?) {
+      let segment = source.substring(with: NSRange(location: position, length: end - position))
+      let length = end - position
+      if let cueStart, !segment.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+        let range = NSRange(location: textLength, length: length)
+        let endTime = cueEnd.flatMap { $0 >= cueStart ? $0 : nil }
+        cues.append(LyricCue(start: cueStart, end: endTime, range: range))
+      }
+      text.append(segment)
+      textLength += length
+    }
+
+    for timestamp in timestamps {
+      func group(_ index: Int) -> String {
+        let range = timestamp.range(at: index)
+        return range.location == NSNotFound ? "" : source.substring(with: range)
+      }
+      let hours = Int(group(1)) ?? 0
+      guard let minutes = Int(group(2)), let seconds = Int(group(3)) else { continue }
+      let fraction = group(4).padding(toLength: 3, withPad: "0", startingAt: 0)
+      let milliseconds = ((hours * 60 + minutes) * 60 + seconds) * 1_000 + (Int(fraction) ?? 0)
+      appendText(until: timestamp.range.location, cueEnd: milliseconds)
+      cueStart = milliseconds
+      position = NSMaxRange(timestamp.range)
+    }
+    appendText(until: source.length, cueEnd: nil)
+    value = text
   }
 }

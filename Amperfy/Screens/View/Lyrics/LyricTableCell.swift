@@ -26,8 +26,10 @@ import UIKit
 
 @MainActor
 class LyricTableCellModel {
-  let lyric: LyricsLine?
+  let lyric: LyricsLine
   weak var cell: LyricTableCell?
+  private var cueBrightness: [Int] = []
+  private var cueTime: Int64?
   var isActiveLine = false {
     didSet { if oldValue != isActiveLine { cell?.refresh(animated: true) } }
   }
@@ -38,12 +40,44 @@ class LyricTableCellModel {
     paragraph.lineBreakMode = .byWordWrapping
     let font = UIFontMetrics(forTextStyle: .title1).scaledFont(
       for: .systemFont(ofSize: 32, weight: .bold), maximumPointSize: 48)
-    return NSAttributedString(string: lyric?.value.isEmpty == false ? lyric!.value : "•••", attributes: [
+    return NSAttributedString(string: lyric.value.isEmpty ? "•••" : lyric.value, attributes: [
       .font: font, .foregroundColor: UIColor.white, .paragraphStyle: paragraph,
     ])
   }
 
   init(lyric: LyricsLine) { self.lyric = lyric }
+
+  func updateCues(at time: Int64) {
+    let levels = lyric.cues.enumerated().map { index, cue in
+      guard time >= Int64(cue.start) else { return 0 }
+      let nextStart = lyric.cues.dropFirst(index + 1).first?.start
+      let end = cue.end ?? nextStart
+      let duration = end.map { min(240, Double($0) - Double(cue.start)) } ?? 240
+      guard duration > 0 else { return 16 }
+      let progress = min(1, (Double(time) - Double(cue.start)) / duration)
+      return Int((progress * 16).rounded())
+    }
+    let wasAdvancing = cueTime.map { time > $0 && Double(time) - Double($0) <= 160 } ?? false
+    cueTime = time
+    guard levels != cueBrightness else { return }
+    cueBrightness = levels
+    if isActiveLine { cell?.refreshCueHighlight(animated: wasAdvancing) }
+  }
+
+  func highlightedString(from baseText: NSAttributedString) -> NSAttributedString {
+    guard isActiveLine, !cueBrightness.isEmpty else { return baseText }
+    let text = NSMutableAttributedString(attributedString: baseText)
+    let dimAlpha: CGFloat = 0.58
+    text.addAttribute(.foregroundColor, value: UIColor.white.withAlphaComponent(dimAlpha),
+                      range: NSRange(location: 0, length: text.length))
+    for (cue, level) in zip(lyric.cues, cueBrightness) where
+      level > 0 && NSMaxRange(cue.range) <= text.length {
+      let alpha = dimAlpha + (1 - dimAlpha) * CGFloat(level) / 16
+      text.addAttribute(.foregroundColor, value: UIColor.white.withAlphaComponent(alpha),
+                        range: cue.range)
+    }
+    return text
+  }
 
   func calcHeight(containerWidth: CGFloat) -> CGFloat {
     ceil(displayString.boundingRect(
@@ -57,6 +91,7 @@ class LyricTableCell: UITableViewCell {
   private let lyricLabel = UILabel()
   private let blurredLyrics = UIImageView()
   private static let blurContext = CIContext(options: [.cacheIntermediates: false])
+  private var baseText: NSAttributedString?
   private var renderedText: NSAttributedString?
   private var renderedSize: CGSize = .zero
   private var renderedScale: CGFloat = 0
@@ -97,6 +132,7 @@ class LyricTableCell: UITableViewCell {
     lyricLabel.layer.removeAllAnimations()
     blurredLyrics.layer.removeAllAnimations()
     blurredLyrics.image = nil
+    baseText = nil
     renderedText = nil
   }
 
@@ -113,12 +149,26 @@ class LyricTableCell: UITableViewCell {
 
   func refresh(animated: Bool = false) {
     guard let model = viewModel else { return }
-    lyricLabel.attributedText = model.displayString
-    accessibilityLabel = model.lyric?.value
+    baseText = model.displayString
+    refreshCueHighlight()
+    accessibilityLabel = model.lyric.value
     accessibilityTraits = model.isActiveLine ? [.staticText, .selected] : .staticText
     _ = renderBlurredLyricsIfNeeded()
     updateEmphasis(animated: animated)
     setNeedsLayout()
+  }
+
+  func refreshCueHighlight(animated: Bool = false) {
+    guard let model = viewModel, let baseText else { return }
+    if animated, !UIAccessibility.isReduceMotionEnabled {
+      let transition = CATransition()
+      transition.type = .fade
+      transition.duration = 0.09
+      lyricLabel.layer.add(transition, forKey: "lyricCueHighlight")
+    } else {
+      lyricLabel.layer.removeAnimation(forKey: "lyricCueHighlight")
+    }
+    lyricLabel.attributedText = model.highlightedString(from: baseText)
   }
 
   private func updateEmphasis(animated: Bool) {
@@ -136,7 +186,8 @@ class LyricTableCell: UITableViewCell {
   // Playback emphasis crossfades these two layers without rerunning the filter.
   @discardableResult
   private func renderBlurredLyricsIfNeeded() -> Bool {
-    guard UIApplication.shared.applicationState == .active else { return false }
+    guard viewModel?.isActiveLine == false, UIApplication.shared.applicationState == .active
+    else { return false }
     guard let text = lyricLabel.attributedText,
           lyricLabel.bounds.width > 0, lyricLabel.bounds.height > 0 else { return false }
     let size = lyricLabel.bounds.size
