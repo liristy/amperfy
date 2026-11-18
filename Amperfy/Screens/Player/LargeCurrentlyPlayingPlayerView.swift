@@ -492,7 +492,8 @@ class LargeCurrentlyPlayingPlayerView: UIView {
   private func showLyrics(structuredLyrics: StructuredLyrics) {
     lyricsView?.display(
       lyrics: structuredLyrics,
-      scrollAnimation: appDelegate.storage.settings.user.isLyricsSmoothScrolling
+      scrollAnimation: appDelegate.storage.settings.user.isLyricsSmoothScrolling,
+      songTitle: appDelegate.player.currentlyPlaying?.title
     )
     lyricsView?.isHidden = false
     lyricsView?.scroll(toTime: CMTime(seconds: appDelegate.player.elapsedTime, preferredTimescale: 1000))

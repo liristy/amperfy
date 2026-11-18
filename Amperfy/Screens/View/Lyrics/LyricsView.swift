@@ -26,10 +26,9 @@ import UIKit
 
 class LyricsView: UITableView, UITableViewDataSource, UITableViewDelegate {
   private struct ScrollTransition {
-    static let duration = 0.51
-    static let rowDelay = 0.044
-    static let delayedRows = 4
-    static let totalDuration = duration + rowDelay * Double(delayedRows)
+    static let duration = 0.58
+    static let maximumDelay = 0.19
+    static let totalDuration = duration + maximumDelay
 
     let start: CGFloat
     let target: CGFloat
@@ -38,10 +37,10 @@ class LyricsView: UITableView, UITableViewDataSource, UITableViewDelegate {
     let startTime = CACurrentMediaTime()
 
     func offset(after elapsed: CFTimeInterval, forRow row: Int? = nil) -> CGFloat {
-      let delayedRow = row.map { min(max(0, $0 - focusedRow), Self.delayedRows) } ?? 0
-      let delay = Double(delayedRow) * Self.rowDelay
+      let distance = row.map { max(0, $0 - focusedRow) } ?? 0
+      let delay = Self.maximumDelay * (1 - exp(-Double(distance) / 4))
       let fraction = min(1, max(0, (elapsed - delay) / Self.duration))
-      let progress = CGFloat(1 - pow(1 - fraction, 3) * (1 + 2 * fraction))
+      let progress = CGFloat(1 - pow(1 - fraction, 4) * (1 + 4 * fraction))
       let initialOffset = row.flatMap { initialRowOffsets[$0] } ?? 0
       let rowStart = start - initialOffset
       return rowStart + (target - rowStart) * progress
@@ -125,8 +124,9 @@ class LyricsView: UITableView, UITableViewDataSource, UITableViewDelegate {
                                bottom: max(0, bounds.height * 0.91 - top), right: 0)
   }
 
-  public func display(lyrics: StructuredLyrics, scrollAnimation: Bool) {
+  public func display(lyrics source: StructuredLyrics, scrollAnimation: Bool, songTitle: String? = nil) {
     self.scrollAnimation = scrollAnimation
+    let lyrics = source.lyricsForPlayback(songTitle: songTitle)
     // Playback notifications can repeat for the same song. Keep the reading position.
     if let current = self.lyrics, current.synced == lyrics.synced,
        current.offset == lyrics.offset, current.line == lyrics.line {
@@ -179,13 +179,14 @@ class LyricsView: UITableView, UITableViewDataSource, UITableViewDelegate {
   }
 
   public func tableView(_ tableView: UITableView, shouldHighlightRowAt indexPath: IndexPath) -> Bool {
-    lyrics?.synced == true && lyricModels[indexPath.row].lyric.start != nil
+    let lyric = lyricModels[indexPath.row].lyric
+    return lyrics?.synced == true && !lyric.isInstrumentalLeadIn && lyric.start != nil
   }
 
   public func tableView(_ tableView: UITableView, didSelectRowAt indexPath: IndexPath) {
     guard let lyrics, lyrics.synced else { return }
     var lyric = lyricModels[indexPath.row].lyric
-    guard let start = lyric.start else { return }
+    guard !lyric.isInstrumentalLeadIn, let start = lyric.start else { return }
     // OpenSubsonic's positive offset means the line appears earlier.
     lyric.start = max(0, start - lyrics.offset)
     stopScrollTransition()
@@ -228,11 +229,19 @@ class LyricsView: UITableView, UITableViewDataSource, UITableViewDelegate {
       if displayLink == nil, playbackPosition?() != nil { startDisplayLink() }
     }
     if index != lastIndex {
-      if let lastIndex { lyricModels[lastIndex].isActiveLine = false }
-      if let index { lyricModels[index].isActiveLine = true }
       lastIndex = index
+      for (row, model) in lyricModels.enumerated() {
+        model.updatePlaybackFocus(distance: index.map { abs(row - $0) })
+      }
     }
-    guard let index, index != lastScrolledIndex, !isDragging, !isDecelerating,
+    var readingRow = index
+    if let index, lyricModels[index].lyric.isInstrumentalLeadIn, scrollAnimation,
+       !UIAccessibility.isReduceMotionEnabled,
+       (timeStep > 0 && timeStep <= 0.50) || lastScrolledIndex == index + 1 {
+      let previewTime = CMTimeAdd(time, CMTime(value: 160, timescale: 1_000))
+      if lyrics.activeLineIndex(at: previewTime) == index + 1 { readingRow = index + 1 }
+    }
+    guard let index = readingRow, index != lastScrolledIndex, !isDragging, !isDecelerating,
           suppressAutoScrollUntil.map({ Date() >= $0 }) ?? true else { return }
     layoutIfNeeded()
     let row = rectForRow(at: IndexPath(row: index, section: 0))
