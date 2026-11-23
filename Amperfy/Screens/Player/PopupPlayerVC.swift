@@ -57,7 +57,6 @@ class PopupPlayerVC: UIViewController, UIScrollViewDelegate, UIGestureRecognizer
   private(set) var areLyricsControlsHidden = false
   let surfaceTransition = PlayerSurfaceTransitionDelegate()
   private lazy var dismissPan = UIPanGestureRecognizer(target: self, action: #selector(dragToDismiss(_:)))
-  private lazy var restoreControls = UITapGestureRecognizer(target: self, action: #selector(restoreLyricsControls))
   override var preferredStatusBarStyle: UIStatusBarStyle { .lightContent }
 
   lazy var tableViewKeyCommandsController = TableViewKeyCommandsController(
@@ -141,8 +140,6 @@ class PopupPlayerVC: UIViewController, UIScrollViewDelegate, UIGestureRecognizer
     // Pressed tracks and their labels expand beyond the resting rail margins.
     // Only clip while collapsing the controls for immersive lyrics.
     controlPlaceholderView.clipsToBounds = false
-    restoreControls.delegate = self
-    view.addGestureRecognizer(restoreControls)
     dismissPan.delegate = self
     dismissPan.maximumNumberOfTouches = 1
     view.addGestureRecognizer(dismissPan)
@@ -335,6 +332,7 @@ class PopupPlayerVC: UIViewController, UIScrollViewDelegate, UIGestureRecognizer
       do { try await Task.sleep(for: .seconds(5)) } catch { return }
       guard let self, !Task.isCancelled else { return }
       if self.presentedViewController != nil || self.isTrackingControl(in: self.controlPlaceholderView) ||
+        self.largeCurrentlyPlayingView?.isTrackingLyricsTranslation == true ||
         UIAccessibility.isVoiceOverRunning {
         self.scheduleLyricsControlsHide()
       } else {
@@ -351,14 +349,15 @@ class PopupPlayerVC: UIViewController, UIScrollViewDelegate, UIGestureRecognizer
     guard !hidden || (largeCurrentlyPlayingView?.isDisplayingLyrics == true &&
       appDelegate.storage.settings.user.playerDisplayStyle == .large) else { return }
     guard hidden != areLyricsControlsHidden else { return }
-    areLyricsControlsHidden = hidden
     view.layoutIfNeeded()
+    areLyricsControlsHidden = hidden
     controlPlaceholderView.isUserInteractionEnabled = !hidden
     controlPlaceholderView.accessibilityElementsHidden = hidden
     controlPlaceholderView.clipsToBounds = hidden
     controlPlaceholderHeightConstraint.constant = hidden && !usesLandscapeLayout ? 0 :
       PlayerControlView.frameHeight + safetyMarginOnBottom
     let changes = {
+      self.largeCurrentlyPlayingView?.updateLyricsTranslationVisibility()
       self.controlPlaceholderView.alpha = hidden ? 0 : 1
       self.view.layoutIfNeeded()
     }
@@ -368,23 +367,20 @@ class PopupPlayerVC: UIViewController, UIScrollViewDelegate, UIGestureRecognizer
     } else { changes() }
   }
 
-  @objc func restoreLyricsControls() {
+  func restoreLyricsControls() {
     setLyricsControlsHidden(false)
     scheduleLyricsControlsHide()
   }
 
   func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer, shouldReceive touch: UITouch) -> Bool {
-    let isDismissPan = gestureRecognizer === dismissPan
-    guard isDismissPan || areLyricsControlsHidden else { return false }
+    guard gestureRecognizer === dismissPan else { return true }
     var touchedView = touch.view
     while let current = touchedView {
       #if !targetEnvironment(macCatalyst)
-        if isDismissPan, current is DragOnlySystemVolumeView { return false }
+        if current is DragOnlySystemVolumeView { return false }
       #endif
-      if isDismissPan, current is MPVolumeView { return false }
-      if current is PlayerTrackSlider { return false }
-      if isDismissPan ? (current is UISlider) : (current is UIControl) { return false }
-      if !isDismissPan, current === largeCurrentlyPlayingView?.transitionArtwork { return false }
+      if current is MPVolumeView || current is PlayerTrackSlider ||
+        current is UISlider || current is LyricsTranslationButton { return false }
       touchedView = current.superview
     }
     return true
@@ -410,7 +406,6 @@ class PopupPlayerVC: UIViewController, UIScrollViewDelegate, UIGestureRecognizer
 
   func registerLyricsScrollView(_ lyricsView: LyricsView) {
     lyricsView.panGestureRecognizer.require(toFail: dismissPan)
-    restoreControls.require(toFail: lyricsView.panGestureRecognizer)
   }
 
   func configurePresentation(sourcePlayer: UIView?, sourceArtwork: UIImageView?) {

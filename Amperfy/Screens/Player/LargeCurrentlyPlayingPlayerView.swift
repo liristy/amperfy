@@ -140,6 +140,7 @@ class LargeCurrentlyPlayingPlayerView: UIView {
   private let compactFavorite = UIButton(type: .system)
   private var displayAnimator: UIViewPropertyAnimator?
   private var artworkIsPlaying: Bool?
+  var isTrackingLyricsTranslation: Bool { lyricsTranslationButton.isTracking }
   var isDisplayingLyrics: Bool { displayElement == .lyrics }
   var transitionArtwork: UIImageView { lyricsHeader.isHidden ? artworkImage : lyricsArtwork }
   var transitionArtworkShadow: UIView? { lyricsHeader.isHidden ? artworkShadowView : nil }
@@ -484,8 +485,7 @@ class LargeCurrentlyPlayingPlayerView: UIView {
   private func hideLyrics() {
     lyricsView?.clear()
     lyricsView?.isHidden = true
-    lyricsTranslationButton.refresh()
-    setNeedsLayout()
+    updateLyricsTranslationVisibility()
   }
 
   private func showLyricsAreNotAvailable() {
@@ -504,9 +504,14 @@ class LargeCurrentlyPlayingPlayerView: UIView {
       scrollAnimation: appDelegate.storage.settings.user.isLyricsSmoothScrolling
     )
     lyricsView?.isHidden = false
+    updateLyricsTranslationVisibility()
+    lyricsView?.scroll(toTime: CMTime(seconds: appDelegate.player.elapsedTime, preferredTimescale: 1000))
+  }
+
+  func updateLyricsTranslationVisibility() {
+    lyricsTranslationButton.controlsAreVisible = rootView?.areLyricsControlsHidden == false
     lyricsTranslationButton.refresh()
     setNeedsLayout()
-    lyricsView?.scroll(toTime: CMTime(seconds: appDelegate.player.elapsedTime, preferredTimescale: 1000))
   }
 
   func refresh() {

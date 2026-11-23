@@ -28,6 +28,18 @@ fileprivate struct LyricCueAppearance: Equatable {
   let lift: CGFloat
 }
 
+private actor LyricBlurRenderer {
+  static let shared = LyricBlurRenderer()
+  private let context = CIContext(options: [.cacheIntermediates: false])
+
+  func render(_ image: CGImage, radius: CGFloat) -> CGImage? {
+    guard !Task.isCancelled else { return nil }
+    let source = CIImage(cgImage: image)
+    let blurred = source.applyingFilter("CIGaussianBlur", parameters: [kCIInputRadiusKey: radius])
+    return context.createCGImage(blurred, from: source.extent)
+  }
+}
+
 @MainActor
 class LyricTableCellModel {
   private struct CueTiming {
@@ -68,7 +80,9 @@ class LyricTableCellModel {
   fileprivate private(set) var cueAppearance: [[LyricCueAppearance]] = []
   fileprivate private(set) var vocalOpacity: [CGFloat] = []
   fileprivate private(set) var interludeProgress: CGFloat = 0
+  fileprivate var blurredImage: (size: CGSize, scale: CGFloat, image: UIImage)?
   private let cueTimings: [[CueTiming]]
+  let needsAnimation: Bool
   private var measuredLayout: (width: CGFloat, fontSize: CGFloat, frames: [CGRect])?
   var isActiveLine = false {
     didSet { if oldValue != isActiveLine { cell?.refreshEmphasis(animated: true) } }
@@ -79,7 +93,7 @@ class LyricTableCellModel {
     self.lyric = lyric
     self.nextLineStart = nextLineStart
     self.interludeEnd = interludeEnd
-    explicitEnd = lyric.vocals.compactMap(\.end).max() ?? lyric.cues.compactMap(\.end).max()
+    explicitEnd = lyric.vocals.compactMap(\.end).max() ?? lyric.cues.last?.end
     var lines = lyric.vocals.enumerated().map { index, vocal in
       TextLine(value: vocal.value, start: vocal.start, end: vocal.end, cues: vocal.cues,
                alignsRight: rightAligned.contains(index))
@@ -94,17 +108,19 @@ class LyricTableCellModel {
                             alignsRight: rightAligned.contains(0), isTranslation: true))
     }
     textLines = lines
+    needsAnimation = interludeEnd != nil || lines.contains {
+      !$0.cues.isEmpty || (!$0.isTranslation && $0.start != lyric.start)
+    }
     cueTimings = lines.map { line in
       line.cues.enumerated().map { index, cue in
         let nextCueStart = line.cues.dropFirst(index + 1).first?.start
-        let end = cue.end ?? nextCueStart ?? line.end ?? nextLineStart
-        let duration = end.map { max(0, Double($0) - Double(cue.start)) } ?? 300
+        let followingStart = nextLineStart.flatMap { $0 > cue.start ? $0 : nil }
+        let end = cue.end ?? nextCueStart ?? line.end ?? followingStart
+        let duration = end.map { max(0, Double($0) - Double(cue.start)) } ?? 1_000
         return CueTiming(cue: cue, duration: duration, nextCueStart: nextCueStart.map(Double.init))
       }
     }
   }
-
-  var needsAnimation: Bool { interludeEnd != nil || textLines.count > 1 || textLines.contains { !$0.cues.isEmpty } }
 
   func updateCues(at time: Double) {
     if let start = lyric.start, let end = interludeEnd, end > start {
@@ -114,6 +130,7 @@ class LyricTableCellModel {
       cell?.refreshCueHighlight()
       return
     }
+    guard needsAnimation else { return }
     let reduceMotion = UIAccessibility.isReduceMotionEnabled
     let fontSize = UIFontMetrics(forTextStyle: .title1).scaledValue(for: 32)
     let appearance = zip(textLines, cueTimings).map { line, timings in
@@ -190,6 +207,7 @@ private final class LyricGlyphView: UIView {
   private var cueFragments: [[Fragment]] = []
   private var untimedGlyphs: [NSRange] = []
   private var layoutWidth: CGFloat = -1
+  private var hasCueLayout = false
 
   var appearance: [LyricCueAppearance] = [] {
     didSet { if oldValue != appearance { setNeedsDisplay() } }
@@ -211,6 +229,7 @@ private final class LyricGlyphView: UIView {
     textStorage.setAttributedString(text)
     cueRanges = cues.map(\.range)
     layoutWidth = -1
+    hasCueLayout = false
     appearance = []
     setNeedsDisplay()
   }
@@ -224,6 +243,13 @@ private final class LyricGlyphView: UIView {
     guard layoutWidth != bounds.width else { return }
     layoutWidth = bounds.width
     textContainer.size = CGSize(width: max(1, bounds.width), height: 10_000)
+    hasCueLayout = false
+  }
+
+  private func prepareCueLayout() {
+    prepareLayout()
+    guard !hasCueLayout else { return }
+    hasCueLayout = true
     let glyphs = layoutManager.glyphRange(for: textContainer)
     var unassigned = IndexSet(integersIn: glyphs.location..<NSMaxRange(glyphs))
     cueFragments = cueRanges.map { range in
@@ -266,7 +292,7 @@ private final class LyricGlyphView: UIView {
       drawPlain(at: .zero)
       return
     }
-    prepareLayout()
+    prepareCueLayout()
     let origin = textOrigin
     let dimAlpha: CGFloat = 0.48
     context.saveGState()
@@ -321,9 +347,10 @@ class LyricTableCell: UITableViewCell {
   private let blurredLyrics = UIImageView()
   private var glyphViews = [LyricGlyphView]()
   private let dots = (0..<3).map { _ in UIView() }
-  private static let blurContext = CIContext(options: [.cacheIntermediates: false])
-  private var renderedSize: CGSize = .zero
-  private var renderedScale: CGFloat = 0
+  private static let dotSize: CGFloat = 14
+  private var blurTask: Task<Void, Never>?
+  private var requestedSize: CGSize = .zero
+  private var requestedScale: CGFloat = 0
   var isBrowsing = false {
     didSet { if oldValue != isBrowsing { refreshEmphasis(animated: true) } }
   }
@@ -357,7 +384,7 @@ class LyricTableCell: UITableViewCell {
     motionContent.addSubview(sharpLyrics)
     for dot in dots {
       dot.backgroundColor = .white
-      dot.layer.cornerRadius = 5
+      dot.layer.cornerRadius = Self.dotSize / 2
       sharpLyrics.addSubview(dot)
     }
     isAccessibilityElement = true
@@ -372,16 +399,17 @@ class LyricTableCell: UITableViewCell {
     let frames = viewModel?.textFrames(containerWidth: bounds.width) ?? []
     for (view, frame) in zip(glyphViews, frames) { view.frame = frame }
     for (index, dot) in dots.enumerated() {
-      dot.bounds = CGRect(x: 0, y: 0, width: 10, height: 10)
-      dot.center = CGPoint(x: 13 + CGFloat(index) * 17, y: bounds.midY)
+      dot.bounds = CGRect(x: 0, y: 0, width: Self.dotSize, height: Self.dotSize)
+      dot.center = CGPoint(x: 8 + Self.dotSize / 2 + CGFloat(index) * 23, y: bounds.midY)
     }
-    if renderBlurredLyricsIfNeeded() { updateAlpha(animated: false) }
+    if prepareBlurredLyricsIfNeeded() { updateAlpha(animated: false) }
   }
 
   override func prepareForReuse() {
     super.prepareForReuse()
     if viewModel?.cell === self { viewModel?.cell = nil }
     viewModel = nil
+    cancelBlur()
     scrollLift = 0
     sharpLyrics.layer.removeAllAnimations()
     blurredLyrics.layer.removeAllAnimations()
@@ -394,16 +422,22 @@ class LyricTableCell: UITableViewCell {
     if viewModel?.cell === self { viewModel?.cell = nil }
     viewModel = model
     model.cell = self
+    cancelBlur()
     scrollLift = 0
     sharpLyrics.layer.removeAllAnimations()
     blurredLyrics.layer.removeAllAnimations()
     blurredLyrics.image = nil
-    for view in glyphViews { view.removeFromSuperview() }
-    glyphViews = model.textLines.map { line in
+    if glyphViews.count > model.textLines.count {
+      glyphViews.suffix(from: model.textLines.count).forEach { $0.removeFromSuperview() }
+      glyphViews.removeLast(glyphViews.count - model.textLines.count)
+    }
+    while glyphViews.count < model.textLines.count {
       let view = LyricGlyphView(frame: .zero)
-      view.display(text: line.attributedText, cues: line.cues)
       sharpLyrics.addSubview(view)
-      return view
+      glyphViews.append(view)
+    }
+    for (view, line) in zip(glyphViews, model.textLines) {
+      view.display(text: line.attributedText, cues: line.cues)
     }
     let isInterlude = model.interludeEnd != nil
     for dot in dots { dot.isHidden = !isInterlude }
@@ -415,10 +449,11 @@ class LyricTableCell: UITableViewCell {
 
   func refreshEmphasis(animated: Bool) {
     guard let model = viewModel else { return }
-    // Keep the outgoing glyphs in place while their sharp layer fades away.
     refreshCueHighlight()
     accessibilityTraits = model.isActiveLine ? [.staticText, .selected] : .staticText
-    _ = renderBlurredLyricsIfNeeded()
+    isAccessibilityElement = model.interludeEnd == nil || model.isActiveLine
+    if isBrowsing { cancelBlur() }
+    _ = prepareBlurredLyricsIfNeeded()
     updateAlpha(animated: animated)
   }
 
@@ -432,10 +467,11 @@ class LyricTableCell: UITableViewCell {
     }
     guard model.interludeEnd != nil else { return }
     for (index, dot) in dots.enumerated() {
-      let progress = model.isActiveLine ? model.interludeProgress * 3 - CGFloat(index) : 0
-      dot.alpha = 0.35 + 0.65 * min(1, max(0, progress + 0.15))
-      let pulse = UIAccessibility.isReduceMotionEnabled ? 0 : sin(.pi * min(1, max(0, progress)))
-      dot.transform = CGAffineTransform(scaleX: 1 + 0.22 * pulse, y: 1 + 0.22 * pulse)
+      let progress = min(1, max(0, model.interludeProgress * 3 - CGFloat(index)))
+      let fillRate: CGFloat = index == 2 ? 1 : 1.65
+      dot.alpha = 0.28 + 0.72 * min(1, fillRate * progress)
+      let lift = UIAccessibility.isReduceMotionEnabled ? 0 : 1.76 * progress
+      dot.transform = CGAffineTransform(translationX: 0, y: -lift)
     }
   }
 
@@ -443,29 +479,47 @@ class LyricTableCell: UITableViewCell {
     guard let model = viewModel else { return }
     let changes = {
       let blurred = !model.isActiveLine && !self.isBrowsing && self.blurredLyrics.image != nil
-      self.sharpLyrics.alpha = model.isActiveLine ? 1 : blurred ? 0 : self.isBrowsing ? 0.64 : 0.39
+      if model.interludeEnd != nil {
+        self.sharpLyrics.alpha = model.isActiveLine ? 1 : 0
+      } else {
+        self.sharpLyrics.alpha = model.isActiveLine ? 1 : blurred ? 0 : self.isBrowsing ? 0.64 : 0.39
+      }
       self.blurredLyrics.alpha = blurred ? 0.39 : 0
     }
     if animated, !UIAccessibility.isReduceMotionEnabled {
-      UIView.animate(withDuration: 0.40, delay: 0,
+      UIView.animate(withDuration: model.interludeEnd == nil ? 0.40 : 0.18, delay: 0,
                      options: [.curveEaseInOut, .beginFromCurrentState, .allowUserInteraction],
                      animations: changes)
     } else { changes() }
   }
 
-  // Rasterize only when the text, wrapping width or display scale changes.
-  // Playback emphasis crossfades these two layers without rerunning the filter.
+  private func cancelBlur() {
+    blurTask?.cancel()
+    blurTask = nil
+  }
+
+  // Cache a small blurred copy on the lyric row. Only the text snapshot
+  // touches UIKit; image filtering runs outside the playback animation.
   @discardableResult
-  private func renderBlurredLyricsIfNeeded() -> Bool {
-    guard viewModel?.isActiveLine == false, !isBrowsing, !glyphViews.isEmpty,
+  private func prepareBlurredLyricsIfNeeded() -> Bool {
+    guard let model = viewModel, !model.isActiveLine, !isBrowsing, !glyphViews.isEmpty,
           UIApplication.shared.applicationState == .active
     else { return false }
     let size = sharpLyrics.bounds.size
     guard size.width > 0, size.height > 0, glyphViews.allSatisfy({ $0.bounds.width > 0 }) else {
       return false
     }
-    let scale = max(1, traitCollection.displayScale)
-    guard renderedSize != size || renderedScale != scale || blurredLyrics.image == nil else { return false }
+    let scale = min(1.5, max(1, traitCollection.displayScale))
+    if let cached = model.blurredImage, cached.size == size, cached.scale == scale {
+      guard blurredLyrics.image !== cached.image else { return false }
+      blurredLyrics.image = cached.image
+      return true
+    }
+    guard blurTask == nil || requestedSize != size || requestedScale != scale else { return false }
+    cancelBlur()
+    blurredLyrics.image = nil
+    requestedSize = size
+    requestedScale = scale
     let padding: CGFloat = 8
     let format = UIGraphicsImageRendererFormat()
     format.scale = scale
@@ -476,13 +530,17 @@ class LyricTableCell: UITableViewCell {
         view.drawPlain(at: CGPoint(x: view.frame.minX + padding, y: view.frame.minY + padding))
       }
     }
-    guard let source = CIImage(image: image) else { return false }
-    let blurred = source.applyingFilter("CIGaussianBlur", parameters: [kCIInputRadiusKey: 1.5 * scale])
-      .cropped(to: source.extent)
-    guard let result = Self.blurContext.createCGImage(blurred, from: source.extent) else { return false }
-    blurredLyrics.image = UIImage(cgImage: result, scale: scale, orientation: .up)
-    renderedSize = size
-    renderedScale = scale
-    return true
+    guard let source = image.cgImage else { return false }
+    blurTask = Task { [weak self, weak model] in
+      let rendered = await LyricBlurRenderer.shared.render(source, radius: 1.5 * scale)
+      guard !Task.isCancelled, let self, let model, viewModel === model else { return }
+      blurTask = nil
+      guard let rendered else { return }
+      let image = UIImage(cgImage: rendered, scale: scale, orientation: .up)
+      model.blurredImage = (size, scale, image)
+      blurredLyrics.image = image
+      if !model.isActiveLine, !isBrowsing { updateAlpha(animated: true) }
+    }
+    return false
   }
 }

@@ -91,12 +91,20 @@ public final class APIDataResponse: Sendable {
 
 // MARK: - LyricsList
 
-public struct LyricsList {
+public struct LyricsList: Sendable {
   public var lyrics = [StructuredLyrics]()
   var translations = [StructuredLyrics]()
 
   public func getFirstSyncedLyricsOrUnsyncedAsDefault() -> StructuredLyrics? {
-    guard var main = lyrics.first(where: { $0.synced }) ?? lyrics.first else { return nil }
+    let nonempty = lyrics.filter { !$0.line.isEmpty }
+    let wordSynced = nonempty.first { lyric in
+      lyric.synced && lyric.line.contains { line in
+        !line.cues.isEmpty || line.vocals.contains { !$0.cues.isEmpty }
+      }
+    }
+    guard var main = wordSynced ?? nonempty.first(where: { $0.synced }) ?? nonempty.first else {
+      return nil
+    }
     let language = Locale.current.language.languageCode?.identifier
     let preferred = translations.filter {
       Locale(identifier: $0.lang).language.languageCode?.identifier == language
@@ -113,7 +121,7 @@ public struct LyricsList {
 
 // MARK: - StructuredLyrics
 
-public struct StructuredLyrics {
+public struct StructuredLyrics: Sendable {
   /// required
   public var lang =
     "" // The lyrics language (ideally ISO 639). If the language is unknown (e.g. lrc file), the server must return und (ISO standard) or xxx (common value for taggers)
@@ -198,7 +206,7 @@ public struct StructuredLyrics {
 
 // MARK: - LyricsLine
 
-public struct LyricsLine: Equatable {
+public struct LyricsLine: Equatable, Sendable {
   public var start: Int? // The start time of the lyrics, relative to the start time of the track, in milliseconds. If this is not part of synced lyrics, start must be omitted
   public var value = "" // The actual text of this line
   public internal(set) var cues = [LyricCue]()
@@ -212,7 +220,7 @@ public struct LyricsLine: Equatable {
   }
 }
 
-public struct LyricVocal: Equatable {
+public struct LyricVocal: Equatable, Sendable {
   public let value: String
   public internal(set) var start: Int?
   public internal(set) var end: Int?
@@ -220,7 +228,7 @@ public struct LyricVocal: Equatable {
   public let agentID: String?
 }
 
-public struct LyricCue: Equatable {
+public struct LyricCue: Equatable, Sendable {
   public let start: Int
   public let end: Int?
   public let range: NSRange // UTF-16 range in LyricsLine.value

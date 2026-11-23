@@ -802,7 +802,7 @@ final class FloatingPlayerDock: UIView {
     search.background.visualEffect = searchGlass
     search.cornerStyle = .capsule
     search.image = icons[3]
-    search.preferredSymbolConfigurationForImage = .init(pointSize: 22, weight: .medium)
+    search.preferredSymbolConfigurationForImage = .init(pointSize: 17, weight: .medium)
     search.baseForegroundColor = selected == 3 ? tint : .label
     searchButton.configuration = search
     var compact = UIButton.Configuration.glass()
@@ -811,7 +811,7 @@ final class FloatingPlayerDock: UIView {
     compact.background.visualEffect = compactGlass
     compact.cornerStyle = .capsule
     compact.image = icons[selected]
-    compact.preferredSymbolConfigurationForImage = .init(pointSize: 22, weight: .medium)
+    compact.preferredSymbolConfigurationForImage = .init(pointSize: 17, weight: .medium)
     compact.baseForegroundColor = tint
     compactNavigationButton.configuration = compact
   }

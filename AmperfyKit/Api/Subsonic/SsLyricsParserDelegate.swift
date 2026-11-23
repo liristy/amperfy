@@ -139,12 +139,12 @@ class SsLyricsParserDelegate: SsXmlParser {
       let synced = curStructuredLyrics.synced
       curStructuredLyrics.line = (lines ?? []).enumerated().map { index, line in
         var lyric = synced ? timedLine(line, cueLines: cueLines[index] ?? []) : line
-        lyric.parseInlineTranslation()
+        if !synced { lyric.parseInlineTranslation() }
         return lyric
       }
       if kind == "translation" {
         lyricsList?.translations.append(curStructuredLyrics)
-      } else if kind == nil || kind == "main" {
+      } else if kind == nil || kind == "" || kind == "main" {
         lyricsList?.lyrics.append(curStructuredLyrics)
       }
       structuredLyrics = nil
@@ -161,22 +161,37 @@ class SsLyricsParserDelegate: SsXmlParser {
 
   private func timedLine(_ line: LyricsLine, cueLines: [CueLine]) -> LyricsLine {
     var line = line
+    // Some servers return a line-only cueLine alongside intact inline ELRC.
+    // Parse the line first so that the cueLine cannot hide its word timings.
+    line.parseEnhancedLRC()
+    line.parseInlineTranslation()
+    let inlineLyrics = line
     line.vocals = cueLines.compactMap { cueLine in
-      let value = cueLine.value.components(separatedBy: "_BREAK_")[0]
-      guard !value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return nil }
-      let length = value.utf16.count
-      let cues = cueLine.cues.filter { NSMaxRange($0.range) <= length }
-      let start = [cueLine.start, cues.map(\.start).min()].compactMap { $0 }.min() ?? line.start
-      let end = [cueLine.end, cues.compactMap(\.end).max()].compactMap { $0 }.max()
-      return LyricVocal(value: value, start: start, end: end, cues: cues, agentID: cueLine.agentID)
+      var vocal = LyricsLine()
+      vocal.value = cueLine.value
+      vocal.start = cueLine.start ?? inlineLyrics.start
+      vocal.cues = cueLine.cues
+      if vocal.cues.isEmpty { vocal.parseEnhancedLRC() }
+      vocal.parseInlineTranslation()
+      guard !vocal.value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return nil }
+      if vocal.cues.isEmpty, vocal.value.utf8.elementsEqual(inlineLyrics.value.utf8) {
+        vocal.cues = inlineLyrics.cues
+      }
+      let cues = vocal.cues
+      let start = [vocal.start, cues.map(\.start).min()].compactMap { $0 }.min()
+      let end = [cueLine.end, cues.last?.end].compactMap { $0 }.max()
+      return LyricVocal(value: vocal.value, start: start, end: end, cues: cues, agentID: cueLine.agentID)
     }
-    let matchingCueLine = cueLines.first { $0.value.utf8.elementsEqual(line.value.utf8) && !$0.cues.isEmpty }
-    if let cueLine = cueLines.count == 1 ? cueLines.first : matchingCueLine,
-       !cueLine.cues.isEmpty, !line.value.contains("_BREAK_") {
-      line.value = cueLine.value
-      line.cues = cueLine.cues
-    } else {
-      line.parseEnhancedLRC()
+    if line.vocals.count == 1, let vocal = line.vocals.first,
+       vocal.cues.isEmpty, !line.cues.isEmpty {
+      line.vocals.removeAll()
+    }
+    let matchingVocal = line.vocals.first {
+      $0.value.utf8.elementsEqual(inlineLyrics.value.utf8) && !$0.cues.isEmpty
+    }
+    if let vocal = line.vocals.count == 1 ? line.vocals.first : matchingVocal, !vocal.cues.isEmpty {
+      line.value = vocal.value
+      line.cues = vocal.cues
     }
     if let firstCueStart = (line.cues.map(\.start) + line.vocals.compactMap(\.start)).min() {
       line.start = min(line.start ?? firstCueStart, firstCueStart)
@@ -190,7 +205,13 @@ private extension LyricsLine {
     let parts = value.components(separatedBy: "_BREAK_")
     guard parts.count > 1 else { return }
     value = parts[0]
-    cues = cues.filter { NSMaxRange($0.range) <= value.utf16.count }
+    let length = value.utf16.count
+    cues = cues.compactMap { cue in
+      let end = min(NSMaxRange(cue.range), length)
+      guard cue.range.location < end else { return nil }
+      return LyricCue(start: cue.start, end: cue.end,
+        range: NSRange(location: cue.range.location, length: end - cue.range.location))
+    }
     let text = parts.dropFirst().joined(separator: " ").trimmingCharacters(in: .whitespacesAndNewlines)
     guard !text.isEmpty, text != value.trimmingCharacters(in: .whitespacesAndNewlines) else { return }
     translation = LyricVocal(value: text, start: nil, end: nil, cues: [], agentID: nil)

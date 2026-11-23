@@ -26,6 +26,7 @@ import UIKit
 
 final class LyricsTranslationButton: UIButton {
   weak var lyricsView: LyricsView?
+  var controlsAreVisible = true
 
   override init(frame: CGRect) {
     super.init(frame: frame)
@@ -40,14 +41,16 @@ final class LyricsTranslationButton: UIButton {
   required init?(coder: NSCoder) { nil }
 
   func refresh() {
-    isHidden = lyricsView?.hasTranslation != true || lyricsView?.isHidden != false
+    isHidden = !controlsAreVisible || lyricsView?.hasTranslation != true || lyricsView?.isHidden != false
     isSelected = lyricsView?.showsTranslation == true
-    var style = UIButton.Configuration.filled()
+    var style = UIButton.Configuration.plain()
     style.cornerStyle = .capsule
+    style.contentInsets = .zero
+    style.background.backgroundInsets = NSDirectionalEdgeInsets(top: 5, leading: 5, bottom: 5, trailing: 5)
     style.image = UIImage(systemName: "translate") ?? UIImage(systemName: "character.bubble")
-    style.preferredSymbolConfigurationForImage = .init(pointSize: 18, weight: .semibold)
-    style.baseForegroundColor = isSelected ? .black : .white
-    style.baseBackgroundColor = .white.withAlphaComponent(isSelected ? 0.92 : 0.22)
+    style.preferredSymbolConfigurationForImage = .init(pointSize: 14, weight: .medium)
+    style.baseForegroundColor = isSelected ? UIColor(white: 0.12, alpha: 1) : .white
+    style.background.backgroundColor = .white.withAlphaComponent(isSelected ? 0.76 : 0.16)
     configuration = style
   }
 }
@@ -98,8 +101,8 @@ class LyricsView: UITableView, UITableViewDataSource, UITableViewDelegate {
   }
 
   private var lyrics: StructuredLyrics?
-  private var displayLyrics: StructuredLyrics?
   private var lyricModels: [LyricTableCellModel] = []
+  private var timedRows = [(start: Double, row: Int)]()
   private var overlappingRows = [Int]()
   private var activeRows = Set<Int>()
   private var lastScrolledIndex: Int?
@@ -235,7 +238,8 @@ class LyricsView: UITableView, UITableViewDataSource, UITableViewDelegate {
     var interludes = [Int: Int]()
     if lyrics.synced {
       var lines = [LyricsLine]()
-      var previousEnd = 0
+      var timedEnd = 0
+      var estimatedEnd = 0
       var blankStart: Int?
       for line in lyrics.line {
         guard let start = line.start else {
@@ -246,25 +250,31 @@ class LyricsView: UITableView, UITableViewDataSource, UITableViewDelegate {
           blankStart = blankStart ?? start
           continue
         }
-        let gapStart = max(previousEnd, blankStart ?? previousEnd)
+        let gapStart = lines.isEmpty ? 0 : max(timedEnd, blankStart ?? estimatedEnd)
         if start > gapStart, lines.isEmpty || blankStart != nil || start - gapStart >= 3_000 {
           var gap = LyricsLine()
           gap.start = gapStart
           interludes[lines.count] = start
           lines.append(gap)
         }
-        let end = (line.vocals.compactMap(\.end) + line.cues.compactMap(\.end)).max() ??
-          (start + 5_000)
-        previousEnd = max(previousEnd, end)
+        let vocalEnds = line.vocals.compactMap { vocal in
+          vocal.end ?? vocal.cues.last.map { $0.end ?? $0.start + 1_000 }
+        }
+        let cueEnd = line.cues.last.map { $0.end ?? $0.start + 1_000 }
+        let end = max(start, vocalEnds.max() ?? 0, cueEnd ?? 0)
+        timedEnd = max(timedEnd, end)
+        estimatedEnd = end > start ? end : start + 5_000
         blankStart = nil
         lines.append(line)
       }
       lyrics.line = lines
     }
-    displayLyrics = lyrics
     let nextStarts = lyrics.line.indices.map { row in
       lyrics.line.dropFirst(row + 1).lazy.compactMap(\.start).first { $0 > (lyrics.line[row].start ?? -1) }
     }
+    timedRows = lyrics.line.enumerated().compactMap { (row, lyric) in
+      lyric.start.map { (start: Double($0), row: row) }
+    }.sorted { $0.start == $1.start ? $0.row < $1.row : $0.start < $1.start }
     let rightAligned = vocalSides(in: lyrics.line, nextStarts: nextStarts)
     lyricModels = lyrics.line.enumerated().map { index, line in
       let model = LyricTableCellModel(lyric: line, nextLineStart: nextStarts[index],
@@ -346,8 +356,8 @@ class LyricsView: UITableView, UITableViewDataSource, UITableViewDelegate {
     stopDisplayLink()
     finishBrowsing()
     lyrics = nil
-    displayLyrics = nil
     lyricModels.removeAll()
+    timedRows.removeAll()
     overlappingRows.removeAll()
     activeRows.removeAll()
     lastScrolledIndex = nil
@@ -379,11 +389,12 @@ class LyricsView: UITableView, UITableViewDataSource, UITableViewDelegate {
   }
 
   public func tableView(_ tableView: UITableView, shouldHighlightRowAt indexPath: IndexPath) -> Bool {
-    lyrics?.synced == true && lyricModels[indexPath.row].lyric.start != nil
+    lyrics?.synced == true && lyricModels[indexPath.row].lyric.start != nil &&
+      lyricModels[indexPath.row].interludeEnd == nil
   }
 
   public func tableView(_ tableView: UITableView, didSelectRowAt indexPath: IndexPath) {
-    guard let lyrics, lyrics.synced else { return }
+    guard let lyrics, lyrics.synced, lyricModels[indexPath.row].interludeEnd == nil else { return }
     var lyric = lyricModels[indexPath.row].lyric
     guard let start = lyric.start else { return }
     // OpenSubsonic's positive offset means the line appears earlier.
@@ -445,11 +456,12 @@ class LyricsView: UITableView, UITableViewDataSource, UITableViewDelegate {
   }
 
   func scroll(toTime time: CMTime) {
-    guard let lyrics = displayLyrics, lyrics.synced, !lyricModels.isEmpty else { return }
-    let timeStep = lastPlaybackTime.map { CMTimeSubtract(time, $0).seconds } ?? 0
+    let seconds = time.seconds
+    guard let lyrics, lyrics.synced, !timedRows.isEmpty, seconds.isFinite else { return }
+    let timeStep = lastPlaybackTime.map { seconds - $0.seconds } ?? 0
     lastPlaybackTime = time
-    let index = lyrics.activeLineIndex(at: time)
-    let milliseconds = lyrics.adjustedTime(for: time).seconds * 1_000
+    let milliseconds = Double(time.value) * 1_000 / Double(time.timescale) + Double(lyrics.offset)
+    let index = activeRow(at: milliseconds)
     var singing = Set<Int>()
     if let index {
       singing.insert(index)
@@ -462,15 +474,17 @@ class LyricsView: UITableView, UITableViewDataSource, UITableViewDelegate {
     }
     for row in activeRows.subtracting(singing) { lyricModels[row].isActiveLine = false }
     for row in singing {
-      lyricModels[row].updateCues(at: milliseconds)
-      lyricModels[row].isActiveLine = true
+      let model = lyricModels[row]
+      if model.needsAnimation { model.updateCues(at: milliseconds) }
+      if !model.isActiveLine { model.isActiveLine = true }
     }
     activeRows = singing
-    if singing.contains(where: { lyricModels[$0].needsAnimation }), playbackPosition?() != nil {
+    if displayLink == nil, singing.contains(where: { lyricModels[$0].needsAnimation }),
+       playbackPosition?() != nil {
       startDisplayLink()
     }
     let focus = singing.min()
-    let row = singing.count > 1 ? focus : readingRow(active: focus, in: lyrics, at: time, timeStep: timeStep)
+    let row = singing.count > 1 ? focus : readingRow(active: focus, at: milliseconds, timeStep: timeStep)
     guard let row, row != lastScrolledIndex, !isDragging, !isDecelerating, !isBrowsing else { return }
     layoutIfNeeded()
     let rect = rectForRow(at: IndexPath(row: row, section: 0))
@@ -486,16 +500,27 @@ class LyricsView: UITableView, UITableViewDataSource, UITableViewDelegate {
     lastScrolledIndex = row
   }
 
-  private func readingRow(active: Int?, in lyrics: StructuredLyrics, at time: CMTime,
+  private func activeRow(at milliseconds: Double) -> Int? {
+    var lower = 0
+    var upper = timedRows.count
+    while lower < upper {
+      let middle = (lower + upper) / 2
+      if timedRows[middle].start <= milliseconds { lower = middle + 1 }
+      else { upper = middle }
+    }
+    return lower > 0 ? timedRows[lower - 1].row : nil
+  }
+
+  private func readingRow(active: Int?, at milliseconds: Double,
                           timeStep: TimeInterval) -> Int? {
     guard let active, scrollAnimation, !UIAccessibility.isReduceMotionEnabled,
-          lastScrolledIndex != nil, lyrics.line.indices.contains(active + 1),
-          let nextStart = lyrics.line[active + 1].start else { return active }
+          lastScrolledIndex != nil, lyricModels.indices.contains(active + 1),
+          let nextStart = lyricModels[active + 1].lyric.start else { return active }
     if overlappingRows.contains(active) { return active }
-    let remaining = Double(nextStart) / 1_000 - lyrics.adjustedTime(for: time).seconds
-    guard remaining > 0, remaining <= 0.48 else { return active }
+    let remaining = Double(nextStart) - milliseconds
+    guard remaining > 0, remaining <= 480 else { return active }
     // The row can start to glide before the beat. Highlighting still uses the actual playback time.
-    if lastScrolledIndex == active + 1 && timeStep >= 0 && timeStep <= 0.50 { return active + 1 }
+    if lastScrolledIndex == active + 1 && timeStep >= -0.03 && timeStep <= 0.50 { return active + 1 }
     guard timeStep > 0, timeStep <= 0.50, playbackPosition?() != nil else { return active }
     return active + 1
   }

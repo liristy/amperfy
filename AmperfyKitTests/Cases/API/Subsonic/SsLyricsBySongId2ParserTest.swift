@@ -100,6 +100,42 @@ class SsLyricsBySongId2ParserTest: AbstractSsParserTest {
     ])
   }
 
+  func testPrefersELRCOverEarlierLineSynchronizedTrack() throws {
+    let list = try parseLyricsList("""
+    <lyricsList>
+      <structuredLyrics lang="zh" synced="true" kind="main">
+        <line start="1000">你的意义</line>
+      </structuredLyrics>
+      <structuredLyrics lang="zh" synced="true" kind="main">
+        <line start="1000"><![CDATA[<00:01.0>你<00:01.5>的意义<00:02.2>]]></line>
+        <cueLine index="0" start="1000" end="2200" value="你的意义"/>
+      </structuredLyrics>
+    </lyricsList>
+    """)
+    let lyric = try XCTUnwrap(list.getFirstSyncedLyricsOrUnsyncedAsDefault()?.line.first)
+    XCTAssertEqual(lyric.value, "你的意义")
+    XCTAssertEqual(lyric.cues.map(\.start), [1000, 1500])
+    XCTAssertEqual(lyric.vocals.first?.cues, lyric.cues)
+    XCTAssertEqual(lyric.cues.last?.range, NSRange(location: 1, length: 3))
+  }
+
+  func testUntimedMismatchedCueLineKeepsInlineELRCAndTranslation() throws {
+    let list = try parseLyricsList("""
+    <lyricsList>
+      <structuredLyrics synced="true">
+        <line start="1000">&lt;00:01.0&gt;Hello &lt;00:02.0&gt;again_BREAK_你好</line>
+        <cueLine index="0" value="Hello"/>
+      </structuredLyrics>
+    </lyricsList>
+    """)
+    let lyric = try XCTUnwrap(list.getFirstSyncedLyricsOrUnsyncedAsDefault()?.line.first)
+    XCTAssertEqual(lyric.value, "Hello again")
+    XCTAssertEqual(lyric.translation?.value, "你好")
+    XCTAssertEqual(lyric.cues.map(\.start), [1000, 2000])
+    XCTAssertEqual(lyric.cues.last?.range, NSRange(location: 6, length: 5))
+    XCTAssertTrue(lyric.vocals.isEmpty)
+  }
+
   func testParallelVocalsAndTimedTranslationKeepTheirOwnCues() throws {
     let list = try parseLyricsList("""
     <lyricsList>

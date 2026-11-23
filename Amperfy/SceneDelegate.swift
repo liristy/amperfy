@@ -1400,6 +1400,11 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
           guard try await self.verifyLyricSelection(lyricsTable) else { return }
           popup.restoreLyricsControls()
           try await Task.sleep(for: .milliseconds(400))
+          guard let translationButton = descendants(of: popup.view)
+            .compactMap({ $0 as? LyricsTranslationButton }).first, !translationButton.isHidden else {
+            smokeLog("Available lyrics translation did not appear with playback controls")
+            return
+          }
           let heightWithControls = popup.largePlayerPlaceholderView.bounds.height
           guard let timedLyricPath = lyricsTable.indexPathForLyric(startingAt: 40_000) else { return }
           func timedLyricY() -> CGFloat {
@@ -1409,7 +1414,7 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
           let lyricYWithControls = timedLyricY()
           try await compositorScreenshot("player-lyrics-controls.png")
           try await Task.sleep(for: .seconds(5))
-          guard popup.areLyricsControlsHidden,
+          guard popup.areLyricsControlsHidden, translationButton.isHidden,
                 popup.largePlayerPlaceholderView.bounds.height > heightWithControls + 200 else {
             smokeLog("Lyrics controls did not hide and expand lyrics")
             return
@@ -1423,7 +1428,7 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
           try await compositorScreenshot("player-lyrics-immersive.png")
           popup.restoreLyricsControls()
           try await Task.sleep(for: .seconds(1))
-          guard !popup.areLyricsControlsHidden,
+          guard !popup.areLyricsControlsHidden, !translationButton.isHidden,
                 abs(popup.largePlayerPlaceholderView.bounds.height - heightWithControls) < 1 else { return }
           guard activeLyricIsVisible() else { smokeLog("Restoring controls lost the lyrics highlight"); return }
           smokeLog("Lyrics stayed highlighted across immersive layout changes")
