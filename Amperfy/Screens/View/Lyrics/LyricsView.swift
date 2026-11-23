@@ -414,16 +414,26 @@ class LyricsView: UITableView, UITableViewDataSource, UITableViewDelegate {
     setBrowsing(true)
   }
 
-  func handleDrag(translation: CGPoint, velocity: CGPoint) {
-    guard abs(translation.y) >= 56, abs(translation.y) > abs(translation.x) * 1.3,
-          abs(velocity.y) >= 500, abs(velocity.y) > abs(velocity.x) * 1.3 else { return }
-    if translation.y < 0, velocity.y < 0 { onUpwardDrag?() }
-    else if translation.y > 0, velocity.y > 0 { onDownwardDrag?() }
+  func handleDrag(translation: CGPoint, velocity: CGPoint? = nil) {
+    guard abs(translation.y) > abs(translation.x) * 1.3 else { return }
+    if translation.y < 0 {
+      onUpwardDrag?()
+    } else if let velocity, translation.y >= 56,
+              velocity.y >= 500, velocity.y > abs(velocity.x) * 1.3 {
+      onDownwardDrag?()
+    }
   }
 
   @objc private func didPanLyrics(_ pan: UIPanGestureRecognizer) {
-    guard pan.state == .ended, let window else { return }
-    handleDrag(translation: pan.translation(in: window), velocity: pan.velocity(in: window))
+    guard let window else { return }
+    switch pan.state {
+    case .began, .changed:
+      handleDrag(translation: pan.translation(in: window))
+    case .ended:
+      handleDrag(translation: pan.translation(in: window), velocity: pan.velocity(in: window))
+    default:
+      break
+    }
   }
 
   public func scrollViewDidEndDragging(_ scrollView: UIScrollView, willDecelerate decelerate: Bool) {

@@ -30,6 +30,9 @@ class SsSongParserDelegate: SsPlayableParserDelegate {
   var guessedArtist: Artist?
   var guessedAlbum: Album?
   var guessedGenre: Genre?
+  private var artistDisplayName: String?
+  private var legacyArtistName: String?
+  private var creditedArtists = [String]()
 
   override func parser(
     _ parser: XMLParser,
@@ -43,6 +46,9 @@ class SsSongParserDelegate: SsPlayableParserDelegate {
       guard let songId = attributeDict["id"] else { return }
       let isDir = attributeDict["isDir"] ?? "false"
       guard let isDirBool = Bool(isDir), isDirBool == false else { return }
+      artistDisplayName = attributeDict["displayArtist"]?.trimmingCharacters(in: .whitespacesAndNewlines)
+      legacyArtistName = attributeDict["artist"]?.trimmingCharacters(in: .whitespacesAndNewlines)
+      creditedArtists.removeAll(keepingCapacity: true)
 
       if let prefetchedSong = prefetch.prefetchedSongDict[songId] {
         songBuffer = prefetchedSong
@@ -136,6 +142,10 @@ class SsSongParserDelegate: SsPlayableParserDelegate {
         dateFormatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
         songBuffer?.addedDate = dateFormatter.date(from: createdTag)
       }
+    } else if elementName == "artists", songBuffer != nil,
+              let name = attributeDict["name"]?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !name.isEmpty, !creditedArtists.contains(name) {
+      creditedArtists.append(name)
     }
 
     super.parser(
@@ -158,6 +168,7 @@ class SsSongParserDelegate: SsPlayableParserDelegate {
       parsedCount += 1
       resetPlayableBuffer()
       if let song = songBuffer {
+        updateArtistCredit(for: song)
         parsedSongs.append(song)
       }
       songBuffer = nil
@@ -169,5 +180,27 @@ class SsSongParserDelegate: SsPlayableParserDelegate {
       namespaceURI: namespaceURI,
       qualifiedName: qName
     )
+  }
+
+  private func updateArtistCredit(for song: Song) {
+    let displayName = artistDisplayName.flatMap { $0.isEmpty ? nil : $0 }
+    let credit: String
+    if creditedArtists.count > 1, displayName.map({ creditedArtists.contains($0) }) ?? true {
+      credit = creditedArtists.joined(separator: ", ")
+    } else if let displayName {
+      credit = displayName
+    } else if let artist = creditedArtists.first {
+      credit = artist
+    } else if let legacyArtistName, !legacyArtistName.isEmpty,
+              legacyArtistName != song.artist?.name {
+      credit = legacyArtistName
+    } else {
+      // Responses carrying only the primary artist must not erase a previous credit.
+      return
+    }
+    let storedCredit = credit == song.artist?.name ? nil : credit
+    if song.managedObject.artistCredit != storedCredit {
+      song.managedObject.artistCredit = storedCredit
+    }
   }
 }

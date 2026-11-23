@@ -1156,6 +1156,7 @@
 		643A04712CD29AB20012DEA3 /* Amperfy v39.xcdatamodel */ = {isa = PBXFileReference; lastKnownFileType = wrapper.xcdatamodel; path = "Amperfy v39.xcdatamodel"; sourceTree = "<group>"; };
 		64C433822E1391FA0082A165 /* Amperfy v46.xcdatamodel */ = {isa = PBXFileReference; lastKnownFileType = wrapper.xcdatamodel; path = "Amperfy v46.xcdatamodel"; sourceTree = "<group>"; };
 		C05000000000000000000001 /* Amperfy v50.xcdatamodel */ = {isa = PBXFileReference; lastKnownFileType = wrapper.xcdatamodel; path = "Amperfy v50.xcdatamodel"; sourceTree = "<group>"; };
+		C05100000000000000000001 /* Amperfy v51.xcdatamodel */ = {isa = PBXFileReference; lastKnownFileType = wrapper.xcdatamodel; path = "Amperfy v51.xcdatamodel"; sourceTree = "<group>"; };
 		DDFDA7D0CEFB8C6B7C53EE6A /* Localizable.xcstrings */ = {isa = PBXFileReference; lastKnownFileType = text.json.xcstrings; path = Amperfy/Localization/Localizable.xcstrings; sourceTree = SOURCE_ROOT; };
 		7D77D4DD4487A1EF37677776 /* zh-Hans */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = "zh-Hans"; path = "Amperfy/Localization/zh-Hans.lproj/PlayerControlView.strings"; sourceTree = SOURCE_ROOT; };
 		A1840645E1CA22688D5A3F59 /* Base */ = {isa = PBXFileReference; lastKnownFileType = file.xib; name = Base; path = "Amperfy/Screens/Player/PlayerControlView.xib"; sourceTree = SOURCE_ROOT; };
@@ -3565,6 +3566,7 @@
 			children = (
 				506C314D2EE6D2100011A2C3 /* Amperfy v49.xcdatamodel */,
 				C05000000000000000000001 /* Amperfy v50.xcdatamodel */,
+				C05100000000000000000001 /* Amperfy v51.xcdatamodel */,
 				5084F70C2ED9D87500D8D3DA /* Amperfy v48.xcdatamodel */,
 				507C9AD82E29905D001589F8 /* Amperfy v47.xcdatamodel */,
 				64C433822E1391FA0082A165 /* Amperfy v46.xcdatamodel */,
@@ -3614,7 +3616,7 @@
 				506B3A3823B4539D00E31F21 /* Amperfy v2.xcdatamodel */,
 				500BB49621CAAA2700D367CF /* Amperfy.xcdatamodel */,
 			);
-			currentVersion = C05000000000000000000001 /* Amperfy v50.xcdatamodel */;
+			currentVersion = C05100000000000000000001 /* Amperfy v51.xcdatamodel */;
 			path = Amperfy.xcdatamodeld;
 			sourceTree = "<group>";
 			versionGroupType = wrapper.xcdatamodel;

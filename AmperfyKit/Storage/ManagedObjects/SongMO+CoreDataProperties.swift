@@ -33,6 +33,8 @@ extension SongMO {
   @NSManaged
   public var addedDate: Date?
   @NSManaged
+  public var artistCredit: String?
+  @NSManaged
   public var album: AlbumMO?
   @NSManaged
   public var artist: ArtistMO?
