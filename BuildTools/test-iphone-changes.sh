@@ -18,22 +18,31 @@ for package in build/validation/DerivedData/SourcePackages/checkouts/*; do
     fi
   fi
 done
-echo "Selecting an iOS 26 simulator"
-device_id=$(python3 -c '
-import json, subprocess, sys
+echo "Selecting an iPhone simulator (iOS 26 or later)"
+device_selection=$(python3 -c '
+import json, re, subprocess
 devices = json.loads(subprocess.check_output(
     ["xcrun", "simctl", "list", "devices", "available", "-j"], timeout=120,
 ))["devices"]
+candidates = []
 for runtime, entries in devices.items():
-    if "iOS-26" not in runtime:
+    match = re.search(r"\.iOS-(\d+)(?:-(.*))?$", runtime)
+    if not match or int(match[1]) < 26:
         continue
-    # Match the 440x956pt reference device before falling back to another iPhone.
-    for device in sorted(entries, key=lambda d: d["name"] != "iPhone 17 Pro Max"):
+    major = int(match[1])
+    for device in entries:
         if device["name"].startswith("iPhone"):
-            print(device["udid"])
-            sys.exit(0)
-raise SystemExit("No iOS 26 iPhone simulator is installed")
+            candidates.append((major, device["name"] != "iPhone 17 Pro Max", device["udid"]))
+if not candidates:
+    raise SystemExit("No iPhone simulator with iOS 26 or later is installed")
+major, _, device = min(candidates)
+print(device, major)
 ')
+read -r device_id runtime_major <<< "$device_selection"
+if [[ -n "${GITHUB_ENV:-}" ]]; then
+  printf 'AMPERFY_VALIDATION_DEVICE=%s\nAMPERFY_VALIDATION_RUNTIME_MAJOR=%s\n' \
+    "$device_id" "$runtime_major" >> "$GITHUB_ENV"
+fi
 
 # Boot the throwaway simulator while Xcode compiles, instead of starting its
 # first boot only after the build has finished.

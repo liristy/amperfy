@@ -4,6 +4,7 @@ import argparse
 import csv
 import datetime
 import json
+import os
 from pathlib import Path
 import platform
 import subprocess
@@ -93,9 +94,12 @@ def main():
     app = Path("build/validation/DerivedData/Build/Products/Debug-iphonesimulator/Amperfy.app").resolve()
     bundle_id = command("/usr/libexec/PlistBuddy", "-c", "Print CFBundleIdentifier", str(app / "Info.plist"))
     devices = json.loads(command("xcrun", "simctl", "list", "devices", "available", "-j"))["devices"]
-    runtime, device = next((runtime, device) for runtime, entries in devices.items()
-                           if "iOS-26" in runtime for device in entries
-                           if device["state"] == "Booted" and device["name"].startswith("iPhone"))
+    selected_device = os.environ.get("AMPERFY_VALIDATION_DEVICE")
+    runtime, device = next(
+        (runtime, device) for runtime, entries in devices.items() for device in entries
+        if device["state"] == "Booted" and device["name"].startswith("iPhone")
+        and (device["udid"] == selected_device if selected_device else "iOS-26-" in runtime)
+    )
     device_id = device["udid"]
     documents = Path(command("xcrun", "simctl", "get_app_container", device_id, bundle_id, "data")) / "Documents"
     for name in ("phase", "background", "foreground", "track-change", "artwork-return", "ready", "failed"):

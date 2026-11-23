@@ -182,8 +182,7 @@ class SsLyricsParserDelegate: SsXmlParser {
       let end = [cueLine.end, cues.last?.end].compactMap { $0 }.max()
       return LyricVocal(value: vocal.value, start: start, end: end, cues: cues, agentID: cueLine.agentID)
     }
-    if line.vocals.count == 1, let vocal = line.vocals.first,
-       vocal.cues.isEmpty, !line.cues.isEmpty {
+    if !line.cues.isEmpty, !line.vocals.contains(where: { !$0.cues.isEmpty }) {
       line.vocals.removeAll()
     }
     let matchingVocal = line.vocals.first {

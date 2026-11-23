@@ -38,7 +38,8 @@ def wait_file(path, failed=None, timeout=100):
 def main():
     global command_timeout
     parser = argparse.ArgumentParser()
-    parser.add_argument("--runtime-major", type=int, default=26)
+    parser.add_argument("--runtime-major", type=int,
+                        default=int(os.environ.get("AMPERFY_VALIDATION_RUNTIME_MAJOR", "26")))
     parser.add_argument("--app-source-sha")
     options = parser.parse_args()
     command_timeout = 300 if options.runtime_major >= 27 else 120
@@ -46,8 +47,10 @@ def main():
         booted = [{"udid": known_device, "name": "iPhone 17 Pro Max"}]
     else:
         devices = json.loads(command("xcrun", "simctl", "list", "devices", "available", "-j"))["devices"]
+        selected_device = os.environ.get("AMPERFY_VALIDATION_DEVICE")
         booted = [d for runtime, values in devices.items() if f"iOS-{options.runtime_major}-" in runtime
-                  for d in values if d["state"] == "Booted" and d["name"].startswith("iPhone")]
+                  for d in values if d["state"] == "Booted" and d["name"].startswith("iPhone")
+                  and (selected_device is None or d["udid"] == selected_device)]
     booted.sort(key=lambda d: d["name"] != "iPhone 17 Pro Max")
     if not booted:
         raise RuntimeError(f"The build step did not boot its throwaway iOS {options.runtime_major} simulator")
