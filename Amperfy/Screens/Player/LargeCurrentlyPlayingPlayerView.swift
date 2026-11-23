@@ -127,6 +127,7 @@ class LargeCurrentlyPlayingPlayerView: UIView {
 
   private var rootView: PopupPlayerVC?
   private var lyricsView: LyricsView?
+  private let lyricsTranslationButton = LyricsTranslationButton(frame: .zero)
   private var visualizerHostingView: SwiftUIContentView?
   private var displayElement: LargeDisplayElement = .artwork
   private let artworkShadowView = UIView()
@@ -230,7 +231,11 @@ class LargeCurrentlyPlayingPlayerView: UIView {
     lyricsArtist.frame = CGRect(x: textX, y: 48, width: max(0, lyricsHeader.bounds.width - textX - 88), height: 22)
     compactFavorite.frame = CGRect(x: lyricsHeader.bounds.width - 80, y: 27, width: 40, height: 40)
     lyricsOptions.frame = CGRect(x: lyricsHeader.bounds.width - 40, y: 27, width: 40, height: 40)
-    lyricsView?.frame = CGRect(x: 0, y: headerHeight + 8, width: bounds.width, height: max(0, bounds.height - headerHeight - 8))
+    let translationSpace: CGFloat = lyricsTranslationButton.isHidden ? 0 : 48
+    lyricsView?.frame = CGRect(x: 0, y: headerHeight + 8, width: bounds.width,
+                               height: max(0, bounds.height - headerHeight - 8 - translationSpace))
+    lyricsTranslationButton.frame = CGRect(x: 8, y: max(headerHeight + 8, bounds.height - 48),
+                                          width: 44, height: 44)
     visualizerHostingView?.hostingController?.view.frame = upperContainerView.bounds
   }
 
@@ -279,6 +284,8 @@ class LargeCurrentlyPlayingPlayerView: UIView {
       self?.rootView?.restoreLyricsControls()
     }
     addSubview(lyricsView!)
+    lyricsTranslationButton.lyricsView = lyricsView
+    addSubview(lyricsTranslationButton)
     lyricsArtwork.contentMode = .scaleAspectFit
     lyricsArtwork.layer.cornerRadius = 8
     lyricsArtwork.clipsToBounds = true
@@ -477,6 +484,8 @@ class LargeCurrentlyPlayingPlayerView: UIView {
   private func hideLyrics() {
     lyricsView?.clear()
     lyricsView?.isHidden = true
+    lyricsTranslationButton.refresh()
+    setNeedsLayout()
   }
 
   private func showLyricsAreNotAvailable() {
@@ -495,6 +504,8 @@ class LargeCurrentlyPlayingPlayerView: UIView {
       scrollAnimation: appDelegate.storage.settings.user.isLyricsSmoothScrolling
     )
     lyricsView?.isHidden = false
+    lyricsTranslationButton.refresh()
+    setNeedsLayout()
     lyricsView?.scroll(toTime: CMTime(seconds: appDelegate.player.elapsedTime, preferredTimescale: 1000))
   }
 

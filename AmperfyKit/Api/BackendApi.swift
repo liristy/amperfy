@@ -93,12 +93,21 @@ public final class APIDataResponse: Sendable {
 
 public struct LyricsList {
   public var lyrics = [StructuredLyrics]()
+  var translations = [StructuredLyrics]()
 
   public func getFirstSyncedLyricsOrUnsyncedAsDefault() -> StructuredLyrics? {
-    guard let index = lyrics.firstIndex(where: { $0.synced }) else {
-      return lyrics.object(at: 0)
+    guard var main = lyrics.first(where: { $0.synced }) ?? lyrics.first else { return nil }
+    let language = Locale.current.language.languageCode?.identifier
+    let preferred = translations.filter {
+      Locale(identifier: $0.lang).language.languageCode?.identifier == language
     }
-    return lyrics[index]
+    for track in preferred + translations {
+      let matches = main.alignTranslation(track)
+      guard !matches.isEmpty else { continue }
+      for (index, translation) in matches { main.line[index].translation = translation }
+      break
+    }
+    return main
   }
 }
 
@@ -130,6 +139,61 @@ public struct StructuredLyrics {
       return CMTimeCompare(CMTime(value: Int64(start), timescale: 1_000), adjustedTime) <= 0
     }
   }
+
+  fileprivate func alignTranslation(_ track: StructuredLyrics) -> [Int: LyricVocal] {
+    var matches = [Int: (distance: Double, vocal: LyricVocal)]()
+    let starts = line.enumerated().compactMap { index, lyric in
+      lyric.start.map { (index: index, time: Double($0) - Double(offset)) }
+    }.sorted { $0.time < $1.time }
+    var nearestIndex = 0
+    let trackLines = synced && track.synced
+      ? track.line.enumerated().sorted { ($0.element.start ?? 0) < ($1.element.start ?? 0) }
+      : Array(track.line.enumerated())
+    for (index, lyric) in trackLines {
+      let text = lyric.value.trimmingCharacters(in: .whitespacesAndNewlines)
+      guard !text.isEmpty else { continue }
+      let match: (index: Int, distance: Double)
+      if synced, track.synced {
+        guard let start = lyric.start, !starts.isEmpty else { continue }
+        let time = Double(start) - Double(track.offset)
+        while nearestIndex + 1 < starts.count, starts[nearestIndex + 1].time <= time {
+          nearestIndex += 1
+        }
+        let current = starts[nearestIndex]
+        let next = starts.dropFirst(nearestIndex + 1).first
+        let distance = abs(current.time - time)
+        if let next, abs(next.time - time) < distance {
+          match = (next.index, abs(next.time - time))
+        } else {
+          match = (current.index, distance)
+        }
+      } else {
+        guard track.line.count == line.count else { continue }
+        match = (index, 0)
+      }
+      guard match.distance <= 1_500, match.distance < (matches[match.index]?.distance ?? .infinity),
+            text != line[match.index].value.trimmingCharacters(in: .whitespacesAndNewlines) else {
+        continue
+      }
+      let delta = offset - track.offset
+      var vocal = lyric.vocals.first ?? LyricVocal(
+        value: lyric.value, start: lyric.start, end: nil, cues: lyric.cues, agentID: nil
+      )
+      if synced, track.synced {
+        vocal.start = vocal.start.map { $0 + delta }
+        vocal.end = vocal.end.map { $0 + delta }
+        vocal.cues = vocal.cues.map {
+          LyricCue(start: $0.start + delta, end: $0.end.map { $0 + delta }, range: $0.range)
+        }
+      } else {
+        vocal.start = nil
+        vocal.end = nil
+        vocal.cues = []
+      }
+      matches[match.index] = (match.distance, vocal)
+    }
+    return matches.mapValues(\.vocal)
+  }
 }
 
 // MARK: - LyricsLine
@@ -138,12 +202,22 @@ public struct LyricsLine: Equatable {
   public var start: Int? // The start time of the lyrics, relative to the start time of the track, in milliseconds. If this is not part of synced lyrics, start must be omitted
   public var value = "" // The actual text of this line
   public internal(set) var cues = [LyricCue]()
+  public internal(set) var vocals = [LyricVocal]()
+  public internal(set) var translation: LyricVocal?
 
   public init() {}
   public var startTime: CMTime {
     guard let start = start else { return CMTime(value: Int64(0), timescale: 1) }
     return CMTime(value: Int64(start), timescale: 1_000)
   }
+}
+
+public struct LyricVocal: Equatable {
+  public let value: String
+  public internal(set) var start: Int?
+  public internal(set) var end: Int?
+  public internal(set) var cues: [LyricCue]
+  public let agentID: String?
 }
 
 public struct LyricCue: Equatable {

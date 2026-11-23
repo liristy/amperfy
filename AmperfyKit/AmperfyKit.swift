@@ -113,6 +113,7 @@ public class AmperKit {
   // The host app supplies its current UI state. Extensions default to no
   // visual work without depending on UIApplication.shared.
   public var playerVisualUpdatesEnabledAtCreation: @MainActor () -> Bool = { false }
+  @MainActor public var onPlaylistPlayback: ((Playlist, Bool) -> Void)?
 
   // internal player helper classes that interact only via player callbacks
   private var playerDownloadPreparationHandler: PlayerDownloadPreparationHandler?
@@ -216,6 +217,9 @@ public class AmperKit {
       userStatistics: userStatistics
     )
     facadeImpl.isOfflineMode = storage.settings.user.isOfflineMode
+    facadeImpl.onPlaylistPlayback = { [weak self] playlist, shuffled in
+      self?.onPlaylistPlayback?(playlist, shuffled)
+    }
 
     playerNowPlayingInfoCenterHandler = NowPlayingInfoCenterHandler(
       musicPlayer: curPlayer,

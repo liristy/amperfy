@@ -57,6 +57,7 @@ class PopupPlayerVC: UIViewController, UIScrollViewDelegate, UIGestureRecognizer
   private(set) var areLyricsControlsHidden = false
   let surfaceTransition = PlayerSurfaceTransitionDelegate()
   private lazy var dismissPan = UIPanGestureRecognizer(target: self, action: #selector(dragToDismiss(_:)))
+  private lazy var restoreControls = UITapGestureRecognizer(target: self, action: #selector(restoreLyricsControls))
   override var preferredStatusBarStyle: UIStatusBarStyle { .lightContent }
 
   lazy var tableViewKeyCommandsController = TableViewKeyCommandsController(
@@ -140,7 +141,6 @@ class PopupPlayerVC: UIViewController, UIScrollViewDelegate, UIGestureRecognizer
     // Pressed tracks and their labels expand beyond the resting rail margins.
     // Only clip while collapsing the controls for immersive lyrics.
     controlPlaceholderView.clipsToBounds = false
-    let restoreControls = UITapGestureRecognizer(target: self, action: #selector(restoreLyricsControls))
     restoreControls.delegate = self
     view.addGestureRecognizer(restoreControls)
     dismissPan.delegate = self
@@ -410,6 +410,7 @@ class PopupPlayerVC: UIViewController, UIScrollViewDelegate, UIGestureRecognizer
 
   func registerLyricsScrollView(_ lyricsView: LyricsView) {
     lyricsView.panGestureRecognizer.require(toFail: dismissPan)
+    restoreControls.require(toFail: lyricsView.panGestureRecognizer)
   }
 
   func configurePresentation(sourcePlayer: UIView?, sourceArtwork: UIImageView?) {

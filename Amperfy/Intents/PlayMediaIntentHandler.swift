@@ -38,6 +38,12 @@ public class PlayMediaIntentHandler: NSObject,
   @available(iOS 13.0, *)
   public func resolveMediaItems(for intent: INPlayMediaIntent) async
     -> [INPlayMediaMediaItemResolutionResult] {
+    if let suggestion = intentManager.playlistSuggestion(in: intent) {
+      guard intentManager.playlist(for: suggestion) != nil else {
+        return [.unsupported(forReason: .serviceUnavailable)]
+      }
+      return INPlayMediaMediaItemResolutionResult.successes(with: [suggestion])
+    }
     let mediaItemsToPlay = intentManager.handleIncomingPlayMediaIntent(playMediaIntent: intent)
     if let mediaItem = mediaItemsToPlay?.item {
       return INPlayMediaMediaItemResolutionResult.successes(with: [mediaItem])
@@ -80,10 +86,15 @@ public class PlayMediaIntentHandler: NSObject,
     let shuffleOption = intent.playShuffled ?? false
     let repeatOption = RepeatMode.fromINPlaybackRepeatMode(mode: intent.playbackRepeatMode)
 
-    let success = await intentManager.playLastResult(
-      shuffleOption: shuffleOption,
-      repeatOption: repeatOption
-    )
+    let success: Bool
+    if let suggestion = intentManager.playlistSuggestion(in: intent) {
+      success = await intentManager.play(
+        container: intentManager.playlist(for: suggestion),
+        shuffleOption: shuffleOption, repeatOption: repeatOption
+      )
+    } else {
+      success = await intentManager.playLastResult(shuffleOption: shuffleOption, repeatOption: repeatOption)
+    }
     return INPlayMediaIntentResponse(code: success ? .success : .failure, userActivity: nil)
   }
 }

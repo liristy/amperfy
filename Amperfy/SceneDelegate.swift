@@ -1401,7 +1401,7 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
           popup.restoreLyricsControls()
           try await Task.sleep(for: .milliseconds(400))
           let heightWithControls = popup.largePlayerPlaceholderView.bounds.height
-          let timedLyricPath = IndexPath(row: 4, section: 0)
+          guard let timedLyricPath = lyricsTable.indexPathForLyric(startingAt: 40_000) else { return }
           func timedLyricY() -> CGFloat {
             lyricsTable.layoutIfNeeded()
             return lyricsTable.convert(lyricsTable.rectForRow(at: timedLyricPath).origin, to: popup.view).y
@@ -1829,9 +1829,14 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
 
           guard let lyricsView = descendants(of: popup.view).compactMap({ $0 as? LyricsView }).first else { return }
           popup.setLyricsControlsHidden(true, animated: false)
-          lyricsView.handleDrag(velocity: CGPoint(x: 0, y: 300))
+          lyricsView.handleDrag(translation: CGPoint(x: 0, y: 110), velocity: CGPoint(x: 0, y: 120))
+          guard popup.areLyricsControlsHidden else {
+            smokeLog("Slow lyrics browsing revealed playback controls")
+            return
+          }
+          lyricsView.handleDrag(translation: CGPoint(x: 0, y: 72), velocity: CGPoint(x: 0, y: 650))
           guard !popup.areLyricsControlsHidden else { return }
-          lyricsView.handleDrag(velocity: CGPoint(x: 0, y: -300))
+          lyricsView.handleDrag(translation: CGPoint(x: 0, y: -72), velocity: CGPoint(x: 0, y: -650))
           try await Task.sleep(for: .milliseconds(500))
           guard popup.areLyricsControlsHidden else { return }
           try await compositorScreenshot("player-lyrics-upward.png")
@@ -2198,25 +2203,29 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
 
     @MainActor private func verifyLyricSelection(_ lyricsTable: LyricsView) async throws -> Bool {
       func smokeLog(_ message: String) { FileHandle.standardOutput.write(Data((message + "\n").utf8)) }
-      lyricsTable.tableView(lyricsTable, didSelectRowAt: IndexPath(row: 1, section: 0))
+      guard let first = lyricsTable.indexPathForLyric(startingAt: 10_000),
+            let paused = lyricsTable.indexPathForLyric(startingAt: 30_000),
+            let last = lyricsTable.indexPathForLyric(startingAt: 60_000) else { return false }
+      lyricsTable.tableView(lyricsTable, didSelectRowAt: first)
       guard try await audibleLyricMatches(row: 1) else { return false }
       for row in [7, 2, 6] {
-        lyricsTable.tableView(lyricsTable, didSelectRowAt: IndexPath(row: row, section: 0))
+        guard let path = lyricsTable.indexPathForLyric(startingAt: row * 10_000) else { return false }
+        lyricsTable.tableView(lyricsTable, didSelectRowAt: path)
         try await Task.sleep(for: .milliseconds(30))
       }
       try await Task.sleep(for: .milliseconds(800))
       guard abs(self.appDelegate.player.elapsedTime - 60) < 2,
-            lyricsTable.cellForRow(at: IndexPath(row: 6, section: 0))?.accessibilityTraits.contains(.selected) == true else {
+            lyricsTable.cellForRow(at: last)?.accessibilityTraits.contains(.selected) == true else {
         smokeLog("Rapid lyric taps did not align engine position and selected line"); return false
       }
       guard try await audibleLyricMatches(row: 6) else { return false }
       self.appDelegate.player.pause()
       try await Task.sleep(for: .milliseconds(200))
-      lyricsTable.tableView(lyricsTable, didSelectRowAt: IndexPath(row: 3, section: 0))
+      lyricsTable.tableView(lyricsTable, didSelectRowAt: paused)
       try await Task.sleep(for: .milliseconds(500))
       guard !self.appDelegate.player.isPlaying,
             abs(self.appDelegate.player.elapsedTime - 30) < 0.2,
-            lyricsTable.cellForRow(at: IndexPath(row: 3, section: 0))?.accessibilityTraits.contains(.selected) == true else {
+            lyricsTable.cellForRow(at: paused)?.accessibilityTraits.contains(.selected) == true else {
         smokeLog("Paused lyric tap did not align engine position and highlight"); return false
       }
       self.appDelegate.player.play()

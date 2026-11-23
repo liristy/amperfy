@@ -34,12 +34,16 @@ class SsLyricsBySongId2ParserTest: AbstractSsParserTest {
     ssParserDelegate = SsLyricsParserDelegate(performanceMonitor: MOCK_PerformanceMonitor())
   }
 
-  private func parseLyrics(_ xml: String) throws -> [StructuredLyrics] {
+  private func parseLyricsList(_ xml: String) throws -> LyricsList {
     let delegate = SsLyricsParserDelegate(performanceMonitor: MOCK_PerformanceMonitor())
     let parser = XMLParser(data: Data(xml.utf8))
     parser.delegate = delegate
     XCTAssertTrue(parser.parse())
-    return try XCTUnwrap(delegate.lyricsList?.lyrics)
+    return try XCTUnwrap(delegate.lyricsList)
+  }
+
+  private func parseLyrics(_ xml: String) throws -> [StructuredLyrics] {
+    try parseLyricsList(xml).lyrics
   }
 
   func testEnhancedLyricsUseInclusiveUTF8Offsets() throws {
@@ -94,6 +98,42 @@ class SsLyricsBySongId2ParserTest: AbstractSsParserTest {
     XCTAssertEqual(lines.last?.cues.map(\.range), [
       NSRange(location: 0, length: 5), NSRange(location: 5, length: 5),
     ])
+  }
+
+  func testParallelVocalsAndTimedTranslationKeepTheirOwnCues() throws {
+    let list = try parseLyricsList("""
+    <lyricsList>
+      <structuredLyrics lang="en" synced="true" kind="main" offset="100">
+        <line start="1000">Hello again</line>
+        <line start="5000">Goodbye_BREAK_再见</line>
+        <cueLine index="0" start="1000" end="2800" agentId="lead" value="Hello">
+          <cue start="1000" end="2800" byteStart="0" byteEnd="4"/>
+        </cueLine>
+        <cueLine index="0" start="1500" end="3100" agentId="response" value="again">
+          <cue start="1500" end="3100" byteStart="0" byteEnd="4"/>
+        </cueLine>
+      </structuredLyrics>
+      <structuredLyrics lang="zh" synced="true" kind="translation" offset="200">
+        <line start="1100">你好</line>
+        <line start="7200">Unmatched translation</line>
+        <cueLine index="0" start="1100" end="2700" value="你好">
+          <cue start="1200" end="2500" byteStart="0" byteEnd="5"/>
+        </cueLine>
+      </structuredLyrics>
+    </lyricsList>
+    """)
+    let main = try XCTUnwrap(list.getFirstSyncedLyricsOrUnsyncedAsDefault())
+    XCTAssertEqual(list.lyrics.count, 1)
+    XCTAssertEqual(main.line[0].vocals.map(\.value), ["Hello", "again"])
+    XCTAssertEqual(main.line[0].vocals.map(\.agentID), ["lead", "response"])
+    XCTAssertEqual(main.line[0].vocals.map(\.start), [1000, 1500])
+    XCTAssertEqual(main.line[0].vocals.map(\.end), [2800, 3100])
+    XCTAssertEqual(main.line[0].vocals.map { $0.cues.first?.start }, [1000, 1500])
+    XCTAssertEqual(main.line[0].translation?.value, "你好")
+    XCTAssertEqual(main.line[0].translation?.cues.first?.start, 1100)
+    XCTAssertEqual(main.line[0].translation?.cues.first?.range, NSRange(location: 0, length: 2))
+    XCTAssertEqual(main.line[1].value, "Goodbye")
+    XCTAssertEqual(main.line[1].translation?.value, "再见")
   }
 
   func testActiveLineAtBoundariesAndAfterFinalLine() {

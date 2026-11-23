@@ -25,6 +25,9 @@ class SsLyricsParserDelegate: SsXmlParser {
   private struct CueLine {
     let index: Int
     let value: String
+    let start: Int?
+    let end: Int?
+    let agentID: String?
     var cues = [LyricCue]()
 
     mutating func appendCue(attributes: [String: String]) {
@@ -103,7 +106,12 @@ class SsLyricsParserDelegate: SsXmlParser {
     } else if elementName == "cueLine" {
       if let index = attributeDict["index"].flatMap(Int.init),
          let value = attributeDict["value"] {
-        currentCueLine = CueLine(index: index, value: value)
+        currentCueLine = CueLine(
+          index: index, value: value,
+          start: attributeDict["start"].flatMap(Int.init),
+          end: attributeDict["end"].flatMap(Int.init),
+          agentID: attributeDict["agentId"]
+        )
       }
     } else if elementName == "cue" {
       currentCueLine?.appendCue(attributes: attributeDict)
@@ -128,12 +136,15 @@ class SsLyricsParserDelegate: SsXmlParser {
       cueLines[currentCueLine.index, default: []].append(currentCueLine)
       self.currentCueLine = nil
     } else if elementName == "structuredLyrics", var curStructuredLyrics = structuredLyrics {
-      // The player displays the main lyric track, as in the version 1 response.
-      if kind == nil || kind == "main" {
-        curStructuredLyrics.line = (lines ?? []).enumerated().map { index, line in
-          guard curStructuredLyrics.synced else { return line }
-          return timedLine(line, cueLines: cueLines[index] ?? [])
-        }
+      let synced = curStructuredLyrics.synced
+      curStructuredLyrics.line = (lines ?? []).enumerated().map { index, line in
+        var lyric = synced ? timedLine(line, cueLines: cueLines[index] ?? []) : line
+        lyric.parseInlineTranslation()
+        return lyric
+      }
+      if kind == "translation" {
+        lyricsList?.translations.append(curStructuredLyrics)
+      } else if kind == nil || kind == "main" {
         lyricsList?.lyrics.append(curStructuredLyrics)
       }
       structuredLyrics = nil
@@ -150,18 +161,24 @@ class SsLyricsParserDelegate: SsXmlParser {
 
   private func timedLine(_ line: LyricsLine, cueLines: [CueLine]) -> LyricsLine {
     var line = line
-    // Parallel vocal layers may use different text. Keep the combined line if
-    // none of the layers describes the exact string the player can highlight.
-    let cueLine = cueLines.count == 1 ? cueLines.first : cueLines.first {
-      $0.value.utf8.elementsEqual(line.value.utf8) && !$0.cues.isEmpty
+    line.vocals = cueLines.compactMap { cueLine in
+      let value = cueLine.value.components(separatedBy: "_BREAK_")[0]
+      guard !value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return nil }
+      let length = value.utf16.count
+      let cues = cueLine.cues.filter { NSMaxRange($0.range) <= length }
+      let start = [cueLine.start, cues.map(\.start).min()].compactMap { $0 }.min() ?? line.start
+      let end = [cueLine.end, cues.compactMap(\.end).max()].compactMap { $0 }.max()
+      return LyricVocal(value: value, start: start, end: end, cues: cues, agentID: cueLine.agentID)
     }
-    if let cueLine, !cueLine.cues.isEmpty {
+    let matchingCueLine = cueLines.first { $0.value.utf8.elementsEqual(line.value.utf8) && !$0.cues.isEmpty }
+    if let cueLine = cueLines.count == 1 ? cueLines.first : matchingCueLine,
+       !cueLine.cues.isEmpty, !line.value.contains("_BREAK_") {
       line.value = cueLine.value
       line.cues = cueLine.cues
     } else {
       line.parseEnhancedLRC()
     }
-    if let firstCueStart = line.cues.map(\.start).min() {
+    if let firstCueStart = (line.cues.map(\.start) + line.vocals.compactMap(\.start)).min() {
       line.start = min(line.start ?? firstCueStart, firstCueStart)
     }
     return line
@@ -169,6 +186,16 @@ class SsLyricsParserDelegate: SsXmlParser {
 }
 
 private extension LyricsLine {
+  mutating func parseInlineTranslation() {
+    let parts = value.components(separatedBy: "_BREAK_")
+    guard parts.count > 1 else { return }
+    value = parts[0]
+    cues = cues.filter { NSMaxRange($0.range) <= value.utf16.count }
+    let text = parts.dropFirst().joined(separator: " ").trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !text.isEmpty, text != value.trimmingCharacters(in: .whitespacesAndNewlines) else { return }
+    translation = LyricVocal(value: text, start: nil, end: nil, cues: [], agentID: nil)
+  }
+
   static let wordTimestamp = try! NSRegularExpression(
     pattern: #"<(?:([0-9]{1,3}):)?([0-9]{1,6}):([0-5][0-9])(?:[.:]([0-9]{1,3}))?>"#
   )

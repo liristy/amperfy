@@ -37,6 +37,8 @@ class LyricsVC: UIViewController {
   }
 
   var lyricsView: LyricsView?
+  private let translationButton = LyricsTranslationButton(frame: .zero)
+  private var lyricsBottomConstraint: NSLayoutConstraint?
 
   override func viewDidLoad() {
     super.viewDidLoad()
@@ -47,12 +49,21 @@ class LyricsVC: UIViewController {
     lyricsView.translatesAutoresizingMaskIntoConstraints = false
 
     view.addSubview(lyricsView)
+    translationButton.lyricsView = lyricsView
+    translationButton.translatesAutoresizingMaskIntoConstraints = false
+    view.addSubview(translationButton)
+    let bottom = lyricsView.bottomAnchor.constraint(equalTo: view.safeAreaLayoutGuide.bottomAnchor)
+    lyricsBottomConstraint = bottom
 
     NSLayoutConstraint.activate([
       lyricsView.topAnchor.constraint(equalTo: view.topAnchor),
-      lyricsView.bottomAnchor.constraint(equalTo: view.bottomAnchor),
+      bottom,
       lyricsView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
       lyricsView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+      translationButton.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 8),
+      translationButton.bottomAnchor.constraint(equalTo: view.safeAreaLayoutGuide.bottomAnchor, constant: -4),
+      translationButton.widthAnchor.constraint(equalToConstant: 44),
+      translationButton.heightAnchor.constraint(equalToConstant: 44),
     ])
 
     lyricsView.onLyricSelected = { [weak self] lyric in
@@ -93,6 +104,8 @@ class LyricsVC: UIViewController {
       lyrics: structuredLyrics,
       scrollAnimation: appDelegate.storage.settings.user.isLyricsSmoothScrolling
     )
+    translationButton.refresh()
+    lyricsBottomConstraint?.constant = translationButton.isHidden ? 0 : -48
     lyricsView?.scroll(toTime: CMTime(seconds: player.elapsedTime, preferredTimescale: 1000))
   }
 
@@ -118,14 +131,14 @@ class LyricsVC: UIViewController {
     Task { @MainActor in do {
       let lyricsList = try await appDelegate.getMeta(account.info).librarySyncer
         .parseLyrics(relFilePath: lyricsRelFilePath)
-      if song == self.player.currentlyPlaying?.asSong,
-         let structuredLyrics = lyricsList.getFirstSyncedLyricsOrUnsyncedAsDefault() {
+      guard song == self.player.currentlyPlaying?.asSong else { return }
+      if let structuredLyrics = lyricsList.getFirstSyncedLyricsOrUnsyncedAsDefault() {
         self.showLyrics(structuredLyrics: structuredLyrics)
       } else {
         self.showLyricsAreNotAvailable()
       }
     } catch {
-      self.showLyricsAreNotAvailable()
+      if song == self.player.currentlyPlaying?.asSong { self.showLyricsAreNotAvailable() }
     }}
   }
 

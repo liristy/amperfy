@@ -30,59 +30,143 @@ fileprivate struct LyricCueAppearance: Equatable {
 
 @MainActor
 class LyricTableCellModel {
+  private struct CueTiming {
+    let cue: LyricCue
+    let duration: Double
+    let nextCueStart: Double?
+  }
+
+  struct TextLine {
+    let value: String
+    var start: Int? = nil
+    var end: Int? = nil
+    var cues: [LyricCue] = []
+    var alignsRight = false
+    var isTranslation = false
+
+    var attributedText: NSAttributedString {
+      let paragraph = NSMutableParagraphStyle()
+      paragraph.lineSpacing = 5
+      paragraph.lineBreakMode = .byWordWrapping
+      paragraph.alignment = alignsRight ? .right : .natural
+      let font = UIFontMetrics(forTextStyle: isTranslation ? .body : .title1).scaledFont(
+        for: .systemFont(ofSize: isTranslation ? 17 : 32, weight: isTranslation ? .semibold : .bold),
+        maximumPointSize: isTranslation ? 27 : 48
+      )
+      return NSAttributedString(string: value, attributes: [
+        .font: font, .foregroundColor: UIColor.white, .paragraphStyle: paragraph,
+      ])
+    }
+  }
+
   let lyric: LyricsLine
+  let textLines: [TextLine]
+  let interludeEnd: Int?
+  let explicitEnd: Int?
+  let nextLineStart: Int?
   weak var cell: LyricTableCell?
-  fileprivate private(set) var cueAppearance: [LyricCueAppearance] = []
-  private let cueDurations: [Double]
-  private var measuredHeight: (width: CGFloat, fontSize: CGFloat, height: CGFloat)?
+  fileprivate private(set) var cueAppearance: [[LyricCueAppearance]] = []
+  fileprivate private(set) var vocalOpacity: [CGFloat] = []
+  fileprivate private(set) var interludeProgress: CGFloat = 0
+  private let cueTimings: [[CueTiming]]
+  private var measuredLayout: (width: CGFloat, fontSize: CGFloat, frames: [CGRect])?
   var isActiveLine = false {
     didSet { if oldValue != isActiveLine { cell?.refreshEmphasis(animated: true) } }
   }
 
-  var displayString: NSAttributedString {
-    let paragraph = NSMutableParagraphStyle()
-    paragraph.lineSpacing = 5
-    paragraph.lineBreakMode = .byWordWrapping
-    let font = UIFontMetrics(forTextStyle: .title1).scaledFont(
-      for: .systemFont(ofSize: 32, weight: .bold), maximumPointSize: 48)
-    return NSAttributedString(string: lyric.value.isEmpty ? "•••" : lyric.value, attributes: [
-      .font: font, .foregroundColor: UIColor.white, .paragraphStyle: paragraph,
-    ])
-  }
-
-  init(lyric: LyricsLine, nextLineStart: Int? = nil) {
+  init(lyric: LyricsLine, nextLineStart: Int?, rightAligned: Set<Int>,
+       showsTranslation: Bool, interludeEnd: Int?) {
     self.lyric = lyric
-    cueDurations = lyric.cues.enumerated().map { index, cue in
-      let nextStart = lyric.cues.dropFirst(index + 1).first?.start ?? nextLineStart
-      return (cue.end ?? nextStart).map { max(0, Double($0) - Double(cue.start)) } ?? 300
+    self.nextLineStart = nextLineStart
+    self.interludeEnd = interludeEnd
+    explicitEnd = lyric.vocals.compactMap(\.end).max() ?? lyric.cues.compactMap(\.end).max()
+    var lines = lyric.vocals.enumerated().map { index, vocal in
+      TextLine(value: vocal.value, start: vocal.start, end: vocal.end, cues: vocal.cues,
+               alignsRight: rightAligned.contains(index))
+    }
+    if lines.isEmpty, interludeEnd == nil {
+      lines.append(TextLine(value: lyric.value, start: lyric.start, cues: lyric.cues,
+                            alignsRight: rightAligned.contains(0)))
+    }
+    if showsTranslation, let translation = lyric.translation {
+      lines.append(TextLine(value: translation.value, start: translation.start,
+                            end: translation.end, cues: translation.cues,
+                            alignsRight: rightAligned.contains(0), isTranslation: true))
+    }
+    textLines = lines
+    cueTimings = lines.map { line in
+      line.cues.enumerated().map { index, cue in
+        let nextCueStart = line.cues.dropFirst(index + 1).first?.start
+        let end = cue.end ?? nextCueStart ?? line.end ?? nextLineStart
+        let duration = end.map { max(0, Double($0) - Double(cue.start)) } ?? 300
+        return CueTiming(cue: cue, duration: duration, nextCueStart: nextCueStart.map(Double.init))
+      }
     }
   }
+
+  var needsAnimation: Bool { interludeEnd != nil || textLines.count > 1 || textLines.contains { !$0.cues.isEmpty } }
 
   func updateCues(at time: Double) {
-    let reduceMotion = UIAccessibility.isReduceMotionEnabled
-    let appearance = zip(lyric.cues, cueDurations).map { cue, duration in
-      let elapsed = time - Double(cue.start)
-      guard elapsed >= 0 else { return LyricCueAppearance(progress: 0, lift: 0) }
-      let progress = duration > 0 ? min(1, elapsed / duration) : 1
-      let rise = reduceMotion ? 0 : min(1, elapsed / min(520, max(180, duration)))
-      let lift = 1.6 * rise * rise * (3 - 2 * rise)
-      return LyricCueAppearance(progress: CGFloat(progress), lift: CGFloat(lift))
+    if let start = lyric.start, let end = interludeEnd, end > start {
+      let progress = CGFloat(min(1, max(0, (time - Double(start)) / Double(end - start))))
+      guard progress != interludeProgress else { return }
+      interludeProgress = progress
+      cell?.refreshCueHighlight()
+      return
     }
-    guard appearance != cueAppearance else { return }
+    let reduceMotion = UIAccessibility.isReduceMotionEnabled
+    let fontSize = UIFontMetrics(forTextStyle: .title1).scaledValue(for: 32)
+    let appearance = zip(textLines, cueTimings).map { line, timings in
+      let maximumLift = min(48, fontSize) * (line.isTranslation ? 0.04 : 0.075)
+      return timings.map { timing in
+        let start = Double(timing.cue.start)
+        let elapsed = time - start
+        guard elapsed >= 0 else { return LyricCueAppearance(progress: 0, lift: 0) }
+        let progress = timing.duration > 0 ? min(1, elapsed / timing.duration) : 1
+        let wordEnd = start + timing.duration
+        let settleStart = timing.nextCueStart ?? wordEnd
+        let pickupDuration = max(1, min(680, min(wordEnd, settleStart) - start))
+        let pickup = min(1, elapsed / pickupDuration)
+        let settle = min(1, max(0, (time - settleStart) / 450))
+        let lift = (pickup * pickup * (3 - 2 * pickup) + settle * settle * (3 - 2 * settle)) / 2
+        return LyricCueAppearance(progress: CGFloat(progress), lift: reduceMotion ? 0 : maximumLift * CGFloat(lift))
+      }
+    }
+    let opacity: [CGFloat] = textLines.map { line in
+      guard !line.isTranslation, line.cues.isEmpty, let start = line.start, time < Double(start) else {
+        return 1
+      }
+      return 0.48
+    }
+    guard appearance != cueAppearance || opacity != vocalOpacity else { return }
     cueAppearance = appearance
+    vocalOpacity = opacity
     if isActiveLine { cell?.refreshCueHighlight() }
   }
 
-  func calcHeight(containerWidth: CGFloat) -> CGFloat {
+  func textFrames(containerWidth: CGFloat) -> [CGRect] {
     let fontSize = UIFont.preferredFont(forTextStyle: .title1).pointSize
-    if let measuredHeight, measuredHeight.width == containerWidth, measuredHeight.fontSize == fontSize {
-      return measuredHeight.height
+    if let measuredLayout, measuredLayout.width == containerWidth, measuredLayout.fontSize == fontSize {
+      return measuredLayout.frames
     }
-    let height = ceil(displayString.boundingRect(
-      with: CGSize(width: max(1, containerWidth - 16), height: 10_000),
-      options: [.usesLineFragmentOrigin, .usesFontLeading], context: nil).height)
-    measuredHeight = (containerWidth, fontSize, height)
-    return height
+    var y: CGFloat = 12
+    let width = max(1, containerWidth - 16)
+    let frames = textLines.map { line in
+      let inset = textLines.count(where: { !$0.isTranslation }) > 1 ? width * 0.16 : 0
+      let lineWidth = width - inset
+      let height = ceil(line.attributedText.boundingRect(
+        with: CGSize(width: lineWidth, height: 10_000),
+        options: [.usesLineFragmentOrigin, .usesFontLeading], context: nil).height)
+      let frame = CGRect(x: 8 + (line.alignsRight ? inset : 0), y: y, width: lineWidth, height: height)
+      y = frame.maxY + 6
+      return frame
+    }
+    measuredLayout = (containerWidth, fontSize, frames)
+    return frames
+  }
+
+  func calcHeight(containerWidth: CGFloat) -> CGFloat {
+    (textFrames(containerWidth: containerWidth).last?.maxY ?? 42) + 16
   }
 }
 
@@ -233,13 +317,16 @@ private final class LyricGlyphView: UIView {
 class LyricTableCell: UITableViewCell {
   private weak var viewModel: LyricTableCellModel?
   private let motionContent = UIView()
-  private let lyricView = LyricGlyphView(frame: .zero)
-  let blurredLyrics = UIImageView()
+  private let sharpLyrics = UIView()
+  private let blurredLyrics = UIImageView()
+  private var glyphViews = [LyricGlyphView]()
+  private let dots = (0..<3).map { _ in UIView() }
   private static let blurContext = CIContext(options: [.cacheIntermediates: false])
-  private var baseText: NSAttributedString?
-  private var renderedText: NSAttributedString?
   private var renderedSize: CGSize = .zero
   private var renderedScale: CGFloat = 0
+  var isBrowsing = false {
+    didSet { if oldValue != isBrowsing { refreshEmphasis(animated: true) } }
+  }
 
   var scrollLift: CGFloat {
     get { motionContent.transform.ty }
@@ -267,7 +354,12 @@ class LyricTableCell: UITableViewCell {
     motionContent.isUserInteractionEnabled = false
     contentView.addSubview(motionContent)
     motionContent.addSubview(blurredLyrics)
-    motionContent.addSubview(lyricView)
+    motionContent.addSubview(sharpLyrics)
+    for dot in dots {
+      dot.backgroundColor = .white
+      dot.layer.cornerRadius = 5
+      sharpLyrics.addSubview(dot)
+    }
     isAccessibilityElement = true
   }
 
@@ -275,8 +367,14 @@ class LyricTableCell: UITableViewCell {
     super.layoutSubviews()
     motionContent.bounds.size = contentView.bounds.size
     motionContent.center = CGPoint(x: contentView.bounds.midX, y: contentView.bounds.midY)
-    lyricView.frame = CGRect(x: 8, y: 12, width: max(0, bounds.width - 16), height: max(0, bounds.height - 24))
-    blurredLyrics.frame = lyricView.frame.insetBy(dx: -8, dy: -8)
+    sharpLyrics.frame = motionContent.bounds
+    blurredLyrics.frame = sharpLyrics.frame.insetBy(dx: -8, dy: -8)
+    let frames = viewModel?.textFrames(containerWidth: bounds.width) ?? []
+    for (view, frame) in zip(glyphViews, frames) { view.frame = frame }
+    for (index, dot) in dots.enumerated() {
+      dot.bounds = CGRect(x: 0, y: 0, width: 10, height: 10)
+      dot.center = CGPoint(x: 13 + CGFloat(index) * 17, y: bounds.midY)
+    }
     if renderBlurredLyricsIfNeeded() { updateAlpha(animated: false) }
   }
 
@@ -285,11 +383,9 @@ class LyricTableCell: UITableViewCell {
     if viewModel?.cell === self { viewModel?.cell = nil }
     viewModel = nil
     scrollLift = 0
-    lyricView.layer.removeAllAnimations()
+    sharpLyrics.layer.removeAllAnimations()
     blurredLyrics.layer.removeAllAnimations()
     blurredLyrics.image = nil
-    baseText = nil
-    renderedText = nil
   }
 
   func display(model: LyricTableCellModel) {
@@ -299,12 +395,20 @@ class LyricTableCell: UITableViewCell {
     viewModel = model
     model.cell = self
     scrollLift = 0
-    lyricView.layer.removeAllAnimations()
+    sharpLyrics.layer.removeAllAnimations()
     blurredLyrics.layer.removeAllAnimations()
-    let text = model.displayString
-    baseText = text
-    lyricView.display(text: text, cues: model.lyric.cues)
-    accessibilityLabel = model.lyric.value
+    blurredLyrics.image = nil
+    for view in glyphViews { view.removeFromSuperview() }
+    glyphViews = model.textLines.map { line in
+      let view = LyricGlyphView(frame: .zero)
+      view.display(text: line.attributedText, cues: line.cues)
+      sharpLyrics.addSubview(view)
+      return view
+    }
+    let isInterlude = model.interludeEnd != nil
+    for dot in dots { dot.isHidden = !isInterlude }
+    accessibilityLabel = isInterlude ? "Instrumental".localized :
+      model.textLines.map(\.value).joined(separator: "\n")
     refreshEmphasis(animated: false)
     setNeedsLayout()
   }
@@ -312,21 +416,35 @@ class LyricTableCell: UITableViewCell {
   func refreshEmphasis(animated: Bool) {
     guard let model = viewModel else { return }
     // Keep the outgoing glyphs in place while their sharp layer fades away.
-    if model.isActiveLine { refreshCueHighlight() }
+    refreshCueHighlight()
     accessibilityTraits = model.isActiveLine ? [.staticText, .selected] : .staticText
     _ = renderBlurredLyricsIfNeeded()
     updateAlpha(animated: animated)
   }
 
   func refreshCueHighlight() {
-    lyricView.appearance = viewModel?.cueAppearance ?? []
+    guard let model = viewModel else { return }
+    for (index, view) in glyphViews.enumerated() {
+      let hasAppearance = model.cueAppearance.indices.contains(index)
+      view.appearance = model.isActiveLine && hasAppearance ? model.cueAppearance[index] : []
+      let opacity = hasAppearance ? model.vocalOpacity[index] : 1
+      view.alpha = model.textLines[index].isTranslation ? 0.66 : model.isActiveLine ? opacity : 1
+    }
+    guard model.interludeEnd != nil else { return }
+    for (index, dot) in dots.enumerated() {
+      let progress = model.isActiveLine ? model.interludeProgress * 3 - CGFloat(index) : 0
+      dot.alpha = 0.35 + 0.65 * min(1, max(0, progress + 0.15))
+      let pulse = UIAccessibility.isReduceMotionEnabled ? 0 : sin(.pi * min(1, max(0, progress)))
+      dot.transform = CGAffineTransform(scaleX: 1 + 0.22 * pulse, y: 1 + 0.22 * pulse)
+    }
   }
 
   private func updateAlpha(animated: Bool) {
     guard let model = viewModel else { return }
     let changes = {
-      self.lyricView.alpha = model.isActiveLine ? 1 : (self.blurredLyrics.image == nil ? 0.30 : 0)
-      self.blurredLyrics.alpha = model.isActiveLine ? 0 : 0.39
+      let blurred = !model.isActiveLine && !self.isBrowsing && self.blurredLyrics.image != nil
+      self.sharpLyrics.alpha = model.isActiveLine ? 1 : blurred ? 0 : self.isBrowsing ? 0.64 : 0.39
+      self.blurredLyrics.alpha = blurred ? 0.39 : 0
     }
     if animated, !UIAccessibility.isReduceMotionEnabled {
       UIView.animate(withDuration: 0.40, delay: 0,
@@ -339,27 +457,30 @@ class LyricTableCell: UITableViewCell {
   // Playback emphasis crossfades these two layers without rerunning the filter.
   @discardableResult
   private func renderBlurredLyricsIfNeeded() -> Bool {
-    guard viewModel?.isActiveLine == false, UIApplication.shared.applicationState == .active
+    guard viewModel?.isActiveLine == false, !isBrowsing, !glyphViews.isEmpty,
+          UIApplication.shared.applicationState == .active
     else { return false }
-    guard let text = baseText,
-          lyricView.bounds.width > 0, lyricView.bounds.height > 0 else { return false }
-    let size = lyricView.bounds.size
+    let size = sharpLyrics.bounds.size
+    guard size.width > 0, size.height > 0, glyphViews.allSatisfy({ $0.bounds.width > 0 }) else {
+      return false
+    }
     let scale = max(1, traitCollection.displayScale)
-    guard renderedSize != size || renderedScale != scale || renderedText?.isEqual(to: text) != true else { return false }
+    guard renderedSize != size || renderedScale != scale || blurredLyrics.image == nil else { return false }
     let padding: CGFloat = 8
     let format = UIGraphicsImageRendererFormat()
     format.scale = scale
     format.opaque = false
     let image = UIGraphicsImageRenderer(size: CGSize(width: size.width + padding * 2,
       height: size.height + padding * 2), format: format).image { _ in
-      lyricView.drawPlain(at: CGPoint(x: padding, y: padding))
+      for view in glyphViews {
+        view.drawPlain(at: CGPoint(x: view.frame.minX + padding, y: view.frame.minY + padding))
+      }
     }
     guard let source = CIImage(image: image) else { return false }
-    let blurred = source.applyingFilter("CIGaussianBlur", parameters: [kCIInputRadiusKey: 2.0 * scale])
+    let blurred = source.applyingFilter("CIGaussianBlur", parameters: [kCIInputRadiusKey: 1.5 * scale])
       .cropped(to: source.extent)
     guard let result = Self.blurContext.createCGImage(blurred, from: source.extent) else { return false }
     blurredLyrics.image = UIImage(cgImage: result, scale: scale, orientation: .up)
-    renderedText = text
     renderedSize = size
     renderedScale = scale
     return true

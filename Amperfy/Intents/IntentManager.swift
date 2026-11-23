@@ -25,6 +25,7 @@ import Foundation
 import Ifrit
 import Intents
 import OSLog
+import UIKit
 
 extension RepeatMode {
   static func fromIntent(type: RepeatTypeAppEnum) -> RepeatMode {
@@ -748,6 +749,47 @@ public class IntentManager {
     var item: INMediaItem
   }
 
+  private static let playlistSuggestionPrefix = "qmusic.playlist"
+
+  func donatePlaylistPlayback(_ playlist: Playlist, shuffled: Bool) {
+    guard let account = playlist.account, !playlist.id.isEmpty else { return }
+    let identifier = "\(Self.playlistSuggestionPrefix):\(account.ident):\(playlist.id)"
+    let settings = storage.settings.accounts.getSetting(account.info).read
+    let path = playlist.artwork?.imagePath ?? playlist.artworkItems.first?.playable
+      .imagePath(setting: settings.artworkDisplayPreference)
+    let image = path.flatMap { LibraryEntityImage.preparedImage(at: $0) }
+      ?? path.flatMap { UIImage(contentsOfFile: $0) }
+      ?? UIImage.getGeneratedArtwork(theme: settings.themePreference, artworkType: .playlist)
+    let imageData = image.preparingThumbnail(of: CGSize(width: 300, height: 300))?.pngData()
+    let artwork = imageData.map { INImage(imageData: $0) }
+    let item = INMediaItem(identifier: identifier, title: playlist.name, type: .playlist, artwork: artwork)
+    let intent = INPlayMediaIntent(
+      mediaItems: [item], mediaContainer: nil, playShuffled: shuffled,
+      playbackRepeatMode: .unknown, resumePlayback: false, playbackQueueLocation: .now,
+      playbackSpeed: nil, mediaSearch: nil
+    )
+    let interaction = INInteraction(intent: intent, response: nil)
+    interaction.identifier = identifier
+    interaction.donate { error in
+      if let error {
+        Logger(subsystem: "qMusic", category: "Media Suggestions").debug("\(error.localizedDescription)")
+      }
+    }
+  }
+
+  func playlistSuggestion(in intent: INPlayMediaIntent) -> INMediaItem? {
+    ([intent.mediaContainer].compactMap { $0 } + (intent.mediaItems ?? [])).first {
+      $0.type == .playlist && $0.identifier?.hasPrefix(Self.playlistSuggestionPrefix + ":") == true
+    }
+  }
+
+  func playlist(for suggestion: INMediaItem) -> Playlist? {
+    guard let parts = suggestion.identifier?.split(separator: ":", maxSplits: 2),
+          parts.count == 3, let account = library.getAccount(ident: String(parts[1])),
+          storage.settings.accounts.getSetting(account.info).read.loginCredentials != nil else { return nil }
+    return library.getPlaylist(for: account, id: String(parts[2]))
+  }
+
   public func handleIncomingPlayMediaIntent(playMediaIntent: INPlayMediaIntent)
     -> AmperfyMediaIntentItemResult? {
     guard let account = getActiveAccountCallback() else {
@@ -1320,11 +1362,12 @@ public class IntentManager {
     } catch {
       // do nothing
     }
-    return play(
-      context: PlayContext(containable: container),
-      shuffleOption: shuffleOption,
-      repeatOption: repeatOption
+    let playables = container.playables.filterCached(
+      dependigOn: container is Playlist && storage.settings.user.isOfflineMode
     )
+    guard !playables.isEmpty else { return false }
+    return play(context: PlayContext(containable: container, playables: playables),
+                shuffleOption: shuffleOption, repeatOption: repeatOption)
   }
 
   func play(context: PlayContext, shuffleOption: Bool, repeatOption: RepeatMode) -> Bool {

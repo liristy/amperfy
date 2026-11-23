@@ -262,6 +262,9 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
     AmperKit.shared.playerVisualUpdatesEnabledAtCreation = {
       UIApplication.shared.applicationState != .background
     }
+    AmperKit.shared.onPlaylistPlayback = { [weak self] playlist, shuffled in
+      self?.intentManager.donatePlaylistPlayback(playlist, shuffled: shuffled)
+    }
     if let options = launchOptions {
       os_log("application launch with options:", log: self.log, type: .info)
       options

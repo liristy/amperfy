@@ -94,6 +94,7 @@ public struct PlayContext {
   let name: String
   let playables: [AbstractPlayable]
   let type: PlayerMode
+  private(set) var sourcePlaylist: Playlist?
   public var isKeepIndexDuringShuffle: Bool = false
 
   public init() {
@@ -108,6 +109,7 @@ public struct PlayContext {
     self.index = 0
     self.playables = containable.playables
     self.type = containable.playContextType
+    self.sourcePlaylist = containable as? Playlist
     containable.playedViaContext()
   }
 
@@ -130,21 +132,25 @@ public struct PlayContext {
     self.index = index
     self.playables = playables
     self.type = containable.playContextType
+    self.sourcePlaylist = containable as? Playlist
     containable.playedViaContext()
   }
 
   func getActivePlayable() -> AbstractPlayable? {
-    guard !playables.isEmpty, index < playables.count else { return nil }
+    guard playables.indices.contains(index) else { return nil }
     return playables[index]
   }
 
   public func getWithShuffledIndex() -> PlayContext {
     guard !isKeepIndexDuringShuffle else { return self }
-    return PlayContext(
+    var context = PlayContext(
       name: name,
+      type: type,
       index: (playables.count < 2) ? 0 : Int.random(in: 0 ... playables.count - 1),
       playables: playables
     )
+    context.sourcePlaylist = sourcePlaylist
+    return context
   }
 }
 
@@ -302,6 +308,7 @@ extension PlayerFacade {
 
 @MainActor
 class PlayerFacadeImpl: PlayerFacade {
+  var onPlaylistPlayback: ((Playlist, Bool) -> Void)?
   private var playerStatus: PlayerStatusPersistent
   private var queueHandler: PlayQueueHandler
   private let backendAudioPlayer: BackendAudioPlayer
@@ -623,7 +630,7 @@ class PlayerFacadeImpl: PlayerFacade {
   }
 
   func play(context: PlayContext) {
-    guard !context.playables.isEmpty else { return }
+    guard context.getActivePlayable() != nil else { return }
     setPlayerModeForContextPlay(context.type)
     let preserveShuffle = playerMode == .music && playerStatus.isShuffle
     // Build the new context in its original order, keeping the selected song first
@@ -635,6 +642,7 @@ class PlayerFacadeImpl: PlayerFacade {
       musicPlayer.notifyShuffleUpdated()
     }
     musicPlayer.notifyPlaylistUpdated()
+    if let playlist = context.sourcePlaylist { onPlaylistPlayback?(playlist, preserveShuffle) }
   }
 
   private func setPlayerModeForContextPlay(_ newValue: PlayerMode) {
@@ -643,14 +651,15 @@ class PlayerFacadeImpl: PlayerFacade {
   }
 
   func playShuffled(context: PlayContext) {
-    setPlayerModeForContextPlay(context.type)
-    guard !context.playables.isEmpty else { return }
-    if playerStatus.isShuffle { playerStatus.setShuffle(false) }
     let shuffleContext = context.getWithShuffledIndex()
+    guard shuffleContext.getActivePlayable() != nil else { return }
+    setPlayerModeForContextPlay(context.type)
+    if playerStatus.isShuffle { playerStatus.setShuffle(false) }
     musicPlayer.play(context: shuffleContext)
     playerStatus.setShuffle(true)
     musicPlayer.notifyShuffleUpdated()
     musicPlayer.notifyPlaylistUpdated()
+    if let playlist = context.sourcePlaylist { onPlaylistPlayback?(playlist, true) }
   }
 
   func play(playerIndex: PlayerIndex) {

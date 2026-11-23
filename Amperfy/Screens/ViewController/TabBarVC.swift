@@ -752,6 +752,7 @@ extension TabBarVC: UIGestureRecognizerDelegate {
 final class FloatingPlayerDock: UIView {
   static let playerHeight: CGFloat = 56
   static let navigationHeight: CGFloat = 64
+  private static let compactButtonSize: CGFloat = 48
   static let gap: CGFloat = 12
   static let expandedHeight = playerHeight + gap + navigationHeight
   private(set) var isCollapsed = false
@@ -801,7 +802,7 @@ final class FloatingPlayerDock: UIView {
     search.background.visualEffect = searchGlass
     search.cornerStyle = .capsule
     search.image = icons[3]
-    search.preferredSymbolConfigurationForImage = .init(pointSize: 27, weight: .medium)
+    search.preferredSymbolConfigurationForImage = .init(pointSize: 22, weight: .medium)
     search.baseForegroundColor = selected == 3 ? tint : .label
     searchButton.configuration = search
     var compact = UIButton.Configuration.glass()
@@ -810,7 +811,7 @@ final class FloatingPlayerDock: UIView {
     compact.background.visualEffect = compactGlass
     compact.cornerStyle = .capsule
     compact.image = icons[selected]
-    compact.preferredSymbolConfigurationForImage = .init(pointSize: 23, weight: .medium)
+    compact.preferredSymbolConfigurationForImage = .init(pointSize: 22, weight: .medium)
     compact.baseForegroundColor = tint
     compactNavigationButton.configuration = compact
   }
@@ -850,12 +851,13 @@ final class FloatingPlayerDock: UIView {
 
   override func layoutSubviews() {
     super.layoutSubviews()
-    let side = Self.navigationHeight
+    let side = Self.compactButtonSize
     let rowY = Self.playerHeight + Self.gap
-    navigationSlot.frame = CGRect(x: 0, y: rowY, width: isCollapsed ? side : max(side, bounds.width - side - Self.gap), height: side)
-    searchSlot.frame = CGRect(x: bounds.width - side, y: rowY, width: side, height: side)
+    let buttonY = rowY + (Self.navigationHeight - side) / 2
+    navigationSlot.frame = CGRect(x: 0, y: buttonY, width: side, height: side)
+    searchSlot.frame = CGRect(x: bounds.width - side, y: buttonY, width: side, height: side)
     let playerFrame = isCollapsed ?
-      CGRect(x: side + Self.gap, y: rowY + (side - 48) / 2, width: max(0, bounds.width - (side + Self.gap) * 2), height: 48) :
+      CGRect(x: side + Self.gap, y: buttonY, width: max(0, bounds.width - (side + Self.gap) * 2), height: side) :
       CGRect(x: 0, y: 0, width: bounds.width, height: Self.playerHeight)
     // The player transition scales this live glass view. Assigning frame while
     // transformed changes its bounds and cancels the intended capsule shrink.
