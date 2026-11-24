@@ -112,6 +112,7 @@ class LyricsView: UITableView, UITableViewDataSource, UITableViewDelegate {
   private var displayLink: CADisplayLink?
   private var scrollAnimation = true
   private var isBrowsing = false
+  private var didRevealControlsDuringPan = false
   private var browsingTimeout: Task<Void, Never>?
   private let edgeMask = CAGradientLayer()
   private var previousSize: CGSize = .zero
@@ -414,23 +415,32 @@ class LyricsView: UITableView, UITableViewDataSource, UITableViewDelegate {
     setBrowsing(true)
   }
 
-  func handleDrag(translation: CGPoint, velocity: CGPoint? = nil) {
-    guard abs(translation.y) > abs(translation.x) * 1.3 else { return }
+  @discardableResult
+  func handleDrag(translation: CGPoint, velocity: CGPoint? = nil) -> Bool {
+    guard abs(translation.y) > abs(translation.x) * 1.3 else { return false }
     if translation.y < 0 {
       onUpwardDrag?()
-    } else if let velocity, translation.y >= 56,
-              velocity.y >= 500, velocity.y > abs(velocity.x) * 1.3 {
+    } else if let velocity, translation.y >= 42,
+              velocity.y >= 240, velocity.y > abs(velocity.x) * 1.3 {
       onDownwardDrag?()
+      return true
     }
+    return false
   }
 
   @objc private func didPanLyrics(_ pan: UIPanGestureRecognizer) {
     guard let window else { return }
+    let translation = pan.translation(in: window)
     switch pan.state {
-    case .began, .changed:
-      handleDrag(translation: pan.translation(in: window))
-    case .ended:
-      handleDrag(translation: pan.translation(in: window), velocity: pan.velocity(in: window))
+    case .began:
+      didRevealControlsDuringPan = false
+      fallthrough
+    case .changed, .ended:
+      // Use the drag speed while the finger is moving, before it slows for release.
+      let velocity = didRevealControlsDuringPan ? nil : pan.velocity(in: window)
+      if handleDrag(translation: translation, velocity: velocity) {
+        didRevealControlsDuringPan = true
+      }
     default:
       break
     }

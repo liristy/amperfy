@@ -1072,7 +1072,7 @@ class AmpacheLibrarySyncer: CommonLibrarySyncer, LibrarySyncer {
 
     os_log("Playlist \"%s\": Parse songs start", log: self.log, type: .info, playlist.name)
     let playlistObjectId = playlist.managedObject.objectID
-    try await storage.async.perform { asyncCompanion in
+    try await storage.async.performAndGet { asyncCompanion in
       let accountAsync = asyncCompanion.library.getAccount(managedObjectId: self.accountObjectId)
       let playlistAsync = Playlist(
         library: asyncCompanion.library,

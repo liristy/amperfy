@@ -967,7 +967,7 @@ class SubsonicLibrarySyncer: CommonLibrarySyncer, LibrarySyncer {
 
     os_log("Playlist \"%s\": Parse songs start", log: self.log, type: .info, playlist.name)
     let playlistObjectId = playlist.managedObject.objectID
-    try await storage.async.perform { asyncCompanion in
+    try await storage.async.performAndGet { asyncCompanion in
       let accountAsync = asyncCompanion.library.getAccount(managedObjectId: self.accountObjectId)
       let playlistAsync = Playlist(
         library: asyncCompanion.library,
@@ -987,6 +987,9 @@ class SubsonicLibrarySyncer: CommonLibrarySyncer, LibrarySyncer {
         library: asyncCompanion.library, prefetch: prefetch
       )
       try self.parse(response: response, delegate: parserDelegate)
+      guard parserDelegate.playlistHasBeenDetected else {
+        throw BackendError.incorrectServerBehavior(message: "The playlist response did not contain a playlist.")
+      }
       playlistAsync.isCached = parserDelegate.isCollectionCached
       os_log(
         "Playlist \"%s\": Parse songs (%i) done",

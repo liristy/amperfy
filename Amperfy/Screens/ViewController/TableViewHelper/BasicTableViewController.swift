@@ -101,6 +101,13 @@ struct SwipeDisplaySettings {
 // MARK: - BasicTableViewController
 
 class BasicTableViewController: KeyCommandTableViewController {
+  private struct PlaylistSongSelection {
+    let account: Account
+    let source: Playlist?
+    let restoreNavigation: () -> Void
+    var rows: [(id: NSManagedObjectID, song: Song)] = []
+  }
+
   private static let swipeButtonColors: [UIColor] = [
     .defaultBlue,
     .systemOrange,
@@ -117,6 +124,10 @@ class BasicTableViewController: KeyCommandTableViewController {
   var swipeCallback: SwipeActionCallback?
   var isEditLockedDueToActiveSwipe = false
   var isSingleCellEditingModeActive = false
+  var playlistSelectionRow: ((IndexPath) -> (id: NSManagedObjectID, song: Song)?)?
+  private var playlistSongSelection: PlaylistSongSelection?
+  private var addSelectionButton: UIBarButtonItem?
+  var isSelectingPlaylistSongs: Bool { playlistSongSelection != nil }
 
   override func viewDidLoad() {
     super.viewDidLoad()
@@ -135,6 +146,107 @@ class BasicTableViewController: KeyCommandTableViewController {
     updateSearchResults(for: searchController)
   }
 
+  func selectSongsForPlaylistAction(
+    account: Account,
+    source: Playlist? = nil,
+    restoreNavigation: @escaping () -> Void
+  ) -> UIAction {
+    UIAction(title: "Select".localized, image: UIImage(systemName: "checkmark.circle")) { [weak self] _ in
+      guard let self else { return }
+      playlistSongSelection = PlaylistSongSelection(
+        account: account,
+        source: source,
+        restoreNavigation: restoreNavigation
+      )
+      let addButton = UIBarButtonItem(
+        title: "Add to Playlist".localized,
+        style: .plain,
+        target: self,
+        action: #selector(addSelectedSongsToPlaylist)
+      )
+      addButton.isEnabled = false
+      addSelectionButton = addButton
+      navigationItem.leftBarButtonItem = UIBarButtonItem(
+        title: "Cancel".localized,
+        style: .plain,
+        target: self,
+        action: #selector(cancelPlaylistSongSelection)
+      )
+      navigationItem.rightBarButtonItems = [addButton]
+      tableView.tableHeaderView?.isUserInteractionEnabled = false
+      tableView.reloadData()
+    }
+  }
+
+  func displayPlaylistSelectionCell(
+    _ cell: PlayableTableCell,
+    song: Song,
+    rowID: NSManagedObjectID,
+    playContext: @escaping GetPlayContextFromTableCellCallback
+  ) {
+    let isMarked = playlistSongSelection?.rows.contains { $0.id == rowID && $0.song == song } == true
+    cell.display(
+      playable: song,
+      displayMode: isSelectingPlaylistSongs ? .selection : .normal,
+      playContextCb: isSelectingPlaylistSongs ? nil : playContext,
+      rootView: self,
+      isMarked: isMarked
+    )
+  }
+
+  override func tableView(_ tableView: UITableView, didSelectRowAt indexPath: IndexPath) {
+    guard var selection = playlistSongSelection else { return }
+    tableView.deselectRow(at: indexPath, animated: false)
+    guard let row = playlistSelectionRow?(indexPath),
+          let cell = tableView.cellForRow(at: indexPath) as? PlayableTableCell else { return }
+    let previousRow = selection.rows.firstIndex { $0.id == row.id }.map {
+      selection.rows.remove(at: $0)
+    }
+    let shouldMark = previousRow?.song != row.song
+    if shouldMark {
+      selection.rows.append(row)
+    }
+    cell.isMarked = shouldMark
+    playlistSongSelection = selection
+    cell.refresh()
+    addSelectionButton?.isEnabled = !selection.rows.isEmpty
+  }
+
+  @objc private func cancelPlaylistSongSelection() {
+    guard let selection = playlistSongSelection else { return }
+    playlistSongSelection = nil
+    addSelectionButton = nil
+    navigationItem.leftBarButtonItem = nil
+    selection.restoreNavigation()
+    tableView.tableHeaderView?.isUserInteractionEnabled = true
+    tableView.reloadData()
+  }
+
+  @objc private func addSelectedSongsToPlaylist() {
+    guard let selection = playlistSongSelection,
+          appDelegate.storage.settings.user.isOnlineMode else { return }
+    let songs: [Song]
+    if let source = selection.source {
+      let songsByRowID = Dictionary(uniqueKeysWithValues: selection.rows.map { ($0.id, $0.song) })
+      songs = source.items.compactMap { item in
+        guard let selectedSong = songsByRowID[item.objectID], !selectedSong.managedObject.isDeleted,
+              selectedSong == item.playable else { return nil }
+        return selectedSong
+      }
+    } else {
+      songs = selection.rows.map(\.song).filter { !$0.managedObject.isDeleted }
+    }
+    guard !songs.isEmpty else { return }
+    let selector = PlaylistSelectorVC(
+      account: selection.account,
+      itemsToAdd: songs,
+      sourcePlaylist: selection.source
+    )
+    selector.onSongsAdded = { [weak self] in self?.cancelPlaylistSongSelection() }
+    searchController.searchBar.endEditing(true)
+    present(UINavigationController(rootViewController: selector), animated: true)
+  }
+
   override func tableView(_ tableView: UITableView, willBeginEditingRowAt indexPath: IndexPath) {
     isSingleCellEditingModeActive = true
   }
@@ -148,7 +260,8 @@ class BasicTableViewController: KeyCommandTableViewController {
     leadingSwipeActionsConfigurationForRowAt indexPath: IndexPath
   )
     -> UISwipeActionsConfiguration? {
-    guard let swipeCB = swipeCallback,
+    guard !isSelectingPlaylistSongs,
+          let swipeCB = swipeCallback,
           let containableCB = containableAtIndexPathCallback,
           let containable = containableCB(indexPath)
     else { return UISwipeActionsConfiguration() }
@@ -183,7 +296,7 @@ class BasicTableViewController: KeyCommandTableViewController {
     // return nil here allows to display the "Delete" confirmation swipe action in edit mode (nil -> show default action -> delete is the default one)
     guard !(tableView.isEditing && !isSingleCellEditingModeActive) else { return nil }
     // this empty configuration ensures to only perform one "Delete" action at a time (no confirmation is displayed)
-    guard !(tableView.isEditing && isSingleCellEditingModeActive)
+    guard !isSelectingPlaylistSongs, !(tableView.isEditing && isSingleCellEditingModeActive)
     else { return UISwipeActionsConfiguration() }
     guard let swipeCB = swipeCallback,
           let containableCB = containableAtIndexPathCallback,
@@ -253,7 +366,8 @@ class BasicTableViewController: KeyCommandTableViewController {
     point: CGPoint
   )
     -> UIContextMenuConfiguration? {
-    guard let containableCB = containableAtIndexPathCallback,
+    guard !isSelectingPlaylistSongs,
+          let containableCB = containableAtIndexPathCallback,
           let containable = containableCB(indexPath)
     else { return nil }
 

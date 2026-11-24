@@ -206,6 +206,11 @@ class PlayableTableCell: BasicTableCell {
 
     self.playable = playable
     self.displayMode = displayMode
+    #if targetEnvironment(macCatalyst)
+      doubleTapGestureRecognizer.isEnabled = displayMode == .normal
+    #else
+      singleTapGestureRecognizer.isEnabled = displayMode == .normal
+    #endif
     self.playContextCb = playContextCb
     self.playAction = playAction
     self.playerIndexCb = playerIndexCb

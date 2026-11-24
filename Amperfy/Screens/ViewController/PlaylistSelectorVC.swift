@@ -44,8 +44,17 @@ class PlaylistsSelectorDiffableDataSource: BasicUITableViewDiffableDataSource {
 class PlaylistSelectorVC: SingleSnapshotFetchedResultsTableViewController<PlaylistMO> {
   override var sceneTitle: String? { "Playlists".localized }
 
+  private enum DuplicateHandling {
+    case skip
+    case allow
+  }
+
   let itemsToAdd: [Song]
-  private var selectedPlaylits = [Playlist: [Song]]()
+  var onSongsAdded: (() -> Void)?
+  private let sourcePlaylist: Playlist?
+  private var selectedPlaylists = [Playlist: DuplicateHandling]()
+  private var isCheckingPlaylist = false
+  private var isAddingSongs = false
 
   private var fetchedResultsController: PlaylistSelectorFetchedResultsController!
   private var sortType: PlaylistSortType = .name
@@ -55,8 +64,9 @@ class PlaylistSelectorVC: SingleSnapshotFetchedResultsTableViewController<Playli
   private var selectBarButton: UIBarButtonItem!
   private var addBarButton: UIBarButtonItem!
 
-  init(account: Account, itemsToAdd: [Song]) {
+  init(account: Account, itemsToAdd: [Song], sourcePlaylist: Playlist? = nil) {
     self.itemsToAdd = itemsToAdd
+    self.sourcePlaylist = sourcePlaylist
     super.init(style: .grouped, account: account)
   }
 
@@ -178,6 +188,7 @@ class PlaylistSelectorVC: SingleSnapshotFetchedResultsTableViewController<Playli
       target: self,
       selector: #selector(cancelBarButtonPressed)
     )
+    closeButton.isEnabled = !isAddingSongs
     optionsButton = UIBarButtonItem.createOptionsBarButton()
     optionsButton.menu = createSortButtonMenu()
     navigationItem.rightBarButtonItems = [closeButton, optionsButton]
@@ -185,40 +196,68 @@ class PlaylistSelectorVC: SingleSnapshotFetchedResultsTableViewController<Playli
 
   @IBAction
   func addBarButtonPressed(_ sender: UIBarButtonItem) {
+    guard !isCheckingPlaylist, !selectedPlaylists.isEmpty else { return }
     addSongsToSelectedPlaylists()
-    refreshAddButton()
-    dismiss()
   }
 
-  func addSongsToSelectedPlaylists() {
-    defer { selectedPlaylits.removeAll() }
-    guard !selectedPlaylits.isEmpty else { return }
-
-    let localCopySelectedPlaylits = selectedPlaylits
-    Task { @MainActor in do {
-      for (playlist, songs) in localCopySelectedPlaylits {
-        try await self.appDelegate.getMeta(self.account.info).librarySyncer.syncUpload(
-          playlistToAddSongs: playlist,
-          songs: songs
-        )
-        playlist.append(playables: songs)
+  private func addSongsToSelectedPlaylists() {
+    guard !isAddingSongs else { return }
+    isAddingSongs = true
+    navigationController?.isModalInPresentation = true
+    tableView.tableHeaderView?.isUserInteractionEnabled = false
+    refreshAddButton()
+    let additions = selectedPlaylists
+    let syncer = appDelegate.getMeta(account.info).librarySyncer
+    let isMulti = selectMode == .multi
+    Task { @MainActor in
+      var addedSongs = false
+      for (playlist, handling) in additions {
+        do {
+          guard appDelegate.networkMonitor.isConnectedToNetwork else {
+            throw URLError(.notConnectedToInternet)
+          }
+          if isMulti, handling == .skip, !playlist.id.isEmpty {
+            try await syncer.syncDown(playlist: playlist)
+          }
+          let songs = handling == .skip ? songsNotIn(playlist) : itemsToAdd
+          if !songs.isEmpty {
+            try await syncer.syncUpload(playlistToAddSongs: playlist, songs: songs)
+            playlist.append(playables: songs)
+            addedSongs = true
+          }
+          selectedPlaylists.removeValue(forKey: playlist)
+          updatePlaylistSelection(playlist)
+        } catch {
+          appDelegate.eventLogger.report(topic: "Playlist Add Songs".localized, error: error)
+        }
       }
-    } catch {
-      self.appDelegate.eventLogger.report(topic: "Playlist Add Songs".localized, error: error)
-    }}
+      isAddingSongs = false
+      navigationController?.isModalInPresentation = false
+      tableView.tableHeaderView?.isUserInteractionEnabled = true
+      if selectedPlaylists.isEmpty {
+        if addedSongs { onSongsAdded?() }
+        dismiss()
+      } else {
+        if !isMulti { selectedPlaylists.removeAll() }
+        refreshAddButton()
+      }
+    }
   }
 
   @IBAction
   func selectBarButtonPressed(_ sender: Any) {
     selectMode = ((selectMode == .single) ? .multi : .single)
     selectBarButton.isSelected = (selectMode == .multi)
+    selectedPlaylists.removeAll()
     refreshAddButton()
-    selectedPlaylits.removeAll()
     tableView.reloadData()
   }
 
   func refreshAddButton() {
-    addBarButton.isEnabled = !selectedPlaylits.isEmpty
+    let canSelect = !isCheckingPlaylist && !isAddingSongs
+    selectBarButton.isEnabled = canSelect
+    addBarButton.isEnabled = canSelect && !selectedPlaylists.isEmpty
+    closeButton.isEnabled = !isAddingSongs
   }
 
   @IBAction
@@ -300,9 +339,16 @@ class PlaylistSelectorVC: SingleSnapshotFetchedResultsTableViewController<Playli
     -> UITableViewCell {
     let cell: PlaylistTableCell = dequeueCell(for: tableView, at: indexPath)
     cell.display(playlist: playlist, rootView: nil)
+    let isSource = playlist.managedObject.objectID == sourcePlaylist?.managedObject.objectID
+    cell.contentView.alpha = isSource ? 0.45 : 1
+    if isSource {
+      cell.accessibilityTraits.insert(.notEnabled)
+    } else {
+      cell.accessibilityTraits.remove(.notEnabled)
+    }
 
-    if selectMode == .multi {
-      let isMarked = (selectedPlaylits[playlist] != nil)
+    if selectMode == .multi, !isSource {
+      let isMarked = (selectedPlaylists[playlist] != nil)
       let img = UIImageView(image: isMarked ? .checkmark : .circle)
       img.tintColor = isMarked ? appDelegate.storage.settings.accounts
         .getSetting(playlist.account?.info).read
@@ -318,68 +364,90 @@ class PlaylistSelectorVC: SingleSnapshotFetchedResultsTableViewController<Playli
 
   override func tableView(_ tableView: UITableView, didSelectRowAt indexPath: IndexPath) {
     tableView.deselectRow(at: indexPath, animated: false)
-    guard let diffableDataSource else { return }
-    let objectID = diffableDataSource.itemIdentifier(for: indexPath)
-    guard let objectID,
-          let object = try? appDelegate.storage.main.context
-          .existingObject(with: objectID),
-          let playlistMO = object as? PlaylistMO
-    else {
-      return
-    }
+    guard !isCheckingPlaylist, !isAddingSongs,
+          let objectID = diffableDataSource?.itemIdentifier(for: indexPath),
+          objectID != sourcePlaylist?.managedObject.objectID,
+          let playlistMO = (try? appDelegate.storage.main.context
+            .existingObject(with: objectID)) as? PlaylistMO,
+          !playlistMO.isDeleted else { return }
 
     let playlist = Playlist(
       library: appDelegate.storage.main.library,
       managedObject: playlistMO
     )
+    if selectedPlaylists.removeValue(forKey: playlist) != nil {
+      updatePlaylistSelection(playlist)
+      return
+    }
 
-    func handleSuccessfullSelection(playables: [AbstractPlayable]) {
-      let songs = playables.filterSongs()
-      if !songs.isEmpty {
-        selectedPlaylits[playlist] = songs
-      } else {
-        selectedPlaylits.removeValue(forKey: playlist)
-      }
-
-      var snap = diffableDataSource.snapshot()
-      snap.reconfigureItems([playlist.managedObject.objectID])
-      diffableDataSource.apply(snap)
-
-      if selectMode == .single {
-        addSongsToSelectedPlaylists()
-        dismiss()
-      } else {
+    isCheckingPlaylist = true
+    refreshAddButton()
+    Task { @MainActor in
+      defer {
+        isCheckingPlaylist = false
         refreshAddButton()
       }
-    }
-
-    if selectedPlaylits[playlist] != nil {
-      selectedPlaylits.removeValue(forKey: playlist)
-      var snap = diffableDataSource.snapshot()
-      snap.reconfigureItems([playlist.managedObject.objectID])
-      diffableDataSource.apply(snap)
-    } else {
-      let itemsNotContained = playlist.notContaines(playables: itemsToAdd)
-      if itemsNotContained.count != itemsToAdd.count {
-        let alert = UIAlertController(
-          title: nil,
-          message: "Some Songs are already in this Playlist.".localized,
-          preferredStyle: .alert
-        )
-        alert.addAction(UIAlertAction(title: "Add Duplicates".localized, style: .default, handler: { _ in
-          handleSuccessfullSelection(playables: self.itemsToAdd)
-        }))
-        alert.addAction(UIAlertAction(title: "Skip Duplicates".localized, style: .default, handler: { _ in
-          handleSuccessfullSelection(playables: Array(itemsNotContained))
-        }))
-        alert.addAction(UIAlertAction(title: "Cancel".localized, style: .default, handler: { _ in
-          // do nothing
-        }))
-        present(alert, animated: true, completion: nil)
-      } else {
-        handleSuccessfullSelection(playables: itemsToAdd)
+      do {
+        guard appDelegate.networkMonitor.isConnectedToNetwork else {
+          throw URLError(.notConnectedToInternet)
+        }
+        if !playlist.id.isEmpty {
+          try await appDelegate.getMeta(account.info).librarySyncer.syncDown(playlist: playlist)
+        }
+        guard viewIfLoaded?.window != nil, navigationController?.isBeingDismissed == false,
+              !playlist.managedObject.isDeleted else { return }
+        confirmSelection(of: playlist)
+      } catch {
+        appDelegate.eventLogger.report(topic: "Playlist Sync", error: error)
       }
     }
+  }
+
+  private func confirmSelection(of playlist: Playlist) {
+    let newSongs = songsNotIn(playlist)
+    func select(_ handling: DuplicateHandling) {
+      guard handling == .allow ? !itemsToAdd.isEmpty : !newSongs.isEmpty else { return }
+      selectedPlaylists[playlist] = handling
+      if selectMode == .single {
+        addSongsToSelectedPlaylists()
+      } else {
+        updatePlaylistSelection(playlist)
+      }
+    }
+
+    guard newSongs.count != itemsToAdd.count else {
+      select(.skip)
+      return
+    }
+    let alert = UIAlertController(
+      title: nil,
+      message: "Some Songs are already in this Playlist.".localized,
+      preferredStyle: .alert
+    )
+    let skipDuplicates = UIAlertAction(title: "Skip Duplicates".localized, style: .default) { _ in
+      select(.skip)
+    }
+    alert.addAction(skipDuplicates)
+    alert.addAction(UIAlertAction(title: "Add Duplicates".localized, style: .default) { _ in
+      select(.allow)
+    })
+    alert.addAction(UIAlertAction(title: "Cancel".localized, style: .cancel))
+    alert.preferredAction = skipDuplicates
+    present(alert, animated: true)
+  }
+
+  private func songsNotIn(_ playlist: Playlist) -> [Song] {
+    Array(playlist.notContaines(playables: itemsToAdd)).filterSongs()
+  }
+
+  private func updatePlaylistSelection(_ playlist: Playlist) {
+    refreshAddButton()
+    guard let diffableDataSource else { return }
+    var snapshot = diffableDataSource.snapshot()
+    let objectID = playlist.managedObject.objectID
+    guard snapshot.indexOfItem(objectID) != nil else { return }
+    snapshot.reconfigureItems([objectID])
+    diffableDataSource.apply(snapshot)
   }
 
   override func updateSearchResults(for searchController: UISearchController) {

@@ -93,6 +93,11 @@ class SongsVC: SingleFetchedResultsTableViewController<SongMO> {
     containableAtIndexPathCallback = { indexPath in
       self.fetchedResultsController.getWrappedEntity(at: indexPath)
     }
+    playlistSelectionRow = { [weak self] indexPath in
+      guard let self else { return nil }
+      let song = fetchedResultsController.getWrappedEntity(at: indexPath)
+      return (song.managedObject.objectID, song)
+    }
     playContextAtIndexPathCallback = convertIndexPathToPlayContext
     swipeCallback = { indexPath, completionHandler in
       let song = self.fetchedResultsController.getWrappedEntity(at: indexPath)
@@ -188,9 +193,15 @@ class SongsVC: SingleFetchedResultsTableViewController<SongMO> {
   }
 
   func updateRightBarButtonItems() {
-    var actions = [UIMenu]()
+    guard !isSelectingPlaylistSongs else { return }
+    var actions = [UIMenuElement]()
     actions.append(createSortButtonMenu())
     if appDelegate.storage.settings.user.isOnlineMode {
+      if displayFilter == .favorites {
+        actions.insert(selectSongsForPlaylistAction(account: account) { [weak self] in
+          self?.updateRightBarButtonItems()
+        }, at: 0)
+      }
       actions.append(createActionButtonMenu())
     }
     optionsButton = UIBarButtonItem.createOptionsBarButton()
@@ -226,7 +237,12 @@ class SongsVC: SingleFetchedResultsTableViewController<SongMO> {
     -> UITableViewCell {
     let cell: PlayableTableCell = dequeueCell(for: tableView, at: indexPath)
     let song = fetchedResultsController.getWrappedEntity(at: indexPath)
-    cell.display(playable: song, playContextCb: convertCellViewToPlayContext, rootView: self)
+    displayPlaylistSelectionCell(
+      cell,
+      song: song,
+      rowID: song.managedObject.objectID,
+      playContext: convertCellViewToPlayContext
+    )
     return cell
   }
 

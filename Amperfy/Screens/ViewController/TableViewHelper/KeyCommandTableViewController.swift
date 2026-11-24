@@ -82,7 +82,8 @@ class TableViewKeyCommandsController {
 
     let focussedCell = tableView.cellForRow(at: focussedIndexPath)
 
-    if let cell = focussedCell as? PlayableTableCell {
+    let isSelectingSongs = (tableView.delegate as? BasicTableViewController)?.isSelectingPlaylistSongs == true
+    if let cell = focussedCell as? PlayableTableCell, !isSelectingSongs {
       cell.playThisSong()
     } else {
       tableView.delegate?.tableView?(tableView, didSelectRowAt: focussedIndexPath)

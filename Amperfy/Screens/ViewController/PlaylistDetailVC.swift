@@ -166,8 +166,15 @@ class PlaylistDetailVC: SingleSnapshotFetchedResultsTableViewController<Playlist
       action: #selector(openEditView)
     )
     optionsButton = UIBarButtonItem.createOptionsBarButton()
-    optionsButton.menu = UIMenu.lazyMenu {
-      EntityPreviewActionBuilder(container: self.playlist, on: self).createMenuActions()
+    optionsButton.menu = UIMenu.lazyMenu { [weak self] in
+      guard let self else { return [] }
+      var actions = EntityPreviewActionBuilder(container: playlist, on: self).createMenuActions()
+      if appDelegate.storage.settings.user.isOnlineMode {
+        actions.insert(selectSongsForPlaylistAction(account: account, source: playlist) { [weak self] in
+          self?.refreshBarButtons()
+        }, at: 0)
+      }
+      return actions
     }
 
     let header = PlaylistArtworkHeader(playlist: playlist)
@@ -195,6 +202,15 @@ class PlaylistDetailVC: SingleSnapshotFetchedResultsTableViewController<Playlist
 
     containableAtIndexPathCallback = { indexPath in
       self.fetchedResultsController.getWrappedEntity(at: indexPath).playable
+    }
+    playlistSelectionRow = { [weak self] indexPath in
+      guard let self,
+            let id = diffableDataSource?.itemIdentifier(for: indexPath),
+            let object = (try? appDelegate.storage.main.context.existingObject(with: id)) as? PlaylistItemMO,
+            !object.isDeleted else { return nil }
+      let item = PlaylistItem(library: appDelegate.storage.main.library, managedObject: object)
+      guard let song = item.playable.asSong else { return nil }
+      return (id, song)
     }
     playContextAtIndexPathCallback = { indexPath in
       self.convertIndexPathToPlayContext(songIndexPath: indexPath)
@@ -284,6 +300,7 @@ class PlaylistDetailVC: SingleSnapshotFetchedResultsTableViewController<Playlist
   }
 
   func refreshBarButtons() {
+    guard !isSelectingPlaylistSongs else { return }
     var edititingBarButton: UIBarButtonItem? = nil
 
     if appDelegate.storage.settings.user.isOnlineMode {
@@ -333,7 +350,12 @@ class PlaylistDetailVC: SingleSnapshotFetchedResultsTableViewController<Playlist
     -> UITableViewCell {
     let cell: PlayableTableCell = dequeueCell(for: tableView, at: indexPath)
     if let song = playlistItem.playable.asSong {
-      cell.display(playable: song, playContextCb: convertCellViewToPlayContext, rootView: self)
+      displayPlaylistSelectionCell(
+        cell,
+        song: song,
+        rowID: playlistItem.objectID,
+        playContext: convertCellViewToPlayContext
+      )
     }
     return cell
   }
