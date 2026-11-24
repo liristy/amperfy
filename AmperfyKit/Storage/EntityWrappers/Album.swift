@@ -97,6 +97,35 @@ public class Album: AbstractLibraryEntity {
     return releaseCalendar.date(from: components)
   }
 
+  static func completeReleaseDateTag(_ value: String) -> Date? {
+    let parts = value.trimmingCharacters(in: .whitespacesAndNewlines)
+      .split(separator: "-", omittingEmptySubsequences: false)
+    guard parts.count == 3, parts[0].utf8.count == 4, parts[1].utf8.count == 2,
+          parts[2].utf8.count == 2, let year = Int(parts[0]), let month = Int(parts[1]),
+          let day = Int(parts[2]) else { return nil }
+    return completeReleaseDate(DateComponents(year: year, month: month, day: day))
+  }
+
+  @MainActor
+  public func cacheReleaseDateFromFiles(storage: PersistentStorage) async {
+    guard releaseDate == nil, !managedObject.isDeleted else { return }
+    let tracks = songs
+    guard !tracks.isEmpty, remoteSongCount <= tracks.count, tracks.allSatisfy(\.isCached) else { return }
+    let files = tracks.compactMap { storage.main.library.getFileURL(forPlayable: $0) }
+    guard files.count == tracks.count else { return }
+
+    let date = await Task.detached(priority: .utility) { AlbumFileDate.sharedFLACDate(in: files) }.value
+    if let date, saveFileReleaseDate(date) { storage.main.saveContext() }
+  }
+
+  @MainActor
+  func saveFileReleaseDate(_ date: Date) -> Bool {
+    guard !Task.isCancelled, !managedObject.isDeleted, releaseDate == nil,
+          year <= 0 || year == Self.releaseCalendar.component(.year, from: date) else { return false }
+    releaseDate = date
+    return true
+  }
+
   public var duration: Int { Int(managedObject.duration) }
 
   public var remoteDuration: Int {

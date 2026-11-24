@@ -203,6 +203,13 @@ class AlbumDetailVC: SingleSnapshotFetchedResultsTableViewController<SongMO> {
   override func viewDidAppear(_ animated: Bool) {
     super.viewDidAppear(animated)
     Task { @MainActor in
+      if album.releaseDate == nil {
+        await album.cacheReleaseDateFromFiles(storage: appDelegate.storage)
+        if album.releaseDate != nil {
+          detailOperationsView?.refresh()
+          refreshAlbumFooter()
+        }
+      }
       do {
         if self.appDelegate.storage.settings.user.isOnlineMode {
           try await self.appDelegate.getMeta(self.account.info).librarySyncer.syncAlbumDetail(album)

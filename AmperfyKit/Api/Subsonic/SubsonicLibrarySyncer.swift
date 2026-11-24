@@ -447,11 +447,23 @@ class SubsonicLibrarySyncer: CommonLibrarySyncer, LibrarySyncer {
       albumAsync.isCached = parserDelegate.isCollectionCached
       albumAsync.isSongsMetaDataSynced = true
     }
-    if let metadata = await nativeMetadata, !Task.isCancelled, !album.managedObject.isDeleted,
+    if let metadata = await nativeMetadata, let date = metadata.completeDate,
+       !Task.isCancelled, !album.managedObject.isDeleted,
        album.releaseDate == previousDate {
-      album.releaseDate = metadata.completeDate
+      album.releaseDate = date
       storage.main.saveContext()
     }
+    guard includeNavidromeDate, album.releaseDate == nil, !album.managedObject.isDeleted else { return }
+    await album.cacheReleaseDateFromFiles(storage: storage)
+
+    let tracks = album.songs
+    guard !Task.isCancelled, album.releaseDate == nil, album.remoteSongCount <= 1, tracks.count == 1,
+          let track = tracks.first, let contentType = track.contentType?.lowercased(),
+          ["audio/flac", "audio/x-flac"].contains(contentType),
+          let url = try? await subsonicServerApi.generateUrl(forDownloadingPlayableId: track.id),
+          let date = await AlbumFileDate.remoteFLACDate(at: url, headers: subsonicServerApi.httpHeaders),
+          album.saveFileReleaseDate(date) else { return }
+    storage.main.saveContext()
   }
 
   @MainActor
