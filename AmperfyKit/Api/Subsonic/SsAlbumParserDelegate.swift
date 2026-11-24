@@ -28,7 +28,19 @@ class SsAlbumParserDelegate: SsXmlLibWithArtworkParser {
   var guessedArtist: Artist?
   var guessedGenre: Genre?
   var parsedAlbums = [Album]()
+  var clearsMissingReleaseDate = false
   private var albumBuffer: Album?
+  private var elementDepth = 0
+  private var albumDepth: Int?
+  private var explicitYear: Int?
+  private var releaseDate: DateComponents?
+  private var originalReleaseDate: DateComponents?
+
+  private static let releaseCalendar: Calendar = {
+    var calendar = Calendar(identifier: .gregorian)
+    calendar.timeZone = .gmt
+    return calendar
+  }()
 
   override func parser(
     _ parser: XMLParser,
@@ -44,9 +56,21 @@ class SsAlbumParserDelegate: SsXmlLibWithArtworkParser {
       qualifiedName: qName,
       attributes: attributeDict
     )
+    elementDepth += 1
+    if let albumDepth, elementDepth == albumDepth + 1 {
+      switch elementName {
+      case "releaseDate":
+        releaseDate = Self.releaseDateComponents(attributeDict)
+      case "originalReleaseDate":
+        originalReleaseDate = Self.releaseDateComponents(attributeDict)
+      default:
+        break
+      }
+    }
 
-    if elementName == "album" {
+    if elementName == "album", albumDepth == nil {
       guard let albumId = attributeDict["id"] else { return }
+      albumDepth = elementDepth
 
       if let prefetchedAlbum = prefetch.prefetchedAlbumDict[albumId] {
         albumBuffer = prefetchedAlbum
@@ -69,8 +93,9 @@ class SsAlbumParserDelegate: SsXmlLibWithArtworkParser {
       }
       albumBuffer?.rating = Int(attributeDict["userRating"] ?? "0") ?? 0
       albumBuffer?.isFavorite = attributeDict["starred"] != nil
-      if let attributeYear = attributeDict["year"], let year = Int(attributeYear) {
-        albumBuffer?.year = year
+      explicitYear = attributeDict["year"].flatMap { Int($0) }
+      if let explicitYear {
+        albumBuffer?.year = explicitYear
       }
       if let attributeSongCount = attributeDict["songCount"],
          let songCount = Int(attributeSongCount) {
@@ -123,16 +148,25 @@ class SsAlbumParserDelegate: SsXmlLibWithArtworkParser {
     namespaceURI: String?,
     qualifiedName qName: String?
   ) {
-    switch elementName {
-    case "album":
+    if elementName == "album", elementDepth == albumDepth {
       parsedCount += 1
       if let album = albumBuffer {
+        let fullDate = Self.completeDate(releaseDate) ?? Self.completeDate(originalReleaseDate)
+        if fullDate != nil || clearsMissingReleaseDate {
+          album.releaseDate = fullDate
+        }
+        if (explicitYear ?? 0) <= 0, let dateYear = releaseDate?.year ?? originalReleaseDate?.year {
+          album.year = dateYear
+        }
         parsedAlbums.append(album)
       }
       albumBuffer = nil
-    default:
-      break
+      albumDepth = nil
+      explicitYear = nil
+      releaseDate = nil
+      originalReleaseDate = nil
     }
+    elementDepth -= 1
 
     super.parser(
       parser,
@@ -140,5 +174,22 @@ class SsAlbumParserDelegate: SsXmlLibWithArtworkParser {
       namespaceURI: namespaceURI,
       qualifiedName: qName
     )
+  }
+
+  private static func releaseDateComponents(_ attributes: [String: String]) -> DateComponents? {
+    guard let year = attributes["year"].flatMap({ Int($0) }), (1 ... 9999).contains(year) else {
+      return nil
+    }
+    return DateComponents(
+      year: year,
+      month: attributes["month"].flatMap { Int($0) },
+      day: attributes["day"].flatMap { Int($0) }
+    )
+  }
+
+  private static func completeDate(_ components: DateComponents?) -> Date? {
+    guard let components, components.month != nil, components.day != nil,
+          components.isValidDate(in: releaseCalendar) else { return nil }
+    return releaseCalendar.date(from: components)
   }
 }

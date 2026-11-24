@@ -387,6 +387,7 @@ class SubsonicLibrarySyncer: CommonLibrarySyncer, LibrarySyncer {
           performanceMonitor: self.performanceMonitor, prefetch: prefetch, account: accountAsync,
           library: asyncCompanion.library
         )
+        parserDelegate.clearsMissingReleaseDate = true
         try self.parse(response: albumResponse, delegate: parserDelegate)
       }
     } catch {

@@ -185,8 +185,8 @@ class AlbumDetailVC: SingleSnapshotFetchedResultsTableViewController<SongMO> {
   }
 
   private func refreshAlbumFooter() {
-    let year = album.year > 0 ? String(album.year) + "\n" : ""
-    albumFooter.text = year + CommonString.songs(album.songCount) + " · " + album.duration.asDurationShortString
+    let summary = CommonString.songs(album.songCount) + " · " + album.duration.asDurationShortString
+    albumFooter.text = [album.releaseDateText, summary].compactMap { $0 }.joined(separator: "\n")
     let footer = tableView.tableFooterView ?? UIView()
     if albumFooter.superview !== footer { footer.addSubview(albumFooter) }
     footer.frame.size = CGSize(width: tableView.bounds.width, height: 88)
@@ -214,6 +214,7 @@ class AlbumDetailVC: SingleSnapshotFetchedResultsTableViewController<SongMO> {
         self.appDelegate.eventLogger.report(topic: "Album Sync", error: error)
       }
       self.detailOperationsView?.refresh()
+      self.refreshAlbumFooter()
     }
     defer { songToScrollTo = nil }
     guard let songToScrollTo = songToScrollTo,
@@ -363,7 +364,7 @@ final class MusicArtworkHeader: UIView {
       titleLabel.text = album.name
       artistButton.setTitle(album.artist?.name, for: .normal)
       artistButton.isEnabled = album.artist != nil
-      metadataLabel.text = [album.genre?.name, album.year > 0 ? String(album.year) : nil].compactMap { $0 }.joined(separator: " · ")
+      metadataLabel.text = [album.genre?.name, album.releaseDateText].compactMap { $0 }.joined(separator: " · ")
       secondaryButton.configuration?.image = UIImage(systemName: album.isCached ? "checkmark" : "arrow.down")
       secondaryButton.isEnabled = appDelegate.storage.settings.user.isOnlineMode && !album.isCached
     } else if let artist = entity as? Artist {

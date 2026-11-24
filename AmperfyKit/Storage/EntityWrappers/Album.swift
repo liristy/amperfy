@@ -27,6 +27,14 @@ import UIKit
 
 public class Album: AbstractLibraryEntity {
   public let managedObject: AlbumMO
+  private static let releaseDateFormatter: DateFormatter = {
+    let formatter = DateFormatter()
+    formatter.locale = .autoupdatingCurrent
+    formatter.calendar = Calendar(identifier: .gregorian)
+    formatter.timeZone = .gmt
+    formatter.dateStyle = .long
+    return formatter
+  }()
 
   public init(managedObject: AlbumMO) {
     self.managedObject = managedObject
@@ -61,6 +69,20 @@ public class Album: AbstractLibraryEntity {
       guard Int16.isValid(value: newValue), managedObject.year != Int16(newValue) else { return }
       managedObject.year = Int16(newValue)
     }
+  }
+
+  public var releaseDate: Date? {
+    get { managedObject.releaseDate }
+    set {
+      if managedObject.releaseDate != newValue { managedObject.releaseDate = newValue }
+    }
+  }
+
+  public var releaseDateText: String? {
+    if let releaseDate {
+      return Self.releaseDateFormatter.string(from: releaseDate)
+    }
+    return year > 0 ? String(year) : nil
   }
 
   public var duration: Int { Int(managedObject.duration) }
@@ -195,8 +217,8 @@ extension Album: PlayableContainable {
       if isCached {
         infoContent.append("Cached".localized)
       }
-      if year > 0 {
-        infoContent.append("Year \(year)")
+      if let releaseDateText {
+        infoContent.append(releaseDateText)
       }
       if let genre = genre {
         infoContent.append("Genre: \(genre.name)")

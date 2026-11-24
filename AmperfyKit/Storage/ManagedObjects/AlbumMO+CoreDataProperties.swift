@@ -39,6 +39,8 @@ extension AlbumMO {
   @NSManaged
   public var recentIndex: Int16
   @NSManaged
+  public var releaseDate: Date?
+  @NSManaged
   public var newestIndex: Int16
   @NSManaged
   public var remoteDuration: Int64

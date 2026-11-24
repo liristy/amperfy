@@ -63,6 +63,7 @@ enum CoreDataMigrationVersion: String, CaseIterable {
 
   case v50 = "Amperfy v50" // Server-provided playlist artwork
   case v51 = "Amperfy v51" // Song artist credits
+  case v52 = "Amperfy v52" // Album release date
 
   // MARK: - Current
 
@@ -179,6 +180,8 @@ enum CoreDataMigrationVersion: String, CaseIterable {
     case .v50:
       return .v51
     case .v51:
+      return .v52
+    case .v52:
       return nil
     }
   }

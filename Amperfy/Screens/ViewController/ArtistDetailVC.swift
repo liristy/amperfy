@@ -234,27 +234,31 @@ private final class ArtistAlbumStripCell: UITableViewCell, UICollectionViewDataS
 
 private final class ArtistAlbumTile: UICollectionViewCell {
   private let artwork = EntityImageView(frame: .zero)
-  private let title = UILabel(), year = UILabel()
+  private let title = UILabel(), dateLabel = UILabel()
   override init(frame: CGRect) {
     super.init(frame: frame)
-    [artwork, title, year].forEach { contentView.addSubview($0) }
+    [artwork, title, dateLabel].forEach { contentView.addSubview($0) }
     artwork.imageContentMode = .scaleAspectFill; artwork.clipsToBounds = true
     title.font = .systemFont(ofSize: 14); title.textColor = .white
-    year.font = .systemFont(ofSize: 12); year.textColor = .white.withAlphaComponent(0.5)
+    dateLabel.font = .systemFont(ofSize: 12)
+    dateLabel.textColor = .white.withAlphaComponent(0.5)
+    dateLabel.adjustsFontSizeToFitWidth = true
+    dateLabel.minimumScaleFactor = 0.8
     isAccessibilityElement = true; accessibilityTraits = .button
   }
   required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
   func display(_ album: Album) {
     let settings = appDelegate.storage.settings.accounts.getSetting(album.account?.info).read
     artwork.display(theme: settings.themePreference, container: album)
-    title.text = album.name; year.text = album.year > 0 ? String(album.year) : nil
-    accessibilityLabel = [title.text, year.text].compactMap { $0 }.joined(separator: ", ")
+    title.text = album.name
+    dateLabel.text = album.releaseDateText
+    accessibilityLabel = [title.text, dateLabel.text].compactMap { $0 }.joined(separator: ", ")
   }
   override func layoutSubviews() {
     super.layoutSubviews()
     artwork.frame = CGRect(x: 0, y: 0, width: bounds.width, height: bounds.width)
     title.frame = CGRect(x: 0, y: bounds.width + 6, width: bounds.width, height: 18)
-    year.frame = CGRect(x: 0, y: bounds.width + 25, width: bounds.width, height: 16)
+    dateLabel.frame = CGRect(x: 0, y: bounds.width + 25, width: bounds.width, height: 16)
   }
 }
 
