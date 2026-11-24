@@ -24,6 +24,13 @@ extension AudioPlayer {
         static let error = InternalState(rawValue: 1 << 31)
 
         static let waiting = [.waitingForData, waitingForDataAfterSeek, .rebuffering]
+
+        var shouldDiscardDecodedAudio: Bool {
+            switch self {
+            case .disposed, .pendingNext, .stopped, .error: return true
+            default: return false
+            }
+        }
     }
 }
 

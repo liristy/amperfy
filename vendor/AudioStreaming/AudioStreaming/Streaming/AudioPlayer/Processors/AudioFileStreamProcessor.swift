@@ -568,10 +568,7 @@ final class AudioFileStreamProcessor {
                     if framesLeftInBuffer > 0 {
                         break
                     }
-                    if playerContext.internalState == .disposed
-                        || playerContext.internalState == .pendingNext
-                        || playerContext.internalState == .stopped
-                    {
+                    if playerContext.internalState.shouldDiscardDecodedAudio {
                         return
                     }
 
@@ -585,9 +582,9 @@ final class AudioFileStreamProcessor {
                         return
                     }
 
-                    rendererContext.waiting.write { $0 = true }
-                    rendererContext.packetsSemaphore.wait()
-                    rendererContext.waiting.write { $0 = false }
+                    rendererContext.waitForBufferSpace {
+                        !playerContext.internalState.shouldDiscardDecodedAudio
+                    }
                 }
             }
 

@@ -271,7 +271,6 @@ open class AudioPlayer {
     private func play(audioEntry: AudioEntry) {
         audioEntry.delegate = self
 
-        checkRenderWaitingAndNotifyIfNeeded()
         serializationQueue.sync {
             clearQueue()
             // Reset loop tracking when starting new playback
@@ -279,6 +278,7 @@ open class AudioPlayer {
             currentLoopIteration = 0
             entriesQueue.enqueue(item: audioEntry, type: .upcoming)
             playerContext.setInternalState(to: .pendingNext)
+            checkRenderWaitingAndNotifyIfNeeded()
             do {
                 try self.startEngineIfNeeded()
             } catch {
@@ -429,6 +429,12 @@ open class AudioPlayer {
 
     /// Pauses the audio playback
     public func pause() {
+        if playerContext.internalState == .error {
+            // An error changes the state before notifying the client, but the
+            // output can still be rendering. Quiesce it before a retry.
+            player.auAudioUnit.stopHardware()
+            return
+        }
         if playerContext.internalState != .paused, playerContext.internalState.contains(.running) {
             stateBeforePaused = playerContext.internalState
             playerContext.setInternalState(to: .paused)
@@ -711,7 +717,8 @@ open class AudioPlayer {
     private func processSource() {
         dispatchPrecondition(condition: .onQueue(sourceQueue))
 
-        guard playerContext.internalState != .paused else { return }
+        let state = playerContext.internalState
+        guard state != .paused, state != .error else { return }
 
         let snapshot = playerContext.entriesLock.withLock {
             (reading: playerContext.audioReadingEntry, playing: playerContext.audioPlayingEntry)
@@ -954,6 +961,7 @@ open class AudioPlayer {
 
     private func raiseUnexpected(error: AudioPlayerError) {
         playerContext.setInternalState(to: .error)
+        checkRenderWaitingAndNotifyIfNeeded()
         asyncOnMain { [weak self] in
             guard let self = self else { return }
             self.delegate?.audioPlayerUnexpectedError(player: self, error: error)
@@ -1029,7 +1037,8 @@ open class AudioPlayer {
 
 extension AudioPlayer: AudioStreamSourceDelegate {
     public func dataAvailable(source: CoreAudioStreamSource, data: Data) {
-        guard let readingEntry = playerContext.audioReadingEntry, readingEntry.has(same: source) else {
+        guard playerContext.internalState != .error,
+              let readingEntry = playerContext.audioReadingEntry, readingEntry.has(same: source) else {
             return
         }
 

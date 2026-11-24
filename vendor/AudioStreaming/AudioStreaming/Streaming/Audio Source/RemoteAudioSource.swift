@@ -226,9 +226,11 @@ public class RemoteAudioSource: AudioStreamSource {
         task.responseStream { [weak self] event in
             switch event {
             case let .response(urlResponse):
-                self?.parseResponseHeader(response: urlResponse)
+                let canOpenStream = self?.parseResponseHeader(response: urlResponse) ?? false
                 task.cancel()
-                completion()
+                if canOpenStream {
+                    completion()
+                }
             default:
                 break
             }
@@ -260,8 +262,9 @@ public class RemoteAudioSource: AudioStreamSource {
     private func handleResponse(event: NetworkDataStream.ResponseEvent) {
         switch event {
         case let .response(urlResponse):
-            parseResponseHeader(response: urlResponse)
-            streamOperationQueue.isSuspended = false
+            if parseResponseHeader(response: urlResponse) {
+                streamOperationQueue.isSuspended = false
+            }
         case let .stream(.success(response)):
             handleSuccessfulStreamEvent(response: response)
         case let .stream(.failure(error)):
@@ -327,19 +330,20 @@ public class RemoteAudioSource: AudioStreamSource {
         }
     }
 
-    private func parseResponseHeader(response: HTTPURLResponse?) {
-        guard let response = response else { return }
+    private func parseResponseHeader(response: HTTPURLResponse?) -> Bool {
+        guard let response = response else { return true }
         let httpStatusCode = response.statusCode
+        if httpStatusCode >= 300, httpStatusCode != 416 {
+            close()
+            delegate?.errorOccurred(source: self, error: NetworkError.serverError)
+            return false
+        }
         let parser = HTTPHeaderParser()
         parsedHeaderOutput = parser.parse(input: response)
 
         if parsedHeaderOutput == nil {
             shouldTryParsingIcycastHeaders = true
-            checkHTTP(statusCode: httpStatusCode)
-            return
-        }
-
-        if httpStatusCode == 206 {
+        } else if httpStatusCode == 206 {
             supportsSeek = true
         } else if let acceptRanges = parser.value(forHTTPHeaderField: HeaderField.acceptRanges, in: response) {
             supportsSeek = acceptRanges != "none"
@@ -349,20 +353,11 @@ public class RemoteAudioSource: AudioStreamSource {
         if let metadataStep = parsedHeaderOutput?.metadataStep {
             metadataStreamProcessor.metadataAvailable(step: metadataStep)
         }
-        checkHTTP(statusCode: httpStatusCode)
-    }
-
-    private func checkHTTP(statusCode: Int) {
-        // check for error
-        if statusCode == 416 { // range not satisfied error
+        if httpStatusCode == 416 { // Range not satisfiable
             if length >= 0 { seekOffset = length }
             delegate?.endOfFileOccurred(source: self)
-        } else if statusCode >= 300 {
-            delegate?.errorOccurred(
-                source: self,
-                error: NetworkError.serverError
-            )
         }
+        return true
     }
 
     private func buildUrlRequest(with url: URL, seekIfNeeded seekOffset: Int) -> URLRequest {

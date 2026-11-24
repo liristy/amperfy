@@ -143,9 +143,7 @@ final class OggVorbisStreamProcessor {
         
         decodeLoop: while true {
             // Check player state
-            if playerContext.internalState == .disposed
-                || playerContext.internalState == .pendingNext
-                || playerContext.internalState == .stopped {
+            if playerContext.internalState.shouldDiscardDecodedAudio {
                 break
             }
             
@@ -178,9 +176,7 @@ final class OggVorbisStreamProcessor {
                         break
                     }
                     
-                    if playerContext.internalState == .disposed
-                        || playerContext.internalState == .pendingNext
-                        || playerContext.internalState == .stopped {
+                    if playerContext.internalState.shouldDiscardDecodedAudio {
                         break decodeLoop
                     }
                     
@@ -193,9 +189,9 @@ final class OggVorbisStreamProcessor {
                         break decodeLoop
                     }
                     
-                    rendererContext.waiting.write { $0 = true }
-                    rendererContext.packetsSemaphore.wait()
-                    rendererContext.waiting.write { $0 = false }
+                    rendererContext.waitForBufferSpace {
+                        !playerContext.internalState.shouldDiscardDecodedAudio
+                    }
                 }
             }
             
@@ -356,9 +352,7 @@ final class OggVorbisStreamProcessor {
                     break
                 }
                 
-                if playerContext.internalState == .disposed
-                    || playerContext.internalState == .pendingNext
-                    || playerContext.internalState == .stopped {
+                if playerContext.internalState.shouldDiscardDecodedAudio {
                     return
                 }
                 
@@ -371,9 +365,9 @@ final class OggVorbisStreamProcessor {
                     return
                 }
                 
-                rendererContext.waiting.write { $0 = true }
-                rendererContext.packetsSemaphore.wait()
-                rendererContext.waiting.write { $0 = false }
+                rendererContext.waitForBufferSpace {
+                    !playerContext.internalState.shouldDiscardDecodedAudio
+                }
             }
         }
         

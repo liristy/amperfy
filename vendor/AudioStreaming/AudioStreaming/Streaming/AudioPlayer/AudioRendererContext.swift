@@ -65,6 +65,15 @@ final class AudioRendererContext {
         bufferContext.frameStartIndex = 0
         bufferContext.frameUsedCount = 0
     }
+
+    func waitForBufferSpace(while shouldWait: () -> Bool) {
+        waiting.write { $0 = true }
+        defer { waiting.write { $0 = false } }
+        // Recheck the player state after publishing that a wakeup is needed.
+        if shouldWait() {
+            packetsSemaphore.wait()
+        }
+    }
 }
 
 /// Allocates a buffer list

@@ -379,7 +379,7 @@ class BackendAudioPlayer: NSObject {
     responder?.didItemFinishedPlaying()
   }
 
-  private func handleError(error: Error) {
+  private func handleError(error: AudioStreaming.AudioPlayerError) {
     isErrorOccurred = true
     wasPlayingBeforeErrorOccurred = isPlaying
     pause(preservingRecoveryPlayback: true)
@@ -390,7 +390,14 @@ class BackendAudioPlayer: NSObject {
     perloadedStreamingBitrate = nil
     activeTranscodingFormat = nil
     preloadTranscodingFormat = nil
-    restartPlayer()
+    switch error {
+    case .networkError:
+      // Reopening the stream replaces its reader and decoder on the existing
+      // engine. Keep the output unit alive across HTTP failures and retries.
+      break
+    default:
+      restartPlayer()
+    }
     eventLogger.report(topic: "Player Status", error: error)
     responder?.notifyErrorOccurred(error: error)
     if isTriggerReinsertPlayableAllowed {
