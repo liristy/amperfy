@@ -584,11 +584,22 @@ final class SubsonicServerApi: URLCleanser, Sendable {
     }
   }
 
-  func requestNavidromeAlbumMetadata(id: String) async -> NavidromeAlbumMetadata? {
+  func requestNavidromeAlbumMetadata(id: String, albumResponse: APIDataResponse) async -> NavidromeAlbumMetadata? {
     guard let credentials = credentials.wrappedValue,
-          var base = URLComponents(string: credentials.activeBackendServerUrl),
-          base.scheme?.lowercased() == "https", base.host != nil,
-          base.user == nil, base.password == nil else { return nil }
+          let configured = URLComponents(string: credentials.activeBackendServerUrl),
+          configured.user == nil, configured.password == nil,
+          let host = configured.host?.lowercased(),
+          albumResponse.url?.host?.lowercased() == host,
+          let endpoint = albumResponse.resolvedURL,
+          endpoint.scheme?.lowercased() == "https", endpoint.host?.lowercased() == host,
+          endpoint.user == nil, endpoint.password == nil,
+          ["getAlbum.view", "getAlbum"].contains(endpoint.lastPathComponent) else { return nil }
+
+    // Subsonic follows HTTP-to-HTTPS upgrades. Reuse the verified HTTPS endpoint for native login.
+    let rest = endpoint.deletingLastPathComponent()
+    guard rest.lastPathComponent == "rest",
+          var base = URLComponents(url: rest.deletingLastPathComponent(), resolvingAgainstBaseURL: false)
+    else { return nil }
     base.query = nil
     base.fragment = nil
     guard let url = base.url else { return nil }
@@ -976,7 +987,7 @@ final class SubsonicServerApi: URLCleanser, Sendable {
           return
         }
         if let data = response.data {
-          continuation.resume(returning: APIDataResponse(data: data, url: url))
+          continuation.resume(returning: APIDataResponse(data: data, url: url, resolvedURL: response.response?.url))
           return
         }
         if let err = response.error {

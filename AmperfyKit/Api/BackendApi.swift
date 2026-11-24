@@ -82,10 +82,12 @@ public enum NowPlayingSongPosition {
 public final class APIDataResponse: Sendable {
   public let data: Data
   public let url: URL?
+  let resolvedURL: URL?
 
-  init(data: Data, url: URL?) {
+  init(data: Data, url: URL?, resolvedURL: URL? = nil) {
     self.data = data
     self.url = url
+    self.resolvedURL = resolvedURL ?? url
   }
 }
 

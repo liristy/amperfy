@@ -411,7 +411,7 @@ class SubsonicLibrarySyncer: CommonLibrarySyncer, LibrarySyncer {
     guard album.remoteStatus == .available else { return }
     let previousDate = album.releaseDate
     async let nativeMetadata = shouldFetchNavidromeDate ?
-      subsonicServerApi.requestNavidromeAlbumMetadata(id: albumId) : nil
+      subsonicServerApi.requestNavidromeAlbumMetadata(id: albumId, albumResponse: albumResponse) : nil
     try await storage.async.perform { asyncCompanion in
       let albumAsync = Album(
         managedObject: asyncCompanion.context
