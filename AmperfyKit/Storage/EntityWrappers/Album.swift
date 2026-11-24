@@ -90,6 +90,11 @@ public class Album: AbstractLibraryEntity {
     return year > 0 ? String(year) : nil
   }
 
+  public var releaseYearText: String? {
+    let releaseYear = releaseDate.map { Self.releaseCalendar.component(.year, from: $0) } ?? year
+    return releaseYear > 0 ? String(releaseYear) : nil
+  }
+
   static func completeReleaseDate(_ components: DateComponents?) -> Date? {
     guard let components, let year = components.year, year > 0,
           components.month != nil, components.day != nil,

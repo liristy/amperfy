@@ -368,7 +368,9 @@ final class MusicArtworkHeader: UIView {
       titleLabel.text = album.name
       artistButton.setTitle(album.artist?.name, for: .normal)
       artistButton.isEnabled = album.artist != nil
-      metadataLabel.text = [album.genre?.name, album.releaseDateText].compactMap { $0 }.joined(separator: " · ")
+      let genre = album.genre?.name.trimmingCharacters(in: .whitespacesAndNewlines)
+      metadataLabel.text = [genre, album.releaseYearText]
+        .compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: " · ")
       secondaryButton.configuration?.image = UIImage(systemName: album.isCached ? "checkmark" : "arrow.down")
       secondaryButton.isEnabled = appDelegate.storage.settings.user.isOnlineMode && !album.isCached
     } else if let artist = entity as? Artist {
