@@ -30,16 +30,28 @@ class SsLyricsParserDelegate: SsXmlParser {
     let agentID: String?
     var cues = [LyricCue]()
 
-    mutating func appendCue(attributes: [String: String]) {
+    mutating func appendCue(attributes: [String: String], text: String) {
       let utf8 = value.utf8
       let utf16 = value.utf16
       guard let start = attributes["start"].flatMap(Int.init), start >= 0,
             let firstByte = attributes["byteStart"].flatMap(Int.init),
             let lastByte = attributes["byteEnd"].flatMap(Int.init),
-            firstByte >= 0, firstByte <= lastByte, lastByte < utf8.count,
-            let lower = utf8.index(utf8.startIndex, offsetBy: firstByte).samePosition(in: utf16),
-            let upper = utf8.index(utf8.startIndex, offsetBy: lastByte + 1).samePosition(in: utf16)
+            firstByte >= 0, firstByte <= lastByte, lastByte <= utf8.count
       else { return }
+
+      let first = utf8.index(utf8.startIndex, offsetBy: firstByte)
+      let last = utf8.index(utf8.startIndex, offsetBy: lastByte)
+      let upperByte: String.UTF8View.Index
+      // Older sidecars can mix inclusive and exclusive byteEnd values, even
+      // within the same line. The transmitted word disambiguates the range.
+      if first != last, !text.isEmpty, utf8[first..<last].elementsEqual(text.utf8) {
+        upperByte = last
+      } else {
+        guard last != utf8.endIndex else { return }
+        upperByte = utf8.index(after: last)
+      }
+      guard let lower = first.samePosition(in: utf16),
+            let upper = upperByte.samePosition(in: utf16) else { return }
 
       let end = attributes["end"].flatMap(Int.init)
       guard end.map({ $0 >= start }) ?? true else { return }
@@ -56,6 +68,7 @@ class SsLyricsParserDelegate: SsXmlParser {
   private var currentLine: LyricsLine?
   private var cueLines = [Int: [CueLine]]()
   private var currentCueLine: CueLine?
+  private var currentCueAttributes: [String: String]?
 
   override func parser(
     _ parser: XMLParser,
@@ -82,6 +95,7 @@ class SsLyricsParserDelegate: SsXmlParser {
       kind = attributeDict["kind"]
       cueLines.removeAll()
       currentCueLine = nil
+      currentCueAttributes = nil
       structuredLyrics?.displayArtist = attributeDict["displayArtist"]
       structuredLyrics?.displayTitle = attributeDict["displayTitle"]
       structuredLyrics?.lang = attributeDict["lang"] ?? ""
@@ -113,8 +127,8 @@ class SsLyricsParserDelegate: SsXmlParser {
           agentID: attributeDict["agentId"]
         )
       }
-    } else if elementName == "cue" {
-      currentCueLine?.appendCue(attributes: attributeDict)
+    } else if elementName == "cue", currentCueLine != nil {
+      currentCueAttributes = attributeDict
     }
   }
 
@@ -132,6 +146,9 @@ class SsLyricsParserDelegate: SsXmlParser {
       curLine.value = buffer
       lines?.append(curLine)
       currentLine = nil
+    } else if elementName == "cue", let attributes = currentCueAttributes {
+      currentCueLine?.appendCue(attributes: attributes, text: attributes["value"] ?? buffer)
+      currentCueAttributes = nil
     } else if elementName == "cueLine", let currentCueLine {
       cueLines[currentCueLine.index, default: []].append(currentCueLine)
       self.currentCueLine = nil
