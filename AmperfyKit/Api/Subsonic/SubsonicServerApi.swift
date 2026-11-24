@@ -1048,21 +1048,18 @@ private actor NavidromeAlbumClient {
   }
 
   private func loadAlbum(url: URL, headers: HTTPHeaders) async throws -> NavidromeAlbumMetadata {
-    try await session.request(url, headers: headers) { request in
+    let request = session.request(url, headers: headers) { request in
       request.timeoutInterval = 5
     }
-    .redirect(using: Redirector(behavior: .doNotFollow))
-    .validate()
-    .serializingDecodable(NavidromeAlbumMetadata.self)
-    .value
+    return try await decode(request, as: NavidromeAlbumMetadata.self)
   }
 
   private func authorize(base: URL, credentials: LoginCredentials) -> Authorization {
     let key = AccountKey(base: base, username: credentials.username, passwordHash: credentials.passwordHash)
     if let cachedAuthorization, cachedAuthorization.key == key { return cachedAuthorization }
     let url = base.appending(path: "auth/login")
-    let task = Task { [session] in
-      try await session.request(
+    let task = Task {
+      let request = session.request(
         url, method: .post,
         parameters: ["username": credentials.username, "password": credentials.password],
         encoder: JSONParameterEncoder.default,
@@ -1070,10 +1067,7 @@ private actor NavidromeAlbumClient {
       ) { request in
         request.timeoutInterval = 5
       }
-      .redirect(using: Redirector(behavior: .doNotFollow))
-      .validate()
-      .serializingDecodable(Login.self)
-      .value
+      return try await decode(request, as: Login.self)
     }
     let authorization = Authorization(key: key, task: task)
     cachedAuthorization = authorization
@@ -1091,5 +1085,15 @@ private actor NavidromeAlbumClient {
 
   private func discard(_ authorization: Authorization) {
     if cachedAuthorization?.id == authorization.id { cachedAuthorization = nil }
+  }
+
+  private func decode<Value: Decodable & Sendable>(_ request: DataRequest, as type: Value.Type) async throws -> Value {
+    try await withCheckedThrowingContinuation { continuation in
+      request.redirect(using: Redirector(behavior: .doNotFollow))
+        .validate()
+        .responseDecodable(of: type) { response in
+          continuation.resume(with: response.result.mapError { $0 as Error })
+        }
+    }
   }
 }
