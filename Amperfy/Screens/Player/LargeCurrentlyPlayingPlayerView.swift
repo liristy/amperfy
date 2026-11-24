@@ -195,12 +195,6 @@ class LargeCurrentlyPlayingPlayerView: UIView {
   @IBOutlet
   weak var titleLabel: MarqueeLabel!
   @IBOutlet
-  weak var albumLabel: MarqueeLabel!
-  @IBOutlet
-  weak var albumButton: UIButton!
-  @IBOutlet
-  weak var albumContainerView: UIView!
-  @IBOutlet
   weak var artistLabel: MarqueeLabel!
   @IBOutlet
   weak var favoriteButton: UIButton!
@@ -245,15 +239,12 @@ class LargeCurrentlyPlayingPlayerView: UIView {
     artworkImage.allowsBackgroundImageUpdates = true
     lyricsArtwork.allowsBackgroundImageUpdates = true
     titleLabel.applyAmperfyStyle()
-    albumLabel.applyAmperfyStyle()
     artistLabel.applyAmperfyStyle()
     titleLabel.font = .systemFont(ofSize: 20, weight: .semibold)
     titleLabel.adjustsFontSizeToFitWidth = false
     artistLabel.font = .systemFont(ofSize: 20, weight: .regular)
-    albumLabel.font = .systemFont(ofSize: 13, weight: .medium)
     titleLabel.textColor = .white
     artistLabel.textColor = .white.withAlphaComponent(0.72)
-    albumLabel.textColor = .white.withAlphaComponent(0.65)
     artworkImage.contentMode = .scaleAspectFit
     artworkImage.layer.cornerRadius = 8
     artworkImage.layer.cornerCurve = .continuous
@@ -515,19 +506,7 @@ class LargeCurrentlyPlayingPlayerView: UIView {
   }
 
   func refresh() {
-    rootView?.playerHandler?.refreshCurrentlyPlayingInfo(
-      artworkImage: artworkImage,
-      titleLabel: titleLabel,
-      artistLabel: artistLabel,
-      albumLabel: albumLabel,
-      albumButton: albumButton,
-      albumContainerView: albumContainerView
-    )
-    lyricsTitle.text = titleLabel.text
-    // Keep the two-line song/artist hierarchy; album actions remain in the menu.
-    albumContainerView.isHidden = true
-    lyricsArtist.text = artistLabel.text
-    rootView?.playerHandler?.refreshArtwork(artworkImage: lyricsArtwork)
+    refreshTrackMetadata()
     rootView?.refreshOptionButton(button: lyricsOptions, rootView: rootView)
     rootView?.refreshFavoriteButton(button: compactFavorite)
     rootView?.refreshFavoriteButton(button: favoriteButton)
@@ -588,13 +567,13 @@ class LargeCurrentlyPlayingPlayerView: UIView {
     rootView?.playerHandler?.refreshArtwork(artworkImage: artworkImage)
   }
 
-  func refreshBackgroundMetadata() {
+  func refreshTrackMetadata() {
     rootView?.playerHandler?.refreshCurrentlyPlayingInfo(
-      artworkImage: artworkImage, titleLabel: titleLabel, artistLabel: artistLabel,
-      albumLabel: albumLabel, albumButton: albumButton, albumContainerView: albumContainerView)
+      artworkImage: artworkImage, titleLabel: titleLabel, artistLabel: artistLabel
+    )
     lyricsTitle.text = titleLabel.text
     lyricsArtist.text = artistLabel.text
-    refreshArtwork()
+    rootView?.playerHandler?.refreshArtwork(artworkImage: lyricsArtwork)
   }
 
   @objc
@@ -617,12 +596,6 @@ class LargeCurrentlyPlayingPlayerView: UIView {
 
   @IBAction
   func titlePressed(_ sender: Any) {
-    rootView?.displayAlbumDetail()
-    rootView?.displayPodcastDetail()
-  }
-
-  @IBAction
-  func albumPressed(_ sender: Any) {
     rootView?.displayAlbumDetail()
     rootView?.displayPodcastDetail()
   }

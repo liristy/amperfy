@@ -720,7 +720,7 @@ extension PopupPlayerVC: MusicPlayable {
 
   func didStartPlaying() {
     guard isPlayerUIVisible else {
-      if isViewLoaded { largeCurrentlyPlayingView?.refreshBackgroundMetadata() }
+      if isViewLoaded { largeCurrentlyPlayingView?.refreshTrackMetadata() }
       return
     }
     reloadData()
@@ -730,7 +730,7 @@ extension PopupPlayerVC: MusicPlayable {
 
   func didStopPlaying() {
     guard isPlayerUIVisible else {
-      if isViewLoaded { largeCurrentlyPlayingView?.refreshBackgroundMetadata() }
+      if isViewLoaded { largeCurrentlyPlayingView?.refreshTrackMetadata() }
       return
     }
     reloadData()
@@ -764,7 +764,7 @@ extension PopupPlayerVC: MusicPlayable {
 
   func didNowPlayingInfoChange() {
     guard isPlayerUIVisible else {
-      if isViewLoaded { largeCurrentlyPlayingView?.refreshBackgroundMetadata() }
+      if isViewLoaded { largeCurrentlyPlayingView?.refreshTrackMetadata() }
       return
     }
     refreshCurrentlyPlayingInfoView()

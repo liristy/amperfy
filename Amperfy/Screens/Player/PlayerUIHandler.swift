@@ -320,10 +320,7 @@ class PlayerUIHandler: NSObject {
   func refreshCurrentlyPlayingInfo(
     artworkImage: LibraryEntityImage,
     titleLabel: UILabel,
-    artistLabel: UILabel,
-    albumLabel: UILabel? = nil,
-    albumButton: UIButton? = nil,
-    albumContainerView: UIView? = nil
+    artistLabel: UILabel
   ) {
     refreshArtwork(artworkImage: artworkImage)
     if let playableInfo = player.currentlyPlaying {
@@ -336,15 +333,8 @@ class PlayerUIHandler: NSObject {
           titleLabel.text = playableInfo.title
           artistLabel.text = ""
         }
-        // Show station name in album label
-        albumLabel?.text = playableInfo.title
-        albumButton?.isEnabled = false
-        albumContainerView?.isHidden = false
       } else {
         titleLabel.text = playableInfo.title
-        albumLabel?.text = playableInfo.asSong?.album?.name ?? ""
-        albumButton?.isEnabled = playableInfo.isSong
-        albumContainerView?.isHidden = !playableInfo.isSong
         artistLabel.text = playableInfo.creatorName
       }
     } else {
@@ -354,9 +344,6 @@ class PlayerUIHandler: NSObject {
       case .podcast:
         titleLabel.text = "No podcast playing".localized
       }
-      albumLabel?.text = ""
-      albumButton?.isEnabled = false
-      albumContainerView?.isHidden = true
       artistLabel.text = ""
     }
   }
