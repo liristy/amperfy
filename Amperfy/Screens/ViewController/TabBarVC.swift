@@ -51,6 +51,8 @@ class TabBarVC: UITabBarController {
   private var dockSelectionIdentifier: String?
   private var dockNavigationTop: CGFloat?
   private var dockLayoutSize: CGSize = .zero
+  private let collapsedTabBarMask = CALayer()
+  private var originalTabBarMask: CALayer?
   private var navigationGlass: UIVisualEffectView?
   private var originalTabAppearance: UITabBarAppearance?
   private var originalTabEdgeAppearance: UITabBarAppearance?
@@ -226,6 +228,10 @@ class TabBarVC: UITabBarController {
       name: UIResponder.keyboardWillChangeFrameNotification, object: nil)
     NotificationCenter.default.addObserver(self, selector: #selector(dockKeyboardHidden(_:)),
       name: UIResponder.keyboardWillHideNotification, object: nil)
+    for name in [UIScene.willDeactivateNotification, UIScene.didActivateNotification] {
+      NotificationCenter.default.addObserver(self, selector: #selector(dockSceneActivationChanged(_:)),
+        name: name, object: nil)
+    }
 
     registerForTraitChanges(
       [UITraitUserInterfaceStyle.self, UITraitHorizontalSizeClass.self],
@@ -270,6 +276,7 @@ class TabBarVC: UITabBarController {
       playerDock = nil
       miniPlayer.setCompactPresentation(nil)
       updateDockContentInset(visible: false)
+      setCollapsedTabBarMask(false)
     }
     restoreNavigationAppearance()
     if let navigationGlass {
@@ -356,6 +363,7 @@ class TabBarVC: UITabBarController {
     updateDockSelection()
     let top = activeNavigationController?.topViewController
     dock.isHidden = dockKeyboardVisible || top?.hidesBottomBarWhenPushed == true
+    updateNativeDockNavigation(animated: false)
     updateDockContentInset(visible: !dock.isHidden)
     if let navigationGlass {
       let frame = CGRect(x: 20, y: 0, width: max(0, tabBar.bounds.width - 40),
@@ -437,8 +445,7 @@ class TabBarVC: UITabBarController {
         glassStyle: dockGlassStyle)
       dock.onSearch = { [weak self] in
         guard let self else { return }
-        self.tabBar.alpha = 1
-        self.tabBar.isUserInteractionEnabled = true
+        self.playerDock?.setCollapsed(false, animated: false)
         self.selectedTab = self.searchTab
         self.updateDockSelection()
         self.searchViewController?.activateSearchBar()
@@ -466,13 +473,38 @@ class TabBarVC: UITabBarController {
     }
     // The real system tab bar owns the glass lens, touch tracking and tab
     // selection. During scroll collapse keep its layout reservation: changing
-    // isTabBarHidden also changes the child's safe area and scroll offset, then
-    // moves the dock again in the next layout pass. Only fade its surface.
-    let visible = !dock.isCollapsed
+    // isTabBarHidden also changes the child's safe area and scroll offset.
+    let visible = !dock.isCollapsed || dockKeyboardVisible
     let alpha: CGFloat = visible ? 1 : 0
     if tabBar.alpha != alpha { tabBar.alpha = alpha }
+    setCollapsedTabBarMask(!visible)
     tabBar.isUserInteractionEnabled = visible
     tabBar.accessibilityElementsHidden = !visible
+  }
+
+  private func setCollapsedTabBarMask(_ masked: Bool) {
+    let layer = tabBar.layer
+    let hasCollapsedMask = layer.mask === collapsedTabBarMask
+    guard hasCollapsedMask != masked else { return }
+    // UIKit can restore the native glass opacity during scene transitions.
+    // Clip its rendering while compact without changing its layout reservation.
+    CATransaction.begin()
+    CATransaction.setDisableActions(true)
+    if masked {
+      originalTabBarMask = layer.mask
+      layer.mask = collapsedTabBarMask
+    } else {
+      layer.mask = originalTabBarMask
+      originalTabBarMask = nil
+    }
+    CATransaction.commit()
+  }
+
+  @objc private func dockSceneActivationChanged(_ notification: Notification) {
+    guard let scene = viewIfLoaded?.window?.windowScene,
+          notification.object as? UIWindowScene === scene else { return }
+    updateNativeDockNavigation(animated: false)
+    view.setNeedsLayout()
   }
 
   func applyNavigationChrome(style: UIUserInterfaceStyle) {

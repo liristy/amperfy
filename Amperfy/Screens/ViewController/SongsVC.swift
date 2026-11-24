@@ -98,6 +98,12 @@ class SongsVC: SingleFetchedResultsTableViewController<SongMO> {
       let song = fetchedResultsController.getWrappedEntity(at: indexPath)
       return (song.managedObject.objectID, song)
     }
+    playlistSelectionRows = { [weak self] in
+      self?.fetchedResultsController.fetchedObjects?.compactMap { object in
+        guard !object.isDeleted else { return nil }
+        return (object.objectID, Song(managedObject: object))
+      } ?? []
+    }
     playContextAtIndexPathCallback = convertIndexPathToPlayContext
     swipeCallback = { indexPath, completionHandler in
       let song = self.fetchedResultsController.getWrappedEntity(at: indexPath)

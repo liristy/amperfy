@@ -1227,6 +1227,17 @@
         }
       }
     },
+    "Deselect All": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "取消全选"
+          }
+        }
+      }
+    },
     "Detailed Information": {
       "extractionState": "manual",
       "localizations": {
@@ -3522,6 +3533,17 @@
           "stringUnit": {
             "state": "translated",
             "value": "选择 API"
+          }
+        }
+      }
+    },
+    "Select All": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "全选"
           }
         }
       }

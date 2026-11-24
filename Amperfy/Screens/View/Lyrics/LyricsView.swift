@@ -421,7 +421,7 @@ class LyricsView: UITableView, UITableViewDataSource, UITableViewDelegate {
     if translation.y < 0 {
       onUpwardDrag?()
     } else if let velocity, translation.y >= 42,
-              velocity.y >= 240, velocity.y > abs(velocity.x) * 1.3 {
+              velocity.y >= 360, velocity.y > abs(velocity.x) * 1.3 {
       onDownwardDrag?()
       return true
     }

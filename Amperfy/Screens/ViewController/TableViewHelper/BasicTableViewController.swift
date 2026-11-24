@@ -20,6 +20,7 @@
 //
 
 import AmperfyKit
+import Collections
 import CoreData
 import Foundation
 import UIKit
@@ -101,11 +102,14 @@ struct SwipeDisplaySettings {
 // MARK: - BasicTableViewController
 
 class BasicTableViewController: KeyCommandTableViewController {
+  typealias PlaylistSelectionRow = (id: NSManagedObjectID, song: Song)
+
   private struct PlaylistSongSelection {
     let account: Account
     let source: Playlist?
     let restoreNavigation: () -> Void
-    var rows: [(id: NSManagedObjectID, song: Song)] = []
+    let hidesNavigationBarDuringSearch: Bool
+    var songsByRowID = OrderedDictionary<NSManagedObjectID, Song>()
   }
 
   private static let swipeButtonColors: [UIColor] = [
@@ -124,7 +128,8 @@ class BasicTableViewController: KeyCommandTableViewController {
   var swipeCallback: SwipeActionCallback?
   var isEditLockedDueToActiveSwipe = false
   var isSingleCellEditingModeActive = false
-  var playlistSelectionRow: ((IndexPath) -> (id: NSManagedObjectID, song: Song)?)?
+  var playlistSelectionRow: ((IndexPath) -> PlaylistSelectionRow?)?
+  var playlistSelectionRows: (() -> [PlaylistSelectionRow])?
   private var playlistSongSelection: PlaylistSongSelection?
   private var addSelectionButton: UIBarButtonItem?
   var isSelectingPlaylistSongs: Bool { playlistSongSelection != nil }
@@ -156,8 +161,10 @@ class BasicTableViewController: KeyCommandTableViewController {
       playlistSongSelection = PlaylistSongSelection(
         account: account,
         source: source,
-        restoreNavigation: restoreNavigation
+        restoreNavigation: restoreNavigation,
+        hidesNavigationBarDuringSearch: searchController.hidesNavigationBarDuringPresentation
       )
+      searchController.hidesNavigationBarDuringPresentation = false
       let addButton = UIBarButtonItem(
         title: "Add to Playlist".localized,
         style: .plain,
@@ -172,7 +179,24 @@ class BasicTableViewController: KeyCommandTableViewController {
         target: self,
         action: #selector(cancelPlaylistSongSelection)
       )
-      navigationItem.rightBarButtonItems = [addButton]
+      let selectionMenu = UIMenu.lazyMenu { [weak self] in
+        guard let self, let selection = playlistSongSelection else { return [] }
+        return [
+          UIAction(title: "Select All".localized, image: UIImage(systemName: "checkmark.circle")) { [weak self] _ in
+            self?.setAllPlaylistSongsSelected(true)
+          },
+          UIAction(
+            title: "Deselect All".localized,
+            image: UIImage(systemName: "circle"),
+            attributes: selection.songsByRowID.isEmpty ? .disabled : []
+          ) { [weak self] _ in
+            self?.setAllPlaylistSongsSelected(false)
+          },
+        ]
+      }
+      let selectionButton = UIBarButtonItem(image: UIImage(systemName: "checklist"), menu: selectionMenu)
+      selectionButton.accessibilityLabel = "Select".localized
+      navigationItem.rightBarButtonItems = [addButton, selectionButton]
       tableView.tableHeaderView?.isUserInteractionEnabled = false
       tableView.reloadData()
     }
@@ -184,7 +208,7 @@ class BasicTableViewController: KeyCommandTableViewController {
     rowID: NSManagedObjectID,
     playContext: @escaping GetPlayContextFromTableCellCallback
   ) {
-    let isMarked = playlistSongSelection?.rows.contains { $0.id == rowID && $0.song == song } == true
+    let isMarked = playlistSongSelection?.songsByRowID[rowID] == song
     cell.display(
       playable: song,
       displayMode: isSelectingPlaylistSongs ? .selection : .normal,
@@ -199,23 +223,33 @@ class BasicTableViewController: KeyCommandTableViewController {
     tableView.deselectRow(at: indexPath, animated: false)
     guard let row = playlistSelectionRow?(indexPath),
           let cell = tableView.cellForRow(at: indexPath) as? PlayableTableCell else { return }
-    let previousRow = selection.rows.firstIndex { $0.id == row.id }.map {
-      selection.rows.remove(at: $0)
-    }
-    let shouldMark = previousRow?.song != row.song
-    if shouldMark {
-      selection.rows.append(row)
-    }
+    let shouldMark = selection.songsByRowID[row.id] != row.song
+    selection.songsByRowID[row.id] = shouldMark ? row.song : nil
     cell.isMarked = shouldMark
     playlistSongSelection = selection
     cell.refresh()
-    addSelectionButton?.isEnabled = !selection.rows.isEmpty
+    addSelectionButton?.isEnabled = !selection.songsByRowID.isEmpty
+  }
+
+  private func setAllPlaylistSongsSelected(_ selected: Bool) {
+    guard var selection = playlistSongSelection else { return }
+    if selected {
+      for row in playlistSelectionRows?() ?? [] {
+        selection.songsByRowID[row.id] = row.song
+      }
+    } else {
+      selection.songsByRowID.removeAll()
+    }
+    playlistSongSelection = selection
+    addSelectionButton?.isEnabled = !selection.songsByRowID.isEmpty
+    tableView.reloadData()
   }
 
   @objc private func cancelPlaylistSongSelection() {
     guard let selection = playlistSongSelection else { return }
     playlistSongSelection = nil
     addSelectionButton = nil
+    searchController.hidesNavigationBarDuringPresentation = selection.hidesNavigationBarDuringSearch
     navigationItem.leftBarButtonItem = nil
     selection.restoreNavigation()
     tableView.tableHeaderView?.isUserInteractionEnabled = true
@@ -227,14 +261,13 @@ class BasicTableViewController: KeyCommandTableViewController {
           appDelegate.storage.settings.user.isOnlineMode else { return }
     let songs: [Song]
     if let source = selection.source {
-      let songsByRowID = Dictionary(uniqueKeysWithValues: selection.rows.map { ($0.id, $0.song) })
       songs = source.items.compactMap { item in
-        guard let selectedSong = songsByRowID[item.objectID], !selectedSong.managedObject.isDeleted,
+        guard let selectedSong = selection.songsByRowID[item.objectID], !selectedSong.managedObject.isDeleted,
               selectedSong == item.playable else { return nil }
         return selectedSong
       }
     } else {
-      songs = selection.rows.map(\.song).filter { !$0.managedObject.isDeleted }
+      songs = selection.songsByRowID.values.filter { !$0.managedObject.isDeleted }
     }
     guard !songs.isEmpty else { return }
     let selector = PlaylistSelectorVC(

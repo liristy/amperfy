@@ -1839,7 +1839,7 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
             smokeLog("Slow lyrics browsing revealed playback controls")
             return
           }
-          lyricsView.handleDrag(translation: CGPoint(x: 0, y: 52), velocity: CGPoint(x: 0, y: 280))
+          lyricsView.handleDrag(translation: CGPoint(x: 0, y: 52), velocity: CGPoint(x: 0, y: 400))
           guard !popup.areLyricsControlsHidden else { return }
           lyricsView.handleDrag(translation: CGPoint(x: 0, y: -72), velocity: CGPoint(x: 0, y: -650))
           try await Task.sleep(for: .milliseconds(500))

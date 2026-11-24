@@ -206,11 +206,12 @@ class PlaylistDetailVC: SingleSnapshotFetchedResultsTableViewController<Playlist
     playlistSelectionRow = { [weak self] indexPath in
       guard let self,
             let id = diffableDataSource?.itemIdentifier(for: indexPath),
-            let object = (try? appDelegate.storage.main.context.existingObject(with: id)) as? PlaylistItemMO,
-            !object.isDeleted else { return nil }
-      let item = PlaylistItem(library: appDelegate.storage.main.library, managedObject: object)
-      guard let song = item.playable.asSong else { return nil }
-      return (id, song)
+            let item = (try? appDelegate.storage.main.context.existingObject(with: id)) as? PlaylistItemMO
+      else { return nil }
+      return Self.selectionRow(for: item)
+    }
+    playlistSelectionRows = { [weak self] in
+      self?.fetchedResultsController.fetchedObjects?.compactMap { Self.selectionRow(for: $0) } ?? []
     }
     playContextAtIndexPathCallback = { indexPath in
       self.convertIndexPathToPlayContext(songIndexPath: indexPath)
@@ -223,6 +224,11 @@ class PlaylistDetailVC: SingleSnapshotFetchedResultsTableViewController<Playlist
         playContext: playContext
       ))
     }
+  }
+
+  private static func selectionRow(for item: PlaylistItemMO) -> PlaylistSelectionRow? {
+    guard !item.isDeleted, let song = item.playable as? SongMO, !song.isDeleted else { return nil }
+    return (item.objectID, Song(managedObject: song))
   }
 
   var scrollCompatibleZoomOptions: UIViewController.Transition.ZoomOptions {
