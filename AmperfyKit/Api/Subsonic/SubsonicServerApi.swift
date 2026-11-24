@@ -998,7 +998,7 @@ struct NavidromeAlbumMetadata: Decodable, Sendable {
   let date: String?
 
   var completeDate: Date? {
-    [releaseDate, originalDate, date].lazy.compactMap { $0.flatMap(Album.completeReleaseDateTag) }.first
+    [releaseDate, date, originalDate].lazy.compactMap { $0.flatMap(Album.completeReleaseDateTag) }.first
   }
 }
 

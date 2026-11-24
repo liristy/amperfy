@@ -53,8 +53,10 @@ class SsAlbumParserDelegate: SsXmlLibWithArtworkParser {
       attributes: attributeDict
     )
     elementDepth += 1
-    if elementDepth == 1, elementName == "subsonic-response" {
-      isNavidromeResponse = attributeDict["type"]?.lowercased() == "navidrome"
+    if elementDepth == 1, elementName == "subsonic-response",
+       let serverType = attributeDict["type"]?.lowercased() {
+      // The qMusic build of Navidrome advertises its own name in Subsonic responses.
+      isNavidromeResponse = serverType == "navidrome" || serverType == "qmusic"
     }
     if let albumDepth, elementDepth == albumDepth + 1 {
       switch elementName {
