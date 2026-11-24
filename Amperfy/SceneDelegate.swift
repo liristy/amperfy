@@ -342,7 +342,8 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
           // before the old one is recycled. Its highlight binding must survive.
           var lyricLine = LyricsLine()
           lyricLine.value = "Highlight reuse regression"
-          let lyricModel = LyricTableCellModel(lyric: lyricLine)
+          let lyricModel = LyricTableCellModel(lyric: lyricLine, nextLineStart: nil,
+            rightAligned: [], showsTranslation: false, interludeEnd: nil)
           let oldLyricCell = LyricTableCell(style: .default, reuseIdentifier: nil)
           let newLyricCell = LyricTableCell(style: .default, reuseIdentifier: nil)
           oldLyricCell.display(model: lyricModel)
@@ -358,14 +359,17 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
           newLyricCell.layoutIfNeeded()
           lyricModel.isActiveLine = false
           newLyricCell.refreshEmphasis(animated: false)
-          let blurredLyric = newLyricCell.blurredLyrics
-          guard blurredLyric.image != nil, blurredLyric.alpha > 0 else {
+          for _ in 0..<80 {
+            if newLyricCell.hasVisibleBlurForSmokeTest { break }
+            try await Task.sleep(for: .milliseconds(50))
+          }
+          guard newLyricCell.hasVisibleBlurForSmokeTest else {
             smokeLog("Inactive lyrics did not produce a visible blurred text layer")
             return
           }
           lyricModel.isActiveLine = true
           newLyricCell.refreshEmphasis(animated: false)
-          guard blurredLyric.alpha == 0 else {
+          guard !newLyricCell.hasVisibleBlurForSmokeTest else {
             smokeLog("Active lyric retained its blurred text layer")
             return
           }
@@ -2481,6 +2485,28 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
             abs(header.artwork.bounds.width - min(340, albumVC.view.bounds.width * 0.694)) < 1,
             albumVC.tableView.numberOfSections == 1,
             albumVC.navigationItem.title == "" else { log("Album artwork/header structure failed"); return false }
+      func showsAlbumHeader(_ text: String) -> Bool {
+        header.subviews.contains { view in
+          guard let label = view as? UILabel else { return false }
+          return !label.isHidden && label.text == text
+        }
+      }
+      let footerText = albumVC.tableView.tableFooterView?.subviews.compactMap { ($0 as? UILabel)?.text }.first
+      guard album.releaseYearText == "2012", let releaseDate = album.releaseDateText,
+            releaseDate != "2012", showsAlbumHeader("K-POP · 2012"),
+            footerText?.hasPrefix(releaseDate + "\n") == true else {
+        log("Album genre/year header and full release date footer did not match the fixture"); return false
+      }
+      let albumGenre = album.genre
+      album.genre = nil
+      header.refresh()
+      let showsYearWithoutGenre = showsAlbumHeader("2012")
+      album.genre = albumGenre
+      header.refresh()
+      guard showsYearWithoutGenre else {
+        log("Album without a genre did not show the year by itself"); return false
+      }
+      log("Album genre/year header, missing-genre fallback and full release date footer passed")
       let path = IndexPath(row: 0, section: 0)
       let leading = albumVC.tableView(albumVC.tableView, leadingSwipeActionsConfigurationForRowAt: path)?.actions ?? []
       let trailing = albumVC.tableView(albumVC.tableView, trailingSwipeActionsConfigurationForRowAt: path)?.actions ?? []

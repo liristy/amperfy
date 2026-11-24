@@ -107,6 +107,20 @@ class AlbumTest: XCTestCase {
     XCTAssertEqual(albumFetched.year, testYear)
   }
 
+  func testReleaseDateAndYearDisplay() throws {
+    XCTAssertNil(testAlbum.releaseYearText)
+    XCTAssertNil(testAlbum.releaseDateText)
+    testAlbum.year = 2011
+    XCTAssertEqual(testAlbum.releaseYearText, "2011")
+    XCTAssertEqual(testAlbum.releaseDateText, "2011")
+
+    testAlbum.releaseDate = try XCTUnwrap(Album.completeReleaseDateTag("2012-02-29"))
+    XCTAssertEqual(testAlbum.releaseYearText, "2012")
+    XCTAssertNotEqual(testAlbum.releaseDateText, "2012")
+    XCTAssertNil(Album.completeReleaseDateTag("2013-02-29"))
+    XCTAssertNil(Album.completeReleaseDateTag("2012-02"))
+  }
+
   func testArtworkAndImage() {
     let testData = UIImage.getGeneratedArtwork(theme: .blue, artworkType: .album).pngData()!
     let relFilePath = URL(string: "testArtwork")!

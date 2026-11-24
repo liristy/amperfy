@@ -345,6 +345,10 @@ class LyricTableCell: UITableViewCell {
   private let motionContent = UIView()
   private let sharpLyrics = UIView()
   private let blurredLyrics = UIImageView()
+
+  #if DEBUG && targetEnvironment(simulator)
+    var hasVisibleBlurForSmokeTest: Bool { blurredLyrics.image != nil && blurredLyrics.alpha > 0 }
+  #endif
   private var glyphViews = [LyricGlyphView]()
   private let dots = (0..<3).map { _ in UIView() }
   private static let dotSize: CGFloat = 14

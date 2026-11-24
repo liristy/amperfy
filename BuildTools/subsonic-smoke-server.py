@@ -133,7 +133,9 @@ class Handler(BaseHTTPRequestHandler):
                 'getArtist': f'<artist id="artist-1" name="测试歌手" albumCount="1">{ALBUM}</artist>',
                 'getAlbumList2': f'<albumList2>{album_list}</albumList2>',
                 'getAlbumList': f'<albumList>{album_list}</albumList>',
-                'getAlbum': f'<album id="album-1" name="测试专辑" artist="测试歌手" artistId="artist-1" songCount="2" coverArt="al-1">{SONG}{SECOND_SONG}</album>',
+                'getAlbum': (f'<album id="album-1" name="测试专辑" artist="测试歌手" artistId="artist-1" '
+                             f'songCount="2" coverArt="al-1" genre="K-POP" year="2012">'
+                             f'<releaseDate year="2012" month="2" day="29"/>{SONG}{SECOND_SONG}</album>'),
                 'getPlaylists': f'<playlists>{PLAYLIST}</playlists>',
                 'getPlaylist': PLAYLIST.replace('/>', '>') + (SONG + SECOND_SONG).replace('<song ', '<entry ') * 8 + '</playlist>',
                 'getPodcasts': '<podcasts/>',

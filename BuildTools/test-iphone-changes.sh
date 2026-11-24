@@ -62,6 +62,7 @@ test_arguments=(
   -only-testing:AmperfyKitTests/ArtistTest
   -only-testing:AmperfyKitTests/MusicPlayerTest
   -only-testing:AmperfyKitTests/SsLyricsBySongId2ParserTest
+  -only-testing:AmperfyKitTests/AlbumTest/testReleaseDateAndYearDisplay
 )
 # Run the regression suite for every deliverable. A preceding library-changing
 # push may have been cancelled by workflow concurrency before its tests ran.
