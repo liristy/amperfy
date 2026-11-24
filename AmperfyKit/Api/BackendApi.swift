@@ -246,6 +246,8 @@ public protocol LibrarySyncer: Sendable {
   @MainActor
   func sync(album: Album) async throws
   @MainActor
+  func syncAlbumDetail(_ album: Album) async throws
+  @MainActor
   func sync(song: Song) async throws
   @MainActor
   func sync(podcast: Podcast) async throws
@@ -311,6 +313,13 @@ public protocol LibrarySyncer: Sendable {
   func setFavorite(artist: Artist, isFavorite: Bool) async throws
   @MainActor
   func parseLyrics(relFilePath: URL) async throws -> LyricsList
+}
+
+public extension LibrarySyncer {
+  @MainActor
+  func syncAlbumDetail(_ album: Album) async throws {
+    try await sync(album: album)
+  }
 }
 
 // MARK: - AbstractBackgroundLibrarySyncer

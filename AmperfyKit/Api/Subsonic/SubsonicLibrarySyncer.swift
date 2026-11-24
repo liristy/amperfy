@@ -333,8 +333,19 @@ class SubsonicLibrarySyncer: CommonLibrarySyncer, LibrarySyncer {
 
   @MainActor
   func sync(album: Album) async throws {
+    try await sync(album: album, includeNavidromeDate: false)
+  }
+
+  @MainActor
+  func syncAlbumDetail(_ album: Album) async throws {
+    try await sync(album: album, includeNavidromeDate: true)
+  }
+
+  @MainActor
+  private func sync(album: Album, includeNavidromeDate: Bool) async throws {
     guard isSyncAllowed, album.remoteStatus != .deleted else { return }
     let albumObjectId = album.managedObject.objectID
+    let albumId = album.id
 
     func handleNotAvailableAlbum(error: Error) async throws {
       try await storage.async.perform { asyncCompanion in
@@ -360,14 +371,15 @@ class SubsonicLibrarySyncer: CommonLibrarySyncer, LibrarySyncer {
 
     var albumResponse: APIDataResponse?
     do {
-      albumResponse = try await subsonicServerApi.requestAlbum(id: album.id)
+      albumResponse = try await subsonicServerApi.requestAlbum(id: albumId)
     } catch {
       try await handleNotAvailableAlbum(error: error)
     }
     guard let albumResponse else { return }
 
+    let shouldFetchNavidromeDate: Bool
     do {
-      try await storage.async.perform { asyncCompanion in
+      shouldFetchNavidromeDate = try await storage.async.performAndGet { asyncCompanion in
         let accountAsync = Account(
           managedObject: asyncCompanion.context
             .object(with: self.accountObjectId) as! AccountMO
@@ -389,12 +401,17 @@ class SubsonicLibrarySyncer: CommonLibrarySyncer, LibrarySyncer {
         )
         parserDelegate.clearsMissingReleaseDate = true
         try self.parse(response: albumResponse, delegate: parserDelegate)
+        return includeNavidromeDate && parserDelegate.needsNavidromeAlbumDate
       }
     } catch {
       try await handleNotAvailableAlbum(error: error)
+      return
     }
 
     guard album.remoteStatus == .available else { return }
+    let previousDate = album.releaseDate
+    async let nativeMetadata = shouldFetchNavidromeDate ?
+      subsonicServerApi.requestNavidromeAlbumMetadata(id: albumId) : nil
     try await storage.async.perform { asyncCompanion in
       let albumAsync = Album(
         managedObject: asyncCompanion.context
@@ -429,6 +446,11 @@ class SubsonicLibrarySyncer: CommonLibrarySyncer, LibrarySyncer {
       }
       albumAsync.isCached = parserDelegate.isCollectionCached
       albumAsync.isSongsMetaDataSynced = true
+    }
+    if let metadata = await nativeMetadata, !Task.isCancelled, !album.managedObject.isDeleted,
+       album.releaseDate == previousDate {
+      album.releaseDate = metadata.completeDate
+      storage.main.saveContext()
     }
   }
 

@@ -29,18 +29,14 @@ class SsAlbumParserDelegate: SsXmlLibWithArtworkParser {
   var guessedGenre: Genre?
   var parsedAlbums = [Album]()
   var clearsMissingReleaseDate = false
+  private(set) var needsNavidromeAlbumDate = false
+  private var isNavidromeResponse = false
   private var albumBuffer: Album?
   private var elementDepth = 0
   private var albumDepth: Int?
   private var explicitYear: Int?
   private var releaseDate: DateComponents?
   private var originalReleaseDate: DateComponents?
-
-  private static let releaseCalendar: Calendar = {
-    var calendar = Calendar(identifier: .gregorian)
-    calendar.timeZone = .gmt
-    return calendar
-  }()
 
   override func parser(
     _ parser: XMLParser,
@@ -57,6 +53,9 @@ class SsAlbumParserDelegate: SsXmlLibWithArtworkParser {
       attributes: attributeDict
     )
     elementDepth += 1
+    if elementDepth == 1, elementName == "subsonic-response" {
+      isNavidromeResponse = attributeDict["type"]?.lowercased() == "navidrome"
+    }
     if let albumDepth, elementDepth == albumDepth + 1 {
       switch elementName {
       case "releaseDate":
@@ -151,8 +150,9 @@ class SsAlbumParserDelegate: SsXmlLibWithArtworkParser {
     if elementName == "album", elementDepth == albumDepth {
       parsedCount += 1
       if let album = albumBuffer {
-        let fullDate = Self.completeDate(releaseDate) ?? Self.completeDate(originalReleaseDate)
-        if fullDate != nil || clearsMissingReleaseDate {
+        let fullDate = Album.completeReleaseDate(releaseDate) ?? Album.completeReleaseDate(originalReleaseDate)
+        needsNavidromeAlbumDate = clearsMissingReleaseDate && isNavidromeResponse && fullDate == nil
+        if fullDate != nil || (clearsMissingReleaseDate && !needsNavidromeAlbumDate) {
           album.releaseDate = fullDate
         }
         if (explicitYear ?? 0) <= 0, let dateYear = releaseDate?.year ?? originalReleaseDate?.year {
@@ -187,9 +187,4 @@ class SsAlbumParserDelegate: SsXmlLibWithArtworkParser {
     )
   }
 
-  private static func completeDate(_ components: DateComponents?) -> Date? {
-    guard let components, components.month != nil, components.day != nil,
-          components.isValidDate(in: releaseCalendar) else { return nil }
-    return releaseCalendar.date(from: components)
-  }
 }

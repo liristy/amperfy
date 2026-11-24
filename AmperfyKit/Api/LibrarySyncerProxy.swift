@@ -64,6 +64,10 @@ extension LibrarySyncerProxy: LibrarySyncer {
     try await activeSyncer.sync(album: album)
   }
 
+  func syncAlbumDetail(_ album: Album) async throws {
+    try await activeSyncer.syncAlbumDetail(album)
+  }
+
   @MainActor
   func sync(song: Song) async throws {
     try await activeSyncer.sync(song: song)

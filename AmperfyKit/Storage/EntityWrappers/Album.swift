@@ -27,10 +27,15 @@ import UIKit
 
 public class Album: AbstractLibraryEntity {
   public let managedObject: AlbumMO
+  private static let releaseCalendar: Calendar = {
+    var calendar = Calendar(identifier: .gregorian)
+    calendar.timeZone = .gmt
+    return calendar
+  }()
   private static let releaseDateFormatter: DateFormatter = {
     let formatter = DateFormatter()
     formatter.locale = .autoupdatingCurrent
-    formatter.calendar = Calendar(identifier: .gregorian)
+    formatter.calendar = releaseCalendar
     formatter.timeZone = .gmt
     formatter.dateStyle = .long
     return formatter
@@ -83,6 +88,13 @@ public class Album: AbstractLibraryEntity {
       return Self.releaseDateFormatter.string(from: releaseDate)
     }
     return year > 0 ? String(year) : nil
+  }
+
+  static func completeReleaseDate(_ components: DateComponents?) -> Date? {
+    guard let components, let year = components.year, year > 0,
+          components.month != nil, components.day != nil,
+          components.isValidDate(in: releaseCalendar) else { return nil }
+    return releaseCalendar.date(from: components)
   }
 
   public var duration: Int { Int(managedObject.duration) }

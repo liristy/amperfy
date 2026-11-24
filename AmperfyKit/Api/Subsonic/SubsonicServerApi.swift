@@ -116,6 +116,7 @@ final class SubsonicServerApi: URLCleanser, Sendable {
   private let eventLogger: EventLogger
   private let settings: AmperfySettings
   private let credentials = Atomic<LoginCredentials?>(wrappedValue: nil)
+  private let navidromeAlbumClient = NavidromeAlbumClient()
   private let openSubsonicExtensionsSupport =
     Atomic<OpenSubsonicExtensionsSupport?>(wrappedValue: nil)
   init(
@@ -583,6 +584,17 @@ final class SubsonicServerApi: URLCleanser, Sendable {
     }
   }
 
+  func requestNavidromeAlbumMetadata(id: String) async -> NavidromeAlbumMetadata? {
+    guard let credentials = credentials.wrappedValue,
+          var base = URLComponents(string: credentials.activeBackendServerUrl),
+          base.scheme?.lowercased() == "https", base.host != nil,
+          base.user == nil, base.password == nil else { return nil }
+    base.query = nil
+    base.fragment = nil
+    guard let url = base.url else { return nil }
+    return try? await navidromeAlbumClient.album(id: id, base: url, credentials: credentials)
+  }
+
   public func requestSongInfo(id: String) async throws -> APIDataResponse {
     try await request { version in
       let urlComp = try self.createAuthApiUrlComponent(
@@ -974,5 +986,110 @@ final class SubsonicServerApi: URLCleanser, Sendable {
         fatalError("should not get here")
       }
     }
+  }
+}
+
+// MARK: - Navidrome album metadata
+
+struct NavidromeAlbumMetadata: Decodable, Sendable {
+  let id: String
+  let releaseDate: String?
+  let originalDate: String?
+  let date: String?
+
+  var completeDate: Date? {
+    [releaseDate, originalDate, date].lazy.compactMap { value -> Date? in
+      guard let value, value.utf8.count == 10 else { return nil }
+      let parts = value.split(separator: "-", omittingEmptySubsequences: false)
+      guard parts.count == 3, parts[0].count == 4, parts[1].count == 2, parts[2].count == 2,
+            let year = Int(parts[0]), let month = Int(parts[1]), let day = Int(parts[2])
+      else { return nil }
+      return Album.completeReleaseDate(DateComponents(year: year, month: month, day: day))
+    }.first
+  }
+}
+
+private actor NavidromeAlbumClient {
+  private struct Login: Decodable, Sendable {
+    let token: String
+  }
+
+  private struct AccountKey: Equatable {
+    let base: URL
+    let username: String
+    let passwordHash: String
+  }
+
+  private struct Authorization {
+    let key: AccountKey
+    let id = UUID()
+    let task: Task<Login, Error>
+  }
+
+  private let session = Session(configuration: .ephemeral)
+  private var cachedAuthorization: Authorization?
+
+  func album(id: String, base: URL, credentials: LoginCredentials) async throws -> NavidromeAlbumMetadata? {
+    let authorization = authorize(base: base, credentials: credentials)
+    let login = try await resolve(authorization)
+    let url = base.appending(path: "api/album").appending(component: id)
+    var headers = HTTPHeaders(credentials.httpHeaders)
+    headers.update(name: "X-ND-Authorization", value: "Bearer \(login.token)")
+    let metadata: NavidromeAlbumMetadata
+    do {
+      metadata = try await loadAlbum(url: url, headers: headers)
+    } catch let error as AFError where error.responseCode == 401 {
+      discard(authorization)
+      let replacement = try await resolve(authorize(base: base, credentials: credentials))
+      headers.update(name: "X-ND-Authorization", value: "Bearer \(replacement.token)")
+      metadata = try await loadAlbum(url: url, headers: headers)
+    }
+    return metadata.id == id ? metadata : nil
+  }
+
+  private func loadAlbum(url: URL, headers: HTTPHeaders) async throws -> NavidromeAlbumMetadata {
+    try await session.request(url, headers: headers) { request in
+      request.timeoutInterval = 5
+    }
+    .redirect(using: Redirector(behavior: .doNotFollow))
+    .validate()
+    .serializingDecodable(NavidromeAlbumMetadata.self)
+    .value
+  }
+
+  private func authorize(base: URL, credentials: LoginCredentials) -> Authorization {
+    let key = AccountKey(base: base, username: credentials.username, passwordHash: credentials.passwordHash)
+    if let cachedAuthorization, cachedAuthorization.key == key { return cachedAuthorization }
+    let url = base.appending(path: "auth/login")
+    let task = Task { [session] in
+      try await session.request(
+        url, method: .post,
+        parameters: ["username": credentials.username, "password": credentials.password],
+        encoder: JSONParameterEncoder.default,
+        headers: HTTPHeaders(credentials.httpHeaders)
+      ) { request in
+        request.timeoutInterval = 5
+      }
+      .redirect(using: Redirector(behavior: .doNotFollow))
+      .validate()
+      .serializingDecodable(Login.self)
+      .value
+    }
+    let authorization = Authorization(key: key, task: task)
+    cachedAuthorization = authorization
+    return authorization
+  }
+
+  private func resolve(_ authorization: Authorization) async throws -> Login {
+    do {
+      return try await authorization.task.value
+    } catch {
+      discard(authorization)
+      throw error
+    }
+  }
+
+  private func discard(_ authorization: Authorization) {
+    if cachedAuthorization?.id == authorization.id { cachedAuthorization = nil }
   }
 }

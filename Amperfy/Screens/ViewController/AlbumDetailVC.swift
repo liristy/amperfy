@@ -204,12 +204,9 @@ class AlbumDetailVC: SingleSnapshotFetchedResultsTableViewController<SongMO> {
     super.viewDidAppear(animated)
     Task { @MainActor in
       do {
-        try await album.fetch(
-          storage: self.appDelegate.storage,
-          librarySyncer: self.appDelegate.getMeta(self.account.info).librarySyncer,
-          playableDownloadManager: self.appDelegate.getMeta(self.account.info)
-            .playableDownloadManager
-        )
+        if self.appDelegate.storage.settings.user.isOnlineMode {
+          try await self.appDelegate.getMeta(self.account.info).librarySyncer.syncAlbumDetail(album)
+        }
       } catch {
         self.appDelegate.eventLogger.report(topic: "Album Sync", error: error)
       }
