@@ -257,7 +257,7 @@ struct ListeningStatisticsView: View {
       LazyVStack(alignment: .leading, spacing: 24) {
         VStack(alignment: .leading, spacing: 12) {
           if showsScrollingHeader {
-            pageHeader.offset(y: -min(topPull, ScrollingPageHeader.maximumTopPull)).zIndex(1)
+            pageHeader.offset(y: -topPull).zIndex(1)
           }
           if model.address.isEmpty { setup } else { toolbar }
         }
@@ -269,8 +269,6 @@ struct ListeningStatisticsView: View {
         }
       }
       .padding(.horizontal, 20).padding(.top, showsScrollingHeader ? 2 : 12).padding(.bottom, 24)
-      // Preserve the actual scroll distance for the system refresh control.
-      .offset(y: -max(0, topPull - ScrollingPageHeader.maximumTopPull))
     }
     .scrollEdgeEffectStyle(showsScrollingHeader ? .soft : nil, for: .top)
     .onScrollGeometryChange(for: CGFloat.self) { geometry in

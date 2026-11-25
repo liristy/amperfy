@@ -162,7 +162,6 @@ extension UIViewController {
 final class ScrollingPageHeader: UICollectionReusableView {
   static let elementKind = "scrolling-page-header"
   static var isEnabled: Bool { UIDevice.current.userInterfaceIdiom == .phone }
-  static let maximumTopPull: CGFloat = 24
 
   static func makeLayoutConfiguration() -> UICollectionViewCompositionalLayoutConfiguration {
     let configuration = UICollectionViewCompositionalLayoutConfiguration()
@@ -181,6 +180,10 @@ final class ScrollingPageHeader: UICollectionReusableView {
     configuration.title = title
     configuration.image = image
     configuration.baseForegroundColor = .label
+    configuration.cornerStyle = .capsule
+    configuration.background.strokeColor = .separator
+    configuration.background.strokeWidth = 1
+    configuration.contentInsets = .init(top: 6, leading: 12, bottom: 6, trailing: 12)
     button.configuration = configuration
     NSLayoutConstraint.activate([
       button.widthAnchor.constraint(greaterThanOrEqualToConstant: 44),
@@ -232,14 +235,6 @@ final class ScrollingPageHeader: UICollectionReusableView {
     // remains a normal scrolling element while browsing the page.
     let lift = min(0, scrollView.contentOffset.y + scrollView.adjustedContentInset.top)
     if row.transform.ty != lift { row.transform = CGAffineTransform(translationX: 0, y: lift) }
-  }
-
-  func limitTopPull(in scrollView: UIScrollView) {
-    let minimumOffset = -scrollView.adjustedContentInset.top - Self.maximumTopPull
-    if scrollView.contentOffset.y < minimumOffset - 0.5 {
-      scrollView.contentOffset = CGPoint(x: scrollView.contentOffset.x, y: minimumOffset)
-    }
-    updateForScroll(scrollView)
   }
 
   func display(title: String, buttons: [UIButton], horizontalInset: CGFloat, actionSpacing: CGFloat = 4) {
