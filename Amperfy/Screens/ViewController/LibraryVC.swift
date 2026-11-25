@@ -36,6 +36,7 @@ class LibraryVC: KeyCommandCollectionViewController {
   private var didSync = false
   private var isPageVisible = false
   private var displayedTheme: ThemePreference?
+  private weak var scrollingHeader: ScrollingPageHeader?
   private(set) lazy var pageEditButton: UIButton = {
     let button = ScrollingPageHeader.makeButton(title: "Edit".localized)
     button.accessibilityIdentifier = "library-edit-categories"
@@ -120,6 +121,8 @@ class LibraryVC: KeyCommandCollectionViewController {
         let header = view.dequeueReusableSupplementaryView(ofKind: kind,
           withReuseIdentifier: kind, for: path) as! ScrollingPageHeader
         header.display(title: "Library".localized, buttons: [pageEditButton, pagePinButton], horizontalInset: 20)
+        header.updateForScroll(view)
+        scrollingHeader = header
         return header
       }
       return view.dequeueReusableSupplementaryView(ofKind: kind, withReuseIdentifier: "heading", for: path)
@@ -157,6 +160,10 @@ class LibraryVC: KeyCommandCollectionViewController {
   override func viewWillDisappear(_ animated: Bool) {
     super.viewWillDisappear(animated)
     isPageVisible = false
+  }
+
+  override func scrollViewDidScroll(_ scrollView: UIScrollView) {
+    if scrollView === collectionView { scrollingHeader?.updateForScroll(scrollView) }
   }
 
   private func refreshCategoryThemeIfNeeded() {

@@ -158,6 +158,11 @@ final class HomeVC: UICollectionViewController {
 
   private func configurePageHeader(_ header: ScrollingPageHeader) {
     header.display(title: "Home".localized, buttons: [pageEditButton, userButton].compactMap { $0 }, horizontalInset: 24)
+    header.updateForScroll(collectionView)
+  }
+
+  override func scrollViewDidScroll(_ scrollView: UIScrollView) {
+    if scrollView === collectionView { scrollingHeader?.updateForScroll(scrollView) }
   }
 
   // MARK: - Layout

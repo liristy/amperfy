@@ -190,9 +190,11 @@ final class ScrollingPageHeader: UICollectionReusableView {
 
   private let titleLabel = UILabel()
   private let actions = UIStackView()
+  private lazy var row = UIStackView(arrangedSubviews: [titleLabel, actions])
 
   override init(frame: CGRect) {
     super.init(frame: frame)
+    clipsToBounds = false
     titleLabel.font = UIFontMetrics(forTextStyle: .largeTitle).scaledFont(for: .systemFont(ofSize: 32, weight: .bold))
     titleLabel.adjustsFontForContentSizeCategory = true
     titleLabel.numberOfLines = 0
@@ -200,7 +202,6 @@ final class ScrollingPageHeader: UICollectionReusableView {
     actions.spacing = 4
     actions.alignment = .center
     actions.setContentHuggingPriority(.required, for: .horizontal)
-    let row = UIStackView(arrangedSubviews: [titleLabel, actions])
     row.spacing = 8
     row.alignment = .center
     row.translatesAutoresizingMaskIntoConstraints = false
@@ -215,6 +216,22 @@ final class ScrollingPageHeader: UICollectionReusableView {
   }
 
   required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
+
+  override func prepareForReuse() {
+    super.prepareForReuse()
+    row.transform = .identity
+  }
+
+  override func point(inside point: CGPoint, with event: UIEvent?) -> Bool {
+    super.point(inside: point, with: event) || row.bounds.contains(convert(point, to: row))
+  }
+
+  func updateForScroll(_ scrollView: UIScrollView) {
+    // Counteract the rubber band only past the resting top edge. The header
+    // remains a normal scrolling element while browsing the page.
+    let lift = min(0, scrollView.contentOffset.y + scrollView.adjustedContentInset.top)
+    if row.transform.ty != lift { row.transform = CGAffineTransform(translationX: 0, y: lift) }
+  }
 
   func display(title: String, buttons: [UIButton], horizontalInset: CGFloat) {
     titleLabel.text = title
