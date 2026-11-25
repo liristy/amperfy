@@ -65,6 +65,11 @@ class LibraryVC: KeyCommandCollectionViewController {
   required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
   override var sceneTitle: String? { "Library".localized }
 
+  override func contentScrollView(for edge: NSDirectionalRectEdge) -> UIScrollView? {
+    if edge == .top, ScrollingPageHeader.isEnabled { return nil }
+    return super.contentScrollView(for: edge)
+  }
+
   override func viewDidLoad() {
     super.viewDidLoad()
     navigationController?.navigationBar.prefersLargeTitles = true
@@ -76,10 +81,16 @@ class LibraryVC: KeyCommandCollectionViewController {
       collectionView.topEdgeEffect.style = .soft
       collectionView.register(ScrollingPageHeader.self, forSupplementaryViewOfKind: ScrollingPageHeader.elementKind,
         withReuseIdentifier: ScrollingPageHeader.elementKind)
+      collectionView.registerForTraitChanges([UITraitPreferredContentSizeCategory.self]) {
+        (view: UICollectionView, _: UITraitCollection) in
+        view.collectionViewLayout.invalidateLayout()
+      }
     }
     collectionView.collectionViewLayout = makeLayout()
     collectionView.register(LibraryArtworkTile.self, forCellWithReuseIdentifier: "artwork")
-    collectionView.register(UICollectionViewListCell.self, forCellWithReuseIdentifier: "category")
+    let categoryCellType: UICollectionViewListCell.Type = ScrollingPageHeader.isEnabled
+      ? LibraryCategoryCell.self : UICollectionViewListCell.self
+    collectionView.register(categoryCellType, forCellWithReuseIdentifier: "category")
     collectionView.register(LibraryRecentHeading.self,
       forSupplementaryViewOfKind: UICollectionView.elementKindSectionHeader, withReuseIdentifier: "heading")
     source = UICollectionViewDiffableDataSource<Section, Item>(collectionView: collectionView) { [weak self] view, path, item in
@@ -299,6 +310,15 @@ class LibraryVC: KeyCommandCollectionViewController {
         section.contentInsets = .init(top: 8, leading: inset, bottom: 12, trailing: inset)
         return section
       case .categories:
+        if ScrollingPageHeader.isEnabled {
+          // Resolve row heights before scrolling so list self-sizing cannot shift the top edge.
+          let font = UIFont.preferredFont(forTextStyle: .title3, compatibleWith: environment.traitCollection)
+          let height = max(52, ceil(font.lineHeight) + 16)
+          let size = NSCollectionLayoutSize(widthDimension: .fractionalWidth(1), heightDimension: .absolute(height))
+          let item = NSCollectionLayoutItem(layoutSize: size)
+          let group = NSCollectionLayoutGroup.vertical(layoutSize: size, subitems: [item])
+          return NSCollectionLayoutSection(group: group)
+        }
         var config = UICollectionLayoutListConfiguration(appearance: .plain)
         config.backgroundColor = .systemBackground
         let section = NSCollectionLayoutSection.list(using: config, layoutEnvironment: environment)
@@ -368,6 +388,37 @@ private final class LibraryCategoriesEditor: UICollectionViewController {
     configurator.editingDidFinish = { [weak self] in self?.dismiss(animated: true) }
     configurator.editingPressed()
     navigationItem.leftBarButtonItem = UIBarButtonItem(systemItem: .cancel, primaryAction: UIAction { [weak self] _ in self?.dismiss(animated: true) })
+  }
+}
+
+@MainActor
+private final class LibraryCategoryCell: UICollectionViewListCell {
+  private let topSeparator = UIView()
+  private let bottomSeparator = UIView()
+
+  override init(frame: CGRect) {
+    super.init(frame: frame)
+    let separatorHeight = 1 / max(traitCollection.displayScale, 1)
+    for separator in [topSeparator, bottomSeparator] {
+      separator.backgroundColor = .separator
+      separator.isUserInteractionEnabled = false
+      separator.translatesAutoresizingMaskIntoConstraints = false
+      addSubview(separator)
+      NSLayoutConstraint.activate([
+        separator.leadingAnchor.constraint(equalTo: separatorLayoutGuide.leadingAnchor),
+        separator.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -20),
+        separator.heightAnchor.constraint(equalToConstant: separatorHeight),
+      ])
+    }
+    topSeparator.topAnchor.constraint(equalTo: topAnchor).isActive = true
+    bottomSeparator.bottomAnchor.constraint(equalTo: bottomAnchor).isActive = true
+  }
+
+  required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
+
+  override func apply(_ layoutAttributes: UICollectionViewLayoutAttributes) {
+    super.apply(layoutAttributes)
+    topSeparator.isHidden = layoutAttributes.indexPath.item != 0
   }
 }
 
