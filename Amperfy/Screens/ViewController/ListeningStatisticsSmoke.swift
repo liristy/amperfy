@@ -65,7 +65,7 @@ enum ListeningStatisticsSmoke {
     host.model.address = "http://127.0.0.1:8765"
     let model = host.model
     for panel in ListeningPanel.allCases {
-      host.rootView = ListeningStatisticsView(model: model, panel: panel)
+      host.rootView = ListeningStatisticsView(model: model, panel: panel, showsScrollingHeader: host.showsScrollingHeader)
       try await Task.sleep(for: .milliseconds(150))
       for _ in 0..<60 {
         if model.snapshot != nil && !model.loading { break }

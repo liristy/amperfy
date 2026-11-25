@@ -162,7 +162,7 @@ final class HomeVC: UICollectionViewController {
   }
 
   override func scrollViewDidScroll(_ scrollView: UIScrollView) {
-    if scrollView === collectionView { scrollingHeader?.updateForScroll(scrollView) }
+    if scrollView === collectionView { scrollingHeader?.limitTopPull(in: scrollView) }
   }
 
   // MARK: - Layout

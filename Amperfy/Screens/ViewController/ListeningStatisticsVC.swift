@@ -181,14 +181,18 @@ final class ListeningModel: ObservableObject {
 
 final class ListeningStatisticsVC: UIHostingController<ListeningStatisticsView> {
   let model: ListeningModel
+  let showsScrollingHeader: Bool
   private let entity: ListeningEntity?
   init(account: Account, entity: ListeningEntity? = nil, address: String? = nil,
        filter: ListeningFilter = .init()) {
     let model = ListeningModel(account: account)
     if let address { model.address = address }
+    let showsScrollingHeader = entity == nil && ScrollingPageHeader.isEnabled
     self.model = model
+    self.showsScrollingHeader = showsScrollingHeader
     self.entity = entity
-    super.init(rootView: ListeningStatisticsView(model: model, entity: entity, filter: filter))
+    super.init(rootView: ListeningStatisticsView(model: model, entity: entity, filter: filter,
+      showsScrollingHeader: showsScrollingHeader))
     title = entity?.name ?? "Listening Statistics".localized
     model.openEntity = { [weak self] entity, filter in
       guard let self else { return }
@@ -201,17 +205,22 @@ final class ListeningStatisticsVC: UIHostingController<ListeningStatisticsView> 
   override func viewDidLoad() {
     super.viewDidLoad()
     navigationController?.navigationBar.prefersLargeTitles = true
-    navigationItem.largeTitleDisplayMode = entity == nil ? .always : .never
+    navigationItem.largeTitleDisplayMode = entity == nil && !showsScrollingHeader ? .always : .never
     navigationItem.backButtonDisplayMode = .minimal
-    navigationItem.rightBarButtonItem = UIBarButtonItem(image: UIImage(systemName: "slider.horizontal.3"),
-      primaryAction: UIAction { [weak self] _ in self?.model.showSettings = true })
-    navigationItem.rightBarButtonItem?.accessibilityLabel = "Statistics Settings".localized
+    if !showsScrollingHeader {
+      navigationItem.rightBarButtonItem = UIBarButtonItem(image: UIImage(systemName: "slider.horizontal.3"),
+        primaryAction: UIAction { [weak self] _ in self?.model.showSettings = true })
+      navigationItem.rightBarButtonItem?.accessibilityLabel = "Statistics Settings".localized
+    }
     view.backgroundColor = .systemBackground
   }
 }
 
 struct ListeningStatisticsView: View {
   @ObservedObject var model: ListeningModel
+  private let showsScrollingHeader: Bool
+  @ScaledMetric(relativeTo: .largeTitle) private var headerTitleSize: CGFloat = 32
+  @State private var topPull: CGFloat = 0
   private var panel: ListeningPanel { model.panel }
   @State private var kind = ListeningKind.artists
   @State private var filter = ListeningFilter()
@@ -227,10 +236,11 @@ struct ListeningStatisticsView: View {
   @State private var detailPage: [ListeningKind: Int] = [:]
 
   init(model: ListeningModel, panel: ListeningPanel = .overview, entity: ListeningEntity? = nil,
-       filter: ListeningFilter = .init()) {
+       filter: ListeningFilter = .init(), showsScrollingHeader: Bool = false) {
     self.model = model
     model.panel = panel
     self.entity = entity
+    self.showsScrollingHeader = showsScrollingHeader
     _filter = State(initialValue: filter)
   }
 
@@ -245,16 +255,28 @@ struct ListeningStatisticsView: View {
   var body: some View {
     ScrollView {
       LazyVStack(alignment: .leading, spacing: 24) {
-        if model.address.isEmpty { setup }
-        else {
-          toolbar
+        VStack(alignment: .leading, spacing: 12) {
+          if showsScrollingHeader {
+            pageHeader.offset(y: -min(topPull, ScrollingPageHeader.maximumTopPull)).zIndex(1)
+          }
+          if model.address.isEmpty { setup } else { toolbar }
+        }
+        if !model.address.isEmpty {
           if let entity = entityPath.last { entityHeader(entity) }
           if model.loading { ProgressView().frame(maxWidth: .infinity, minHeight: 220) }
           else if let error = model.error { failure(error) }
           else if let data = model.snapshot { dashboard(data) }
         }
       }
-      .padding(.horizontal, 20).padding(.top, 12).padding(.bottom, 24)
+      .padding(.horizontal, 20).padding(.top, showsScrollingHeader ? 2 : 12).padding(.bottom, 24)
+      // Preserve the actual scroll distance for the system refresh control.
+      .offset(y: -max(0, topPull - ScrollingPageHeader.maximumTopPull))
+    }
+    .scrollEdgeEffectStyle(showsScrollingHeader ? .soft : nil, for: .top)
+    .onScrollGeometryChange(for: CGFloat.self) { geometry in
+      showsScrollingHeader ? max(0, -(geometry.contentOffset.y + geometry.contentInsets.top)) : 0
+    } action: { _, pull in
+      topPull = pull
     }
     .background(Color(uiColor: .systemBackground))
     .tint(model.accent)
@@ -273,6 +295,26 @@ struct ListeningStatisticsView: View {
     .alert("Unable to Play".localized, isPresented: Binding(get: { model.playbackError != nil }, set: { if !$0 { model.playbackError = nil } })) {
       Button("OK".localized, role: .cancel) { model.playbackError = nil }
     } message: { Text(model.playbackError ?? "") }
+  }
+
+  private var pageHeader: some View {
+    HStack(spacing: 8) {
+      Text("Listening Statistics".localized)
+        .font(.system(size: headerTitleSize, weight: .bold))
+        .accessibilityAddTraits(.isHeader)
+      Spacer(minLength: 0)
+      Button {
+        model.showSettings = true
+      } label: {
+        Image(systemName: "slider.horizontal.3")
+          .font(.system(size: 18, weight: .medium))
+          .frame(width: 44, height: 44)
+          .contentShape(Rectangle())
+      }
+      .buttonStyle(.plain)
+      .accessibilityLabel(Text("Statistics Settings".localized))
+    }
+    .padding(.bottom, 8)
   }
 
   private var setup: some View {

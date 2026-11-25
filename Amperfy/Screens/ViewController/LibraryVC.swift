@@ -163,7 +163,7 @@ class LibraryVC: KeyCommandCollectionViewController {
   }
 
   override func scrollViewDidScroll(_ scrollView: UIScrollView) {
-    if scrollView === collectionView { scrollingHeader?.updateForScroll(scrollView) }
+    if scrollView === collectionView { scrollingHeader?.limitTopPull(in: scrollView) }
   }
 
   private func refreshCategoryThemeIfNeeded() {
