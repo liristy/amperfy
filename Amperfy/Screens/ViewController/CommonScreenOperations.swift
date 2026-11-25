@@ -181,22 +181,45 @@ final class ScrollingPageHeader: UICollectionReusableView {
     configuration.image = image
     configuration.baseForegroundColor = .label
     configuration.cornerStyle = .capsule
-    if title == nil {
+    if let title {
+      let horizontalPadding: CGFloat = 10
+      configuration.contentInsets = .init(top: 6, leading: horizontalPadding, bottom: 6, trailing: horizontalPadding)
+      button.configuration = configuration
+
+      let width = button.widthAnchor.constraint(equalToConstant: 44)
+      // Keep the button compact while allowing it to compress on very narrow layouts.
+      width.priority = UILayoutPriority(999)
+      NSLayoutConstraint.activate([
+        width,
+        button.widthAnchor.constraint(greaterThanOrEqualToConstant: 44),
+        button.heightAnchor.constraint(greaterThanOrEqualToConstant: 44),
+      ])
+
+      func updateTitleSize(on button: UIButton, width: NSLayoutConstraint) {
+        let font = UIFont.preferredFont(forTextStyle: .callout, compatibleWith: button.traitCollection)
+        let textWidth = (title as NSString).size(withAttributes: [.font: font]).width
+        width.constant = max(44, ceil(textWidth) + 2 * horizontalPadding)
+        button.configuration?.titleTextAttributesTransformer = UIConfigurationTextAttributesTransformer { incoming in
+          var outgoing = incoming
+          outgoing.font = font
+          return outgoing
+        }
+      }
+
+      updateTitleSize(on: button, width: width)
+      button.registerForTraitChanges([UITraitPreferredContentSizeCategory.self]) { [weak width] (button: UIButton, _: UITraitCollection) in
+        guard let width else { return }
+        updateTitleSize(on: button, width: width)
+      }
+    } else {
       configuration.contentInsets = .zero
       configuration.preferredSymbolConfigurationForImage = .init(pointSize: 17, weight: .medium)
+      button.configuration = configuration
       NSLayoutConstraint.activate([
         button.widthAnchor.constraint(equalToConstant: 44),
         button.heightAnchor.constraint(equalTo: button.widthAnchor),
       ])
-    } else {
-      configuration.contentInsets = .init(top: 6, leading: 10, bottom: 6, trailing: 10)
-      button.setContentHuggingPriority(.defaultHigh, for: .horizontal)
-      NSLayoutConstraint.activate([
-        button.widthAnchor.constraint(greaterThanOrEqualToConstant: 44),
-        button.heightAnchor.constraint(greaterThanOrEqualToConstant: 44),
-      ])
     }
-    button.configuration = configuration
     return button
   }
 
