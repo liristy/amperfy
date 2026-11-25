@@ -36,6 +36,12 @@ final class HomeVC: UICollectionViewController {
 
   private var userButton: UIButton?
   private var userBarButtonItem: UIBarButtonItem?
+  private weak var scrollingHeader: ScrollingPageHeader?
+  private lazy var pageEditButton: UIButton = {
+    let button = ScrollingPageHeader.makeButton(title: "Edit".localized)
+    button.addTarget(self, action: #selector(editSectionsTapped), for: .touchUpInside)
+    return button
+  }()
   private let account: Account
   private var accountNotificationHandler: AccountNotificationHandler?
   private let sharedHome: HomeManager
@@ -75,30 +81,27 @@ final class HomeVC: UICollectionViewController {
   override func viewDidLoad() {
     super.viewDidLoad()
     // ensures that the collection view stops placing items under the sidebar
-    collectionView.contentInsetAdjustmentBehavior = .scrollableAxes
+    collectionView.contentInsetAdjustmentBehavior = ScrollingPageHeader.isEnabled ? .always : .scrollableAxes
     title = "Home".localized
-    navigationItem.largeTitleDisplayMode = .always
+    navigationItem.largeTitleDisplayMode = ScrollingPageHeader.isEnabled ? .never : .always
 
     accountNotificationHandler = AccountNotificationHandler(
       storage: appDelegate.storage,
       notificationHandler: appDelegate.notificationHandler
     )
-    accountNotificationHandler?.registerCallbackForActiveAccountChange { [weak self] accountInfo in
-      guard let self else { return }
-      setupUserNavButton(
-        currentAccount: account,
-        userButton: &userButton,
-        userBarButtonItem: &userBarButtonItem
-      )
+    accountNotificationHandler?.registerCallbackForActiveAccountChange { [weak self] _ in
+      self?.updateAccountButton()
     }
 
-    navigationController?.navigationBar.prefersLargeTitles = true
-    navigationItem.rightBarButtonItem = UIBarButtonItem(
-      title: "Edit".localized,
-      style: .plain,
-      target: self,
-      action: #selector(editSectionsTapped)
-    )
+    if !ScrollingPageHeader.isEnabled {
+      navigationController?.navigationBar.prefersLargeTitles = true
+      navigationItem.rightBarButtonItem = UIBarButtonItem(
+        title: "Edit".localized,
+        style: .plain,
+        target: self,
+        action: #selector(editSectionsTapped)
+      )
+    }
     configureCollectionView()
     configureDataSource()
     sharedHome.createFetchController()
@@ -136,6 +139,25 @@ final class HomeVC: UICollectionViewController {
   override func viewWillDisappear(_ animated: Bool) {
     super.viewWillDisappear(animated)
     isPageVisible = false
+  }
+
+  private func updateAccountButton() {
+    if ScrollingPageHeader.isEnabled {
+      let button = makeUserMenuButton(currentAccount: account)
+      button.accessibilityLabel = "Account".localized
+      NSLayoutConstraint.activate([
+        button.widthAnchor.constraint(equalToConstant: 44),
+        button.heightAnchor.constraint(equalToConstant: 44),
+      ])
+      userButton = button
+      if let scrollingHeader { configurePageHeader(scrollingHeader) }
+    } else {
+      setupUserNavButton(currentAccount: account, userButton: &userButton, userBarButtonItem: &userBarButtonItem)
+    }
+  }
+
+  private func configurePageHeader(_ header: ScrollingPageHeader) {
+    header.display(title: "Home".localized, buttons: [pageEditButton, userButton].compactMap { $0 }, horizontalInset: 24)
   }
 
   // MARK: - Layout
@@ -185,6 +207,7 @@ final class HomeVC: UICollectionViewController {
 
       return sectionLayout
     }
+    layout.configuration = ScrollingPageHeader.makeLayoutConfiguration()
     return layout
   }
 
@@ -192,6 +215,11 @@ final class HomeVC: UICollectionViewController {
 
   private func configureCollectionView() {
     collectionView.backgroundColor = .systemBackground
+    if ScrollingPageHeader.isEnabled {
+      collectionView.topEdgeEffect.style = .soft
+      collectionView.register(ScrollingPageHeader.self, forSupplementaryViewOfKind: ScrollingPageHeader.elementKind,
+        withReuseIdentifier: ScrollingPageHeader.elementKind)
+    }
     collectionView.register(
       UINib(nibName: AlbumCollectionCell.typeName, bundle: .main),
       forCellWithReuseIdentifier: AlbumCollectionCell.typeName
@@ -226,7 +254,15 @@ final class HomeVC: UICollectionViewController {
       return cell
     }
 
-    dataSource.supplementaryViewProvider = { collectionView, kind, indexPath in
+    dataSource.supplementaryViewProvider = { [weak self] collectionView, kind, indexPath in
+      guard let self else { return nil }
+      if kind == ScrollingPageHeader.elementKind {
+        let header = collectionView.dequeueReusableSupplementaryView(ofKind: kind,
+          withReuseIdentifier: kind, for: indexPath) as! ScrollingPageHeader
+        scrollingHeader = header
+        configurePageHeader(header)
+        return header
+      }
       guard kind == UICollectionView.elementKindSectionHeader,
             let header = collectionView.dequeueReusableSupplementaryView(
               ofKind: kind,

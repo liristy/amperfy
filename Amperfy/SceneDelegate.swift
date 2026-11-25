@@ -2271,12 +2271,20 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
             content.imageProperties.resolvedTintColor(for: category.tintColor) == theme else {
         smokeLog("Library category icons did not follow account theme"); return false
       }
-      guard let edit = libraryVC.navigationItem.rightBarButtonItems?.first(where: {
-        $0.accessibilityIdentifier == "library-edit-categories"
-      }), let editAction = edit.action,
-      libraryVC.navigationItem.rightBarButtonItems?.count == 2,
-      UIApplication.shared.sendAction(editAction, to: edit.target, from: edit, for: nil) else {
-        smokeLog("Library Edit button did not dispatch its action"); return false
+      if ScrollingPageHeader.isEnabled {
+        let edit = libraryVC.pageEditButton
+        guard edit.window != nil else {
+          smokeLog("Library Edit button is missing from the scrolling header"); return false
+        }
+        edit.sendActions(for: .touchUpInside)
+      } else {
+        guard let edit = libraryVC.navigationItem.rightBarButtonItems?.first(where: {
+          $0.accessibilityIdentifier == "library-edit-categories"
+        }), let editAction = edit.action,
+        libraryVC.navigationItem.rightBarButtonItems?.count == 2,
+        UIApplication.shared.sendAction(editAction, to: edit.target, from: edit, for: nil) else {
+          smokeLog("Library Edit button did not dispatch its action"); return false
+        }
       }
       try await Task.sleep(for: .milliseconds(700))
       guard let editorNav = libraryVC.presentedViewController as? UINavigationController,

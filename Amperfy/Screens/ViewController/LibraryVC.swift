@@ -36,6 +36,18 @@ class LibraryVC: KeyCommandCollectionViewController {
   private var didSync = false
   private var isPageVisible = false
   private var displayedTheme: ThemePreference?
+  private(set) lazy var pageEditButton: UIButton = {
+    let button = ScrollingPageHeader.makeButton(title: "Edit".localized)
+    button.accessibilityIdentifier = "library-edit-categories"
+    button.addTarget(self, action: #selector(editCategories), for: .touchUpInside)
+    return button
+  }()
+  private lazy var pagePinButton: UIButton = {
+    let button = ScrollingPageHeader.makeButton(image: UIImage(systemName: "pin"))
+    button.accessibilityLabel = "Pin to Library".localized
+    button.showsMenuAsPrimaryAction = true
+    return button
+  }()
   private var pinKey: String { "libraryPinnedPlaylists." + account.managedObject.objectID.uriRepresentation().absoluteString }
   private func pinIdentifier(_ playlist: Playlist) -> String {
     playlist.managedObject.objectID.uriRepresentation().absoluteString
@@ -55,9 +67,15 @@ class LibraryVC: KeyCommandCollectionViewController {
   override func viewDidLoad() {
     super.viewDidLoad()
     navigationController?.navigationBar.prefersLargeTitles = true
-    navigationItem.largeTitleDisplayMode = .inline
+    navigationItem.largeTitleDisplayMode = ScrollingPageHeader.isEnabled ? .never : .inline
     title = "Library".localized
     collectionView.backgroundColor = .systemBackground
+    if ScrollingPageHeader.isEnabled {
+      collectionView.contentInsetAdjustmentBehavior = .always
+      collectionView.topEdgeEffect.style = .soft
+      collectionView.register(ScrollingPageHeader.self, forSupplementaryViewOfKind: ScrollingPageHeader.elementKind,
+        withReuseIdentifier: ScrollingPageHeader.elementKind)
+    }
     collectionView.collectionViewLayout = makeLayout()
     collectionView.register(LibraryArtworkTile.self, forCellWithReuseIdentifier: "artwork")
     collectionView.register(UICollectionViewListCell.self, forCellWithReuseIdentifier: "category")
@@ -96,8 +114,15 @@ class LibraryVC: KeyCommandCollectionViewController {
       }
       return cell
     }
-    source.supplementaryViewProvider = { view, kind, path in
-      view.dequeueReusableSupplementaryView(ofKind: kind, withReuseIdentifier: "heading", for: path)
+    source.supplementaryViewProvider = { [weak self] view, kind, path in
+      if kind == ScrollingPageHeader.elementKind {
+        guard let self else { return nil }
+        let header = view.dequeueReusableSupplementaryView(ofKind: kind,
+          withReuseIdentifier: kind, for: path) as! ScrollingPageHeader
+        header.display(title: "Library".localized, buttons: [pageEditButton, pagePinButton], horizontalInset: 20)
+        return header
+      }
+      return view.dequeueReusableSupplementaryView(ofKind: kind, withReuseIdentifier: "heading", for: path)
     }
     NotificationCenter.default.addObserver(self, selector: #selector(libraryChanged), name: .LibraryItemsChanged, object: nil)
     NotificationCenter.default.addObserver(self, selector: #selector(objectsChanged(_:)),
@@ -209,7 +234,12 @@ class LibraryVC: KeyCommandCollectionViewController {
         refreshLibrary()
       }
     }
-    let pin = UIBarButtonItem(image: UIImage(systemName: "pin"), menu: UIMenu(title: "Pin to Library".localized, children: pinActions))
+    let menu = UIMenu(title: "Pin to Library".localized, children: pinActions)
+    if ScrollingPageHeader.isEnabled {
+      pagePinButton.menu = menu
+      return
+    }
+    let pin = UIBarButtonItem(image: UIImage(systemName: "pin"), menu: menu)
     pin.accessibilityLabel = "Pin to Library".localized
     let edit = UIBarButtonItem(title: "Edit".localized, style: .plain, target: self,
                               action: #selector(editCategories))
@@ -223,7 +253,7 @@ class LibraryVC: KeyCommandCollectionViewController {
   }
 
   private func makeLayout() -> UICollectionViewLayout {
-    UICollectionViewCompositionalLayout { [weak self] index, environment in
+    let layout = UICollectionViewCompositionalLayout { [weak self] index, environment in
       guard let self, let sections = source?.snapshot().sectionIdentifiers, sections.indices.contains(index) else { return nil }
       let section = sections[index]
       let width = environment.container.effectiveContentSize.width
@@ -259,6 +289,8 @@ class LibraryVC: KeyCommandCollectionViewController {
         return section
       }
     }
+    layout.configuration = ScrollingPageHeader.makeLayoutConfiguration()
+    return layout
   }
 
   override func collectionView(_ collectionView: UICollectionView, didSelectItemAt indexPath: IndexPath) {

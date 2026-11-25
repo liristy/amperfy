@@ -120,11 +120,7 @@ extension UIViewController {
     )
   }
 
-  public func setupUserNavButton(
-    currentAccount: Account,
-    userButton: inout UIButton?,
-    userBarButtonItem: inout UIBarButtonItem?
-  ) {
+  func makeUserMenuButton(currentAccount: Account) -> UIButton {
     let image = UIImage.userCircle(withConfiguration: UIImage.SymbolConfiguration(
       pointSize: 24,
       weight: .regular
@@ -146,10 +142,87 @@ extension UIViewController {
     #endif
     button.menu = createUserButtonMenu()
     button.showsMenuAsPrimaryAction = true
+    return button
+  }
+
+  public func setupUserNavButton(
+    currentAccount: Account,
+    userButton: inout UIButton?,
+    userBarButtonItem: inout UIBarButtonItem?
+  ) {
+    let button = makeUserMenuButton(currentAccount: currentAccount)
     userButton = button
 
     userBarButtonItem = UIBarButtonItem(customView: button)
     navigationItem.leftBarButtonItem = userBarButtonItem!
+  }
+}
+
+@MainActor
+final class ScrollingPageHeader: UICollectionReusableView {
+  static let elementKind = "scrolling-page-header"
+  static var isEnabled: Bool { UIDevice.current.userInterfaceIdiom == .phone }
+
+  static func makeLayoutConfiguration() -> UICollectionViewCompositionalLayoutConfiguration {
+    let configuration = UICollectionViewCompositionalLayoutConfiguration()
+    if isEnabled {
+      let size = NSCollectionLayoutSize(widthDimension: .fractionalWidth(1), heightDimension: .estimated(54))
+      configuration.boundarySupplementaryItems = [
+        NSCollectionLayoutBoundarySupplementaryItem(layoutSize: size, elementKind: elementKind, alignment: .top),
+      ]
+    }
+    return configuration
+  }
+
+  static func makeButton(title: String? = nil, image: UIImage? = nil) -> UIButton {
+    let button = UIButton(type: .system)
+    var configuration = UIButton.Configuration.borderless()
+    configuration.title = title
+    configuration.image = image
+    configuration.baseForegroundColor = .label
+    button.configuration = configuration
+    NSLayoutConstraint.activate([
+      button.widthAnchor.constraint(greaterThanOrEqualToConstant: 44),
+      button.heightAnchor.constraint(greaterThanOrEqualToConstant: 44),
+    ])
+    return button
+  }
+
+  private let titleLabel = UILabel()
+  private let actions = UIStackView()
+
+  override init(frame: CGRect) {
+    super.init(frame: frame)
+    titleLabel.font = UIFontMetrics(forTextStyle: .largeTitle).scaledFont(for: .systemFont(ofSize: 32, weight: .bold))
+    titleLabel.adjustsFontForContentSizeCategory = true
+    titleLabel.numberOfLines = 0
+    titleLabel.accessibilityTraits.insert(.header)
+    actions.spacing = 4
+    actions.alignment = .center
+    actions.setContentHuggingPriority(.required, for: .horizontal)
+    let row = UIStackView(arrangedSubviews: [titleLabel, actions])
+    row.spacing = 8
+    row.alignment = .center
+    row.translatesAutoresizingMaskIntoConstraints = false
+    addSubview(row)
+    NSLayoutConstraint.activate([
+      row.leadingAnchor.constraint(equalTo: layoutMarginsGuide.leadingAnchor),
+      row.trailingAnchor.constraint(equalTo: layoutMarginsGuide.trailingAnchor),
+      row.topAnchor.constraint(equalTo: topAnchor, constant: 2),
+      row.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -8),
+      row.heightAnchor.constraint(greaterThanOrEqualToConstant: 44),
+    ])
+  }
+
+  required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
+
+  func display(title: String, buttons: [UIButton], horizontalInset: CGFloat) {
+    titleLabel.text = title
+    directionalLayoutMargins = .init(top: 0, leading: horizontalInset, bottom: 0, trailing: horizontalInset)
+    insetsLayoutMarginsFromSafeArea = false
+    guard !actions.arrangedSubviews.elementsEqual(buttons, by: { $0 === $1 }) else { return }
+    actions.arrangedSubviews.forEach { $0.removeFromSuperview() }
+    buttons.forEach { actions.addArrangedSubview($0) }
   }
 }
 
@@ -242,6 +315,12 @@ final class MusicNavigationController: UINavigationController, UINavigationContr
     super.viewDidLoad()
     delegate = self
     navigationBar.prefersLargeTitles = true
+    if let controller = topViewController { updateTopBar(for: controller, animated: false) }
+  }
+
+  private func updateTopBar(for controller: UIViewController, animated: Bool) {
+    let hidden = ScrollingPageHeader.isEnabled && (controller is HomeVC || controller is LibraryVC)
+    if isNavigationBarHidden != hidden { setNavigationBarHidden(hidden, animated: animated) }
   }
 
   private func usesArtworkChrome(for controller: UIViewController) -> Bool {
@@ -289,11 +368,14 @@ final class MusicNavigationController: UINavigationController, UINavigationContr
   }
 
   func synchronizeAppearance() {
-    if let controller = topViewController { applyAppearance(for: controller) }
+    guard let controller = topViewController else { return }
+    if transitionCoordinator == nil { updateTopBar(for: controller, animated: false) }
+    applyAppearance(for: controller)
   }
 
   func navigationController(_ navigationController: UINavigationController,
                             willShow controller: UIViewController, animated: Bool) {
+    updateTopBar(for: controller, animated: animated)
     (tabBarController as? TabBarVC)?.reserveDockSpace(for: controller)
     #if DEBUG && targetEnvironment(simulator)
       // Record the previous behavior in the same build for compositor comparison.
@@ -303,6 +385,7 @@ final class MusicNavigationController: UINavigationController, UINavigationContr
           self?.applyAppearance(for: controller)
         }, completion: { [weak self] context in
           if context.isCancelled, let original = context.viewController(forKey: .from) {
+            self?.updateTopBar(for: original, animated: false)
             self?.applyAppearance(for: original)
           }
         })
@@ -319,7 +402,10 @@ final class MusicNavigationController: UINavigationController, UINavigationContr
       self?.applyAppearance(for: controller)
     }, completion: { [weak self] context in
       if context.isCancelled, let original = context.viewController(forKey: .from) {
-        UIView.performWithoutAnimation { self?.applyAppearance(for: original) }
+        UIView.performWithoutAnimation {
+          self?.updateTopBar(for: original, animated: false)
+          self?.applyAppearance(for: original)
+        }
       }
     })
     if !joined { UIView.performWithoutAnimation { applyAppearance(for: controller) } }
@@ -328,6 +414,7 @@ final class MusicNavigationController: UINavigationController, UINavigationContr
   func navigationController(_ navigationController: UINavigationController,
                             didShow controller: UIViewController, animated: Bool) {
     // Also covers transitions without a coordinator and cancelled interactive pops.
+    updateTopBar(for: controller, animated: false)
     applyAppearance(for: controller)
   }
 }
