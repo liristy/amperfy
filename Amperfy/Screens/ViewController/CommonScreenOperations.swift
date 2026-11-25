@@ -176,19 +176,27 @@ final class ScrollingPageHeader: UICollectionReusableView {
 
   static func makeButton(title: String? = nil, image: UIImage? = nil) -> UIButton {
     let button = UIButton(type: .system)
-    var configuration = UIButton.Configuration.borderless()
+    var configuration = UIButton.Configuration.glass()
     configuration.title = title
     configuration.image = image
     configuration.baseForegroundColor = .label
     configuration.cornerStyle = .capsule
-    configuration.background.strokeColor = .separator
-    configuration.background.strokeWidth = 1
-    configuration.contentInsets = .init(top: 6, leading: 12, bottom: 6, trailing: 12)
+    if title == nil {
+      configuration.contentInsets = .zero
+      configuration.preferredSymbolConfigurationForImage = .init(pointSize: 17, weight: .medium)
+      NSLayoutConstraint.activate([
+        button.widthAnchor.constraint(equalToConstant: 44),
+        button.heightAnchor.constraint(equalTo: button.widthAnchor),
+      ])
+    } else {
+      configuration.contentInsets = .init(top: 6, leading: 10, bottom: 6, trailing: 10)
+      button.setContentHuggingPriority(.defaultHigh, for: .horizontal)
+      NSLayoutConstraint.activate([
+        button.widthAnchor.constraint(greaterThanOrEqualToConstant: 44),
+        button.heightAnchor.constraint(greaterThanOrEqualToConstant: 44),
+      ])
+    }
     button.configuration = configuration
-    NSLayoutConstraint.activate([
-      button.widthAnchor.constraint(greaterThanOrEqualToConstant: 44),
-      button.heightAnchor.constraint(greaterThanOrEqualToConstant: 44),
-    ])
     return button
   }
 
@@ -203,9 +211,9 @@ final class ScrollingPageHeader: UICollectionReusableView {
     titleLabel.adjustsFontForContentSizeCategory = true
     titleLabel.numberOfLines = 0
     titleLabel.accessibilityTraits.insert(.header)
+    titleLabel.setContentHuggingPriority(.defaultLow, for: .horizontal)
     actions.spacing = 4
     actions.alignment = .center
-    actions.setContentHuggingPriority(.required, for: .horizontal)
     row.spacing = 8
     row.alignment = .center
     row.translatesAutoresizingMaskIntoConstraints = false
