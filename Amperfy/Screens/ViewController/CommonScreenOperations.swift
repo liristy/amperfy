@@ -242,10 +242,11 @@ final class ScrollingPageHeader: UICollectionReusableView {
     updateForScroll(scrollView)
   }
 
-  func display(title: String, buttons: [UIButton], horizontalInset: CGFloat) {
+  func display(title: String, buttons: [UIButton], horizontalInset: CGFloat, actionSpacing: CGFloat = 4) {
     titleLabel.text = title
     directionalLayoutMargins = .init(top: 0, leading: horizontalInset, bottom: 0, trailing: horizontalInset)
     insetsLayoutMarginsFromSafeArea = false
+    actions.spacing = actionSpacing
     guard !actions.arrangedSubviews.elementsEqual(buttons, by: { $0 === $1 }) else { return }
     actions.arrangedSubviews.forEach { $0.removeFromSuperview() }
     buttons.forEach { actions.addArrangedSubview($0) }

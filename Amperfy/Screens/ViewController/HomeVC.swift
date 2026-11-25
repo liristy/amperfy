@@ -39,6 +39,8 @@ final class HomeVC: UICollectionViewController {
   private weak var scrollingHeader: ScrollingPageHeader?
   private lazy var pageEditButton: UIButton = {
     let button = ScrollingPageHeader.makeButton(title: "Edit".localized)
+    button.contentHorizontalAlignment = .trailing
+    button.configuration?.contentInsets.trailing = 0
     button.addTarget(self, action: #selector(editSectionsTapped), for: .touchUpInside)
     return button
   }()
@@ -157,7 +159,8 @@ final class HomeVC: UICollectionViewController {
   }
 
   private func configurePageHeader(_ header: ScrollingPageHeader) {
-    header.display(title: "Home".localized, buttons: [pageEditButton, userButton].compactMap { $0 }, horizontalInset: 24)
+    header.display(title: "Home".localized, buttons: [pageEditButton, userButton].compactMap { $0 },
+      horizontalInset: 24, actionSpacing: 0)
     header.updateForScroll(collectionView)
   }
 
