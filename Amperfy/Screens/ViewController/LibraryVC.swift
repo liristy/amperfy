@@ -166,6 +166,14 @@ class LibraryVC: KeyCommandCollectionViewController {
     if scrollView === collectionView { scrollingHeader?.updateForScroll(scrollView) }
   }
 
+  override func scrollViewDidEndDragging(_ scrollView: UIScrollView, willDecelerate decelerate: Bool) {
+    if scrollView === collectionView, !decelerate { refreshLibraryIfNeeded() }
+  }
+
+  override func scrollViewDidEndDecelerating(_ scrollView: UIScrollView) {
+    if scrollView === collectionView { refreshLibraryIfNeeded() }
+  }
+
   private func refreshCategoryThemeIfNeeded() {
     let theme = appDelegate.storage.settings.accounts.getSetting(account.info).read.themePreference
     guard theme != displayedTheme else { return }
@@ -178,12 +186,20 @@ class LibraryVC: KeyCommandCollectionViewController {
   }
 
   @objc private func becameActive() {
-    if isPageVisible, needsRefresh { refreshLibrary() }
+    refreshLibraryIfNeeded()
   }
+
   @objc private func libraryChanged() {
     needsRefresh = true
-    if isPageVisible, transitionCoordinator == nil, UIApplication.shared.applicationState == .active { refreshLibrary() }
+    refreshLibraryIfNeeded()
   }
+
+  private func refreshLibraryIfNeeded() {
+    guard needsRefresh, isPageVisible, transitionCoordinator == nil,
+          UIApplication.shared.applicationState == .active else { return }
+    refreshLibrary()
+  }
+
   @objc private func objectsChanged(_ note: Notification) {
     // Playback progress mutates SongMO every few seconds. It must not rebuild
     // the hidden library or decode its artwork while music plays in background.
@@ -195,13 +211,15 @@ class LibraryVC: KeyCommandCollectionViewController {
   }
 
   private func refreshLibrary() {
-    guard source != nil else { return }
-    guard isPageVisible || source.snapshot().numberOfItems == 0 else {
-      needsRefresh = true
-      return
-    }
+    needsRefresh = true
+    // Data updates can change the collection layout while UIKit is still bouncing back.
+    guard source != nil, !collectionView.isDragging, !collectionView.isDecelerating else { return }
+    let previousSnapshot = source.snapshot()
+    guard isPageVisible || previousSnapshot.numberOfItems == 0 else { return }
     needsRefresh = false
-    displayedTheme = appDelegate.storage.settings.accounts.getSetting(account.info).read.themePreference
+    let theme = appDelegate.storage.settings.accounts.getSetting(account.info).read.themePreference
+    let themeChanged = displayedTheme != theme
+    displayedTheme = theme
     playlists = appDelegate.storage.main.library.getPlaylists(for: account)
     recentAlbums = AlbumFetchedResultsController(coreDataCompanion: appDelegate.storage.main, account: account,
       sortType: .newest, isGroupedInAlphabeticSections: false, fetchLimit: 40)
@@ -222,10 +240,15 @@ class LibraryVC: KeyCommandCollectionViewController {
       snapshot.appendSections([.recent])
       snapshot.appendItems(albums.map { .album($0.objectID) }, toSection: .recent)
     }
-    let existing = Set(source.snapshot().itemIdentifiers)
-    snapshot.reconfigureItems(snapshot.itemIdentifiers.filter { existing.contains($0) })
+    let existing = Set(previousSnapshot.itemIdentifiers)
+    snapshot.reconfigureItems(snapshot.itemIdentifiers.filter {
+      if case .category = $0, !themeChanged { return false }
+      return existing.contains($0)
+    })
+    let previousPinCount = previousSnapshot.sectionIdentifiers.contains(.pinned)
+      ? previousSnapshot.numberOfItems(inSection: .pinned) : 0
     source.apply(snapshot, animatingDifferences: false)
-    collectionView.collectionViewLayout.invalidateLayout()
+    if previousPinCount != pins.count { collectionView.collectionViewLayout.invalidateLayout() }
     updateMenu()
   }
 
@@ -261,8 +284,7 @@ class LibraryVC: KeyCommandCollectionViewController {
 
   private func makeLayout() -> UICollectionViewLayout {
     let layout = UICollectionViewCompositionalLayout { [weak self] index, environment in
-      guard let self, let sections = source?.snapshot().sectionIdentifiers, sections.indices.contains(index) else { return nil }
-      let section = sections[index]
+      guard let source = self?.source, let section = source.sectionIdentifier(for: index) else { return nil }
       let width = environment.container.effectiveContentSize.width
       switch section {
       case .pinned:
